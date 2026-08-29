@@ -32,6 +32,50 @@ export interface DirectoryListing {
   truncated: boolean
 }
 
+/**
+ * One row of a {@link FileListing}: a child directory or file of the listed
+ * level. Kind follows the filesystem dirent (a symlink resolves to its
+ * target's kind), so a client can render enterable rows without probing.
+ */
+export interface FileListingEntry {
+  /** Base name shown in an explorer row. */
+  name: string
+  /** Absolute host path — the client never joins path segments itself. */
+  path: string
+  /** `'directory'` rows may be listed again; `'file'` rows are readable via `readFile`. */
+  kind: 'directory' | 'file'
+  /** Hidden by the host platform's convention (dot-prefixed on POSIX); the client owns whether to show it. */
+  hidden: boolean
+}
+
+/** host.listFiles response value: one mixed directory level for the file explorer. */
+export interface FileListing {
+  /** Absolute path of the listed directory (echoed back to the client). */
+  path: string
+  /** Children of the listed level, name-sorted; symlinks resolved to their target's kind. */
+  entries: FileListingEntry[]
+  /** True when the backend cut `entries` at its complete-result bound (the name-sorted tail is absent). */
+  truncated: boolean
+}
+
+/**
+ * One text file's contents as the file viewer renders them: the decoded
+ * UTF-8 text (empty for a binary file), the byte size, and the two flags
+ * that bound the display (truncation at the read cap, binary refusal).
+ */
+export interface FileContents {
+  /** The absolute path read (echoed back to the client). */
+  path: string
+  /** Decoded UTF-8 text; empty when `binary` is true. */
+  content: string
+  /** Byte length of the file on disk. */
+  size: number
+  /** True when the file exceeded the read bound and `content` is a truncated prefix. */
+  truncated: boolean
+  /** True when the file is not valid UTF-8 text (content is empty). */
+  binary: boolean
+}
+
 /** Host-level unary methods. */
 export interface HostApi {
   /**
@@ -95,4 +139,32 @@ export interface HostApi {
     request: RpcRequest<{ path: string }>,
     signal: AbortSignal,
   ): Promise<RpcResponse<{ opened: true }>>
+
+  /**
+   * Read one text file for the in-app file viewer. Reads are bounded: a file
+   * larger than the read cap returns a truncated prefix with `truncated`, and
+   * a file that is not valid UTF-8 returns `binary` with empty content rather
+   * than garbled text. A missing path fails with `file-not-found`; a
+   * directory or an unreadable target fails with `file-unreadable`. Like
+   * `openPath`, this is a privileged method gated to loopback callers.
+   */
+  readFile(
+    request: RpcRequest<{ path: string }>,
+    signal: AbortSignal,
+  ): Promise<RpcResponse<FileContents>>
+
+  /**
+   * List one mixed directory level (child directories and files) for the
+   * file explorer. An absent path lists the host process working directory
+   * (the project root). Entries are bounded like `listDirectory`: the
+   * name-sorted head is returned and `truncated` flags a cut level. An
+   * unreadable or missing target fails with `directory-unreadable`. Like
+   * `readFile`, this is a privileged method gated to loopback callers — the
+   * listing reveals host filesystem structure, which is reconnaissance of
+   * the same class as reading file contents.
+   */
+  listFiles(
+    request: RpcRequest<{ path?: string }>,
+    signal: AbortSignal,
+  ): Promise<RpcResponse<FileListing>>
 }

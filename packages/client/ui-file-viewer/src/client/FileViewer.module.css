@@ -1,0 +1,172 @@
+/* The file-viewer drawer fills the rightmost column (a 40-50% frame track the
+   layout opens and resizes). Header and metadata are fixed chrome; the body
+   scrolls. Text selection is enabled throughout the code surface. */
+
+.root {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--dsw-alias-bg-base);
+}
+
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 12px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  flex: none;
+}
+
+.title {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.basename {
+  font-weight: 600;
+  font-size: 13px;
+  line-height: 18px;
+  color: var(--dsw-alias-label-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.path {
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.close:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Markdown reader mode (header toggle + rendered body). The label mirrors the
+   store's current mode so keyboard and pointer users see the same fact. */
+.modeLabel {
+  flex: none;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  white-space: nowrap;
+}
+
+.toggle {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--dsw-alias-label-tertiary);
+  cursor: pointer;
+}
+
+.toggle[aria-checked='true'] {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.toggle:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--dsw-alias-border-l2);
+  flex: none;
+  font-size: 11px;
+  line-height: 16px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.metaItem {
+  white-space: nowrap;
+}
+
+.truncated {
+  color: var(--dsw-alias-state-warn-primary);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.status {
+  padding: 24px 16px;
+  font-size: 13px;
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.code {
+  font-family: var(--ds-font-family-code);
+  font-size: 12px;
+  line-height: 20px;
+  tab-size: 2;
+  padding-bottom: 16px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.line {
+  display: flex;
+  min-width: max-content;
+}
+
+.line:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.gutter {
+  flex: none;
+  width: 48px;
+  padding-right: 12px;
+  text-align: right;
+  color: var(--dsw-alias-label-tertiary);
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.content {
+  flex: 1;
+  padding-right: 16px;
+  white-space: pre;
+  color: var(--dsw-alias-label-primary);
+}
+
+/* Rendered Markdown reader body: MarkdownText's own module sheet carries the
+   typographic cascade; these edges fit it into the scrolling drawer column. */
+.markdownBody {
+  padding: 8px 16px 24px;
+}

@@ -3,7 +3,7 @@
  */
 
 import { z } from 'zod'
-import type { DirectoryEntry } from './host.ts'
+import type { DirectoryEntry, FileListingEntry } from './host.ts'
 import type { RequestPayload, ResponseValue } from './rpc-map.ts'
 import type { Wire } from './rpc.schema.ts'
 
@@ -73,3 +73,37 @@ export const hostOpenPathRequestSchema = z.object({
 export const hostOpenPathValueSchema = z.object({
   opened: z.literal(true),
 }) satisfies z.ZodType<Wire<ResponseValue<'host.openPath'>>>
+
+/** host.readFile request payload. */
+export const hostReadFileRequestSchema = z.object({
+  path: z.string().min(1),
+}) satisfies z.ZodType<Wire<RequestPayload<'host.readFile'>>>
+
+/** host.readFile response value. */
+export const hostReadFileValueSchema = z.object({
+  path: z.string(),
+  content: z.string(),
+  size: z.number().int().nonnegative(),
+  truncated: z.boolean(),
+  binary: z.boolean(),
+}) satisfies z.ZodType<Wire<ResponseValue<'host.readFile'>>>
+
+/** One mixed listing row shared by `fileListingEntrySchema`. */
+export const fileListingEntrySchema = z.object({
+  name: z.string(),
+  path: z.string(),
+  kind: z.enum(['directory', 'file']),
+  hidden: z.boolean(),
+}) satisfies z.ZodType<Wire<FileListingEntry>>
+
+/** host.listFiles request payload; an absent path lists the host process cwd. */
+export const hostListFilesRequestSchema = z.object({
+  path: z.string().optional(),
+}) satisfies z.ZodType<Wire<RequestPayload<'host.listFiles'>>>
+
+/** host.listFiles response value. */
+export const hostListFilesValueSchema = z.object({
+  path: z.string(),
+  entries: z.array(fileListingEntrySchema),
+  truncated: z.boolean(),
+}) satisfies z.ZodType<Wire<ResponseValue<'host.listFiles'>>>

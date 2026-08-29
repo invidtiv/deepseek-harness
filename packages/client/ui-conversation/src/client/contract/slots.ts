@@ -751,10 +751,12 @@ export interface ChatViewInjected {
   /** Selection write + details panel opening in one gesture (store action + layout orchestration). */
   openDetails: (target: SelectionTarget) => void
   /**
-   * Open a tool-arg filesystem path with the host OS default application
-   * (relative paths resolve against the session cwd). Always returns a
-   * promise: fulfills when the Host opens the path, rejects when it cannot
-   * hand the path off (the chat view shows that reason and a retry).
+   * Open a tool-arg filesystem path (relative paths resolve against the
+   * session cwd). A file path opens in the in-app file viewer when that
+   * plugin is composed in (fulfilling immediately); a directory and an
+   * absent viewer keep the host OS default application: fulfills when the
+   * Host hands the path off, rejects when it cannot (the chat view shows
+   * that reason and a retry).
    */
   openFile: (path: string) => Promise<void>
   loadOlder: () => void

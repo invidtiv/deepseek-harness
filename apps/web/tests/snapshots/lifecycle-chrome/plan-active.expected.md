@@ -38,6 +38,8 @@
   - text: DeepSeek-V4-Flash
   - img
 - button "Send message" [disabled]
+- button "Expand file explorer":
+  - img
 - text: Details
 - button "Close details"
 - text: Click a tool row in the message flow to view its details

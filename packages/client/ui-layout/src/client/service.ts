@@ -23,10 +23,16 @@ export type PanelActions = BoundActions<ReturnType<typeof createLayoutStore>>
 export interface ILayout {
   /** Toggle the sidebar panel (closed ⟷ contract default width). */
   toggleSidebar(): void
+  /** Toggle the explorer panel (closed ⟷ contract default width). */
+  toggleExplorer(): void
   /** Open the details panel (no-op when already open). */
   openDetails(): void
   /** Close the details panel. */
   closeDetails(): void
+  /** Open the file-viewer panel (no-op when already open). */
+  openFileViewer(): void
+  /** Close the file-viewer panel. */
+  closeFileViewer(): void
 }
 
 /** Cross-plugin panel-action face (ctx.layout). */
@@ -49,6 +55,11 @@ export class LayoutController implements ILayout {
     this.#require().toggleSidebar()
   }
 
+  /** Toggle the explorer panel (closed ⟷ contract default width). */
+  toggleExplorer(): void {
+    this.#require().toggleExplorer()
+  }
+
   /** Open the details panel (no-op when already open). */
   openDetails(): void {
     this.#require().openDetails()
@@ -57,6 +68,16 @@ export class LayoutController implements ILayout {
   /** Close the details panel. */
   closeDetails(): void {
     this.#require().closeDetails()
+  }
+
+  /** Open the file-viewer panel (no-op when already open). */
+  openFileViewer(): void {
+    this.#require().openFileViewer()
+  }
+
+  /** Close the file-viewer panel. */
+  closeFileViewer(): void {
+    this.#require().closeFileViewer()
   }
 
   #require(): PanelActions {

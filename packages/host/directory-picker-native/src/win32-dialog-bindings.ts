@@ -32,12 +32,14 @@ interface Koffi {
  * Read a NUL-terminated UTF-16 string at a native address. koffi's
  * `_Out_ void **` out-params surface a raw address, and
  * `koffi.decode(addr, 'str16')` would dereference it as a pointer — crash
- * on real Windows — so view the memory directly instead.
+ * on real Windows — so view the memory directly instead. The terminator is
+ * the two-zero-byte pair of UTF-16LE; a lone zero low byte is a code unit
+ * like 开 (U+5F00, bytes 00 5F), not the end of the string.
  */
 function readUtf16(koffi: Koffi, address: unknown): string {
   const bytes = Buffer.from(koffi.view(address, 32768))
   let end = 0
-  while (end + 1 < bytes.length && bytes[end] !== 0) end += 2
+  while (end + 1 < bytes.length && (bytes[end] !== 0 || bytes[end + 1] !== 0)) end += 2
   return bytes.toString('utf16le', 0, end)
 }
 

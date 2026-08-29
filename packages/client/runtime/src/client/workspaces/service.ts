@@ -2,7 +2,7 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type {
-  DirectoryListing, IApiClient, RpcError,
+  DirectoryListing, FileContents, FileListing, IApiClient, RpcError,
   SessionId, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
 import type { SnapshotStore } from '../contract/store.ts'
@@ -44,6 +44,22 @@ export class DirectoryBrowseError extends Error {
   constructor(readonly rpcError: RpcError) {
     super(`directory browse failed: ${rpcError.code}: ${rpcError.message}`)
     this.name = 'DirectoryBrowseError'
+  }
+}
+
+/** Structured read failure so the file viewer can branch on Host business codes. */
+export class FileReadError extends Error {
+  constructor(readonly rpcError: RpcError) {
+    super(`file read failed: ${rpcError.code}: ${rpcError.message}`)
+    this.name = 'FileReadError'
+  }
+}
+
+/** Structured listing failure so the file explorer can surface Host business codes. */
+export class FileListError extends Error {
+  constructor(readonly rpcError: RpcError) {
+    super(`file listing failed: ${rpcError.code}: ${rpcError.message}`)
+    this.name = 'FileListError'
   }
 }
 
@@ -247,6 +263,32 @@ export class WorkspaceRuntime implements IWorkspaces {
     if (!response.result.ok) {
       throw new Error(`path open failed: ${response.result.error.message}`)
     }
+  }
+
+  /**
+   * Read one text file's contents through the Host's file-viewer capability.
+   * @param path - absolute or host-resolvable path.
+   * @param signal - caller lifetime; abort stops the Host's read.
+   * @returns the file contents.
+   */
+  async readFile(path: string, signal?: AbortSignal): Promise<FileContents> {
+    const response = await this.api.host.readFile({ path }, signal)
+    if (!response.result.ok) {
+      throw new FileReadError(response.result.error)
+    }
+    return response.result.value
+  }
+
+  /**
+   * List one mixed directory level through the Host's file-explorer capability.
+   * @param path - absolute directory to list; absent lists the default project root.
+   * @param signal - caller lifetime; abort stops the Host's scan.
+   * @returns the level's mixed listing.
+   */
+  async listFiles(path?: string, signal?: AbortSignal): Promise<FileListing> {
+    const response = await this.api.host.listFiles(path === undefined ? {} : { path }, signal)
+    if (!response.result.ok) throw new FileListError(response.result.error)
+    return response.result.value
   }
 
   /**

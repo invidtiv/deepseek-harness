@@ -10,6 +10,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 // Type-only: pulls the locale plugin's Context merge (ctx.locale).
 import type {} from '@deepseek-ai/dsh-client-locale/client'
+// Type-only: pulls the file viewer's Context merge (ctx.get('fileViewer')).
+import type {} from '@deepseek-ai/dsh-client-ui-file-viewer/client'
 import type { ViewTab } from './contract/views.ts'
 import type {
   ApprovalWait, ChatNodeTurnDataInjected, ChatScrollPosition, ChatViewInjected, ComposerBarInjected,
@@ -399,7 +401,16 @@ export function apply(ctx: Context): void {
         fileMentions: owner => ctx.get('chatFileMentions')?.forClosing(owner),
         openFile: (path) => {
           const cwd = sessions.list.getSnapshot().byId[sessionId]?.cwd
-          return workspaces.openPath(resolveWorkspacePath(cwd, path))
+          const resolved = resolveWorkspacePath(cwd, path)
+          // A file reference opens in the in-app viewer when that plugin is
+          // composed in; a directory (the "Show in folder" gesture) and an
+          // absent viewer keep the Host's native opener.
+          const fileViewer = ctx.get('fileViewer')
+          if (fileViewer !== undefined && path !== '.' && !/[/\\]$/.test(path)) {
+            fileViewer.open(resolved)
+            return Promise.resolve()
+          }
+          return workspaces.openPath(resolved)
         },
         loadOlder: () => { void scoped.loadOlder() },
         loadImage: attachment => conversation.resolveImage(sessionId, attachment),

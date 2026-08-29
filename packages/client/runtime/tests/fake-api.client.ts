@@ -2,7 +2,7 @@
 // data source on a real clock; behavior tests need per-case responses and
 // deferred-controlled timing). Streams are hand pumps: pushMux/pushHost.
 import type {
-  ClientResponse, HostFrame, IApiClient, ModelSelection, MuxFrame,
+  ClientResponse, FileContents, FileListing, HostFrame, IApiClient, ModelSelection, MuxFrame,
   RpcError, RpcReceipt, RpcRequest, RpcResponse, SessionId, SessionModels, SessionSearchItem, SkillEntry,
   WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-api-remotes/client'
@@ -118,6 +118,8 @@ export class FakeApiClient implements IApiClient {
     () => Promise.resolve(ok({ path: null }))
   onOpenPath: (payload: unknown) => Promise<RpcResponse<{ opened: true }>> =
     () => Promise.resolve(ok({ opened: true as const }))
+  onReadFile: (payload: unknown) => Promise<RpcResponse<FileContents>> =
+    () => Promise.resolve(ok({ path: '/fake/read.txt', content: 'fake\n', size: 5, truncated: false, binary: false }))
 
   onListDirectory: (payload: unknown) => Promise<RpcResponse<{
     path: string
@@ -181,7 +183,12 @@ export class FakeApiClient implements IApiClient {
     listDirectory: (payload: unknown) => this.record('host.listDirectory', payload, this.onListDirectory(payload)),
     createDirectory: (payload: unknown) => this.record('host.createDirectory', payload, this.onCreateDirectory(payload)),
     openPath: (payload: unknown) => this.record('host.openPath', payload, this.onOpenPath(payload)),
+    readFile: (payload: unknown) => this.record('host.readFile', payload, this.onReadFile(payload)),
+    listFiles: (payload: unknown) => this.record('host.listFiles', payload, this.onListFiles(payload)),
   }
+
+  onListFiles: (payload: unknown) => Promise<RpcResponse<FileListing>> =
+    () => Promise.resolve(ok({ path: '/home/fake', entries: [], truncated: false }))
 
   // The archive-set field defaults at the binding below so list stubs keep
   // the pre-archive `{ items }` shape; a stub carrying the field wins.

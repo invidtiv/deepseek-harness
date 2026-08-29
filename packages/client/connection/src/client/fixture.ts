@@ -1613,6 +1613,18 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     }
     return crumbs
   }
+  /** Plain join under the fixture root's '/' parent — same identity rule as createDirectory. */
+  const entryPathOf = (parent: string, name: string): string =>
+    parent === '/' ? `/${name}` : `${parent}/${name}`
+  /** Requested listing level from the tree, or undefined when absent (shared by listDirectory/listFiles). */
+  const listingLevel = (path?: string): { target: string; children: string[] } | undefined => {
+    const target = path ?? FIXTURE_HOME
+    const children = childrenOf(target)
+    return children === undefined ? undefined : { target, children }
+  }
+  const levelPathOf = (path?: string): string => path ?? FIXTURE_HOME
+  const unreadable = <T>(request: RpcRequest<{ path?: string }>, target: string): Promise<RpcResponse<T>> =>
+    err(request, { code: 'directory-unreadable', message: `cannot list ${target}: not in the fixture tree`, details: { path: target } })
   const mint = (): ReturnType<typeof RpcId> => RpcId(`fx-rpc-${nextRpc++}`)
   /** Resident pending approval (stable rpcId: every mux open replays the same id while unanswered, matching host replay semantics). */
   const pendingApprovalRpcId = mint()
@@ -2624,17 +2636,16 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
       // same tree the browse primitives serve).
       pickDirectory: request => ok(request, { path: `${FIXTURE_HOME}/Documents/project` }),
       listDirectory: (request) => {
-        const target = request.payload.path ?? FIXTURE_HOME
-        const children = childrenOf(target)
-        if (children === undefined) {
-          return err(request, { code: 'directory-unreadable', message: `cannot list ${target}: not in the fixture tree`, details: { path: target } })
+        const level = listingLevel(request.payload.path)
+        if (level === undefined) {
+          return unreadable(request, levelPathOf(request.payload.path))
         }
         return ok(request, {
-          path: target,
+          path: level.target,
           home: FIXTURE_HOME,
-          crumbs: crumbsOf(target),
-          entries: [...children].sort((a, b) => a.localeCompare(b))
-            .map(name => ({ name, path: target === '/' ? `/${name}` : `${target}/${name}`, hidden: name.startsWith('.') })),
+          crumbs: crumbsOf(level.target),
+          entries: [...level.children].sort((a, b) => a.localeCompare(b))
+            .map(name => ({ name, path: entryPathOf(level.target, name), hidden: name.startsWith('.') })),
           // The fixture tree is tiny; no level ever reaches a backend bound.
           truncated: false,
         })
@@ -2656,6 +2667,36 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
         return ok(request, { path: target })
       },
       openPath: request => ok(request, { opened: true as const }),
+      // Deterministic text read for the file viewer: a known directory is
+      // unreadable, anything else is a two-line text file.
+      readFile: (request) => {
+        const path = request.payload.path
+        if (directoryTree.has(path)) {
+          return err(request, { code: 'file-unreadable', message: `${path} is a directory`, details: { path } })
+        }
+        const content = `fixture file: ${path}\nconst answer = 42\n`
+        return ok(request, { path, content, size: content.length, truncated: false, binary: false })
+      },
+      // Deterministic mixed listing for the file explorer: the same tree the
+      // browse primitives serve; a child that is itself a tree key is a
+      // directory, everything else is a file.
+      listFiles: (request) => {
+        const level = listingLevel(request.payload.path)
+        if (level === undefined) {
+          return unreadable(request, levelPathOf(request.payload.path))
+        }
+        return ok(request, {
+          path: level.target,
+          entries: [...level.children].sort((a, b) => a.localeCompare(b))
+            .map(name => ({
+              name,
+              path: entryPathOf(level.target, name),
+              kind: directoryTree.has(entryPathOf(level.target, name)) ? 'directory' : 'file',
+              hidden: name.startsWith('.'),
+            })),
+          truncated: false,
+        })
+      },
     },
     workspace: {
       list: request => ok(request, {
@@ -3196,6 +3237,8 @@ export class FixtureApiClient extends AbstractApiClient {
       case 'host.listDirectory': return this.api.host.listDirectory(request, new AbortController().signal)
       case 'host.createDirectory': return this.api.host.createDirectory(request)
       case 'host.openPath': return this.api.host.openPath(request, new AbortController().signal)
+      case 'host.readFile': return this.api.host.readFile(request, new AbortController().signal)
+      case 'host.listFiles': return this.api.host.listFiles(request, new AbortController().signal)
       case 'workspace.list': return this.api.workspace.list(request)
       case 'workspace.create': return this.api.workspace.create(request)
       case 'workspace.rename': return this.api.workspace.rename(request)

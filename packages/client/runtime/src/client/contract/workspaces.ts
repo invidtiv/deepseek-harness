@@ -6,7 +6,7 @@
  * the concrete class. Widening this interface is the explicit act of
  * widening what features may do to the workspaces domain.
  */
-import type { DirectoryListing, SessionId, WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-remotes/client'
+import type { DirectoryListing, FileContents, FileListing, SessionId, WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-remotes/client'
 import type { WorkspaceListState } from '../workspaces/service.ts'
 import type { ObservableSnapshot } from './store.ts'
 
@@ -58,6 +58,27 @@ export interface IWorkspaces {
    * @param path - absolute or host-resolvable path.
    */
   openPath(path: string): Promise<void>
+  /**
+   * Read one text file's contents for the file viewer. Bounded on the Host: a
+   * too-large file returns a truncated prefix, a non-text file returns `binary`
+   * with empty content, and a missing directory or unreadable target rejects
+   * with a typed wire error.
+   * @param path - absolute or host-resolvable path.
+   * @param signal - caller lifetime; abort stops the Host's read.
+   * @returns the file contents.
+   */
+  readFile(path: string, signal?: AbortSignal): Promise<FileContents>
+  /**
+   * List one mixed directory level (child directories and files) for the file
+   * explorer. An absent path lists the Host's default project root. Bounded on
+   * the Host like `listDirectory`: the name-sorted head is returned and
+   * `truncated` flags a cut level; unreadable targets reject with a typed wire
+   * error.
+   * @param path - absolute directory to list; absent lists the default project root.
+   * @param signal - caller lifetime; abort stops the Host's scan.
+   * @returns the level's mixed listing.
+   */
+  listFiles(path?: string, signal?: AbortSignal): Promise<FileListing>
   /**
    * Rename a Workspace.
    * @param workspaceId - target workspace.

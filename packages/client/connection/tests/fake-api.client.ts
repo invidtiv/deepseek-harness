@@ -2,7 +2,7 @@
 // data source on a real clock; behavior tests need per-case responses and
 // deferred-controlled timing). Streams are hand pumps: pushMux/pushHost.
 import type {
-  HostFrame, IApiClient, ModelSelection, MuxFrame,
+  FileContents, HostFrame, IApiClient, ModelSelection, MuxFrame,
   RpcRequest, RpcResponse, SessionId, SessionModels, SessionSearchItem, SkillEntry, WorkspaceId,
 } from '../src/client/api.ts'
 import { RpcId } from '../src/client/api.ts'
@@ -84,6 +84,8 @@ export class FakeApiClient implements IApiClient {
     () => Promise.resolve(ok({ path: null }))
   onOpenPath: (payload: unknown) => Promise<RpcResponse<{ opened: true }>> =
     () => Promise.resolve(ok({ opened: true as const }))
+  onReadFile: (payload: unknown) => Promise<RpcResponse<FileContents>> =
+    () => Promise.resolve(ok({ path: '/fake/read.txt', content: 'fake\n', size: 5, truncated: false, binary: false }))
 
   onListDirectory: (payload: unknown) => Promise<RpcResponse<{
     path: string
@@ -96,6 +98,13 @@ export class FakeApiClient implements IApiClient {
 
   onCreateDirectory: (payload: unknown) => Promise<RpcResponse<{ path: string }>> =
     () => Promise.resolve(ok({ path: '/home/fake/new' }))
+
+  onListFiles: (payload: unknown) => Promise<RpcResponse<{
+    path: string
+    entries: { name: string; path: string; kind: 'directory' | 'file'; hidden: boolean }[]
+    truncated: boolean
+  }>> =
+    () => Promise.resolve(ok({ path: '/home/fake', entries: [], truncated: false }))
 
   private readonly muxConns: StreamConn<MuxFrame>[] = []
   private readonly hostConns: StreamConn<HostFrame>[] = []
@@ -147,6 +156,8 @@ export class FakeApiClient implements IApiClient {
     listDirectory: payload => this.record('host.listDirectory', payload, this.onListDirectory(payload)),
     createDirectory: payload => this.record('host.createDirectory', payload, this.onCreateDirectory(payload)),
     openPath: payload => this.record('host.openPath', payload, this.onOpenPath(payload)),
+    readFile: payload => this.record('host.readFile', payload, this.onReadFile(payload)),
+    listFiles: payload => this.record('host.listFiles', payload, this.onListFiles(payload)),
   }
 
   readonly workspace: IApiClient['workspace'] = {

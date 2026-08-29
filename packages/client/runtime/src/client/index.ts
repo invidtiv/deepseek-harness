@@ -17,6 +17,7 @@ import { ConversationEventRegistry } from './conversation/event-registry.ts'
 import { ConversationViewRegistry } from './conversation/view-registry.ts'
 
 export { isAppendSurfaceEvent, isReplacementSurfaceEvent } from '@deepseek-ai/dsh-session/surface'
+export type { FileContents } from '@deepseek-ai/dsh-api-remotes/client'
 
 export { SlotRegistry } from './slots.ts'
 export { ConversationEventRegistry } from './conversation/event-registry.ts'
@@ -45,7 +46,7 @@ export { SessionProvideChannel } from './sessions/provide.ts'
 export type { SessionProvideChannelHost } from './sessions/provide.ts'
 export { createScope } from './agents/scope.ts'
 export type { AgentScopeHandle } from './agents/scope.ts'
-export { DirectoryBrowseError, WorkspaceCreateError, WorkspaceRuntime } from './workspaces/service.ts'
+export { DirectoryBrowseError, FileListError, FileReadError, WorkspaceCreateError, WorkspaceRuntime } from './workspaces/service.ts'
 export { abbreviateHomePath, resolveWorkspacePath } from './workspaces/path.ts'
 // Contract only: the scope implementation and its Host transport belong to
 // dsh-client-ui-settings (see that package's settings-scope.ts).
@@ -66,6 +67,7 @@ export type { WorkspaceListState } from './workspaces/service.ts'
 export type {
   DirectoryEntry, DirectoryListing, WorkspaceId, WorkspaceView,
 } from '@deepseek-ai/dsh-client-connection/client'
+export type { FileListing, FileListingEntry } from '@deepseek-ai/dsh-api-remotes/client'
 // Runtime owns the snapshot store; ui-renderer only binds it to React.
 export { createSnapshotStore, defineStore, shallowEqual } from './contract/store.ts'
 export type {

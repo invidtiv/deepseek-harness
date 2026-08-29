@@ -180,6 +180,16 @@ describe('loadWin32DialogBindings over the fake COM world', () => {
     expect(world.uninitialized).toBe(1)
   })
 
+  it('returns the complete path when a BMP code unit has a zero low byte', async () => {
+    // 开 (U+5F00) encodes as bytes 00 5F: only a two-zero-byte pair is the
+    // UTF-16 NUL terminator, so the path must survive the conversion whole
+    // (a truncated path would fail the workspace adoption that follows).
+    const world = comWorld({ path: 'C:\\选中\\开目录' })
+    installFakeKoffi(world)
+    const bindings = await (await loadBindingsModule()).loadWin32DialogBindings()
+    expect(runFolderDialog(bindings, 'Pick', vi.fn())).toBe('C:\\选中\\开目录')
+  })
+
   it('maps dismissal and the S_FALSE CoInitializeEx', async () => {
     const world = comWorld({ showHr: HRESULT_CANCELLED, coInitHr: 1 })
     installFakeKoffi(world)
