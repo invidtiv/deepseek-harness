@@ -4,6 +4,8 @@ import { notifySubscribers } from '@deepseek-ai/dsh-client-store'
 import type {} from '@deepseek-ai/dsh-api-workspace-controller/remote'
 import type { RemoteFailure, RemoteResult, TypertClientRemote } from '@deepseek-ai/dsh-typert-protocol'
 import type {
+  FileContents,
+  FileListing,
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
   WorkspaceBaseline,
@@ -180,6 +182,40 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
   ): Promise<RemoteResult<WorkspaceArchiveValue>> {
     const result = await this.remote.archiveSession({ sessionId })
     if (result.ok) this.installArchived(result.value.archivedSessionIds)
+    return result
+  }
+
+  /**
+   * Read one text file's contents for the file viewer; the result reaches no
+   * projection state.
+   * @param path - absolute file path.
+   * @param signal - caller lifetime.
+   * @returns generated Remote result.
+   */
+  async readFile(path: string, signal?: AbortSignal): Promise<RemoteResult<FileContents>> {
+    let result: RemoteResult<FileContents>
+    try {
+      result = await this.remote.readFile({ path }, signal)
+    } catch (error) {
+      result = failureResult(error)
+    }
+    return result
+  }
+
+  /**
+   * List one mixed directory level for the file explorer; the result reaches
+   * no projection state.
+   * @param path - absolute directory; absent lists the Host's default project root.
+   * @param signal - caller lifetime.
+   * @returns generated Remote result.
+   */
+  async listFiles(path?: string, signal?: AbortSignal): Promise<RemoteResult<FileListing>> {
+    let result: RemoteResult<FileListing>
+    try {
+      result = await this.remote.listFiles(path === undefined ? {} : { path }, signal)
+    } catch (error) {
+      result = failureResult(error)
+    }
     return result
   }
 

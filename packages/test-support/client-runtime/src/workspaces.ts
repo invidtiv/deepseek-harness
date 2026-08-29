@@ -1,7 +1,7 @@
 /** Test-owned workspaces face: the renderer standard-kit observable plus recorded actions. */
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {
-  IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
+  FileContents, FileListing, IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -78,6 +78,35 @@ export class TestWorkspaces implements IWorkspaces {
       path: input.path,
       sessionIds: [],
     } as unknown as WorkspaceView
+  }
+
+  /**
+   * Read one text file for the file viewer (recorded). The default serves a
+   * one-line file; stub for error or binary cases.
+   * @param path - host-resolvable path.
+   * @param signal - caller lifetime.
+   * @returns the file contents.
+   */
+  async readFile(path: string, signal?: AbortSignal): Promise<FileContents> {
+    this.calls.push({ method: 'readFile', args: [path, signal] })
+    const stub = this.stubs.get('readFile')
+    if (stub !== undefined) return await (stub(path, signal) as Promise<FileContents>)
+    const content = `fixture ${path}\n`
+    return { path, content, size: content.length, truncated: false, binary: false }
+  }
+
+  /**
+   * Mixed listing for the file explorer (recorded). The default serves an
+   * empty level; stub to shape a tree.
+   * @param path - absolute directory to list; absent lists the default project root.
+   * @param signal - caller lifetime.
+   * @returns the level's listing.
+   */
+  async listFiles(path?: string, signal?: AbortSignal): Promise<FileListing> {
+    this.calls.push({ method: 'listFiles', args: [path, signal] })
+    const stub = this.stubs.get('listFiles')
+    if (stub !== undefined) return await (stub(path, signal) as Promise<FileListing>)
+    return { path: '/home/test', entries: [], truncated: false }
   }
 
   /**

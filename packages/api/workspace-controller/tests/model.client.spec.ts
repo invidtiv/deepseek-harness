@@ -3,6 +3,7 @@ import {
   ClientWorkspaceModel, type WorkspaceRemote,
 } from '../src/client/index.ts'
 import type {
+  FileContents, FileListRequest, FileListing, FileReadRequest,
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
   WorkspaceCreateRequest,
@@ -114,6 +115,16 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<RemoteResult<WorkspaceArchiveValue>> {
     this.record('archiveSession', request)
     return this.onArchiveSession(request)
+  }
+
+  readFile(request: FileReadRequest): Promise<RemoteResult<FileContents>> {
+    this.record('readFile', request)
+    return Promise.resolve(remoteOk({ path: request.path, content: '', size: 0, truncated: false, binary: false }))
+  }
+
+  listFiles(request: FileListRequest): Promise<RemoteResult<FileListing>> {
+    this.record('listFiles', request)
+    return Promise.resolve(remoteOk({ path: request.path ?? '/home/test', entries: [], truncated: false }))
   }
 
   async *follow(_signal?: AbortSignal): AsyncGenerator<WorkspaceFollowFrame> {}

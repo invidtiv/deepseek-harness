@@ -47,6 +47,27 @@ interface ModelSelection {
   readonly reasoningEffort?: string
 }
 
+/** Structural mirror of the workspace readFile wire value (connection does not depend on the controller package). */
+interface FixtureFileContents {
+  readonly path: string
+  readonly content: string
+  readonly size: number
+  readonly truncated: boolean
+  readonly binary: boolean
+}
+
+/** Structural mirror of the workspace listFiles wire value. */
+interface FixtureFileListing {
+  readonly path: string
+  readonly entries: readonly {
+    readonly name: string
+    readonly path: string
+    readonly kind: 'directory' | 'file'
+    readonly hidden: boolean
+  }[]
+  readonly truncated: boolean
+}
+
 interface ModelProviderGroup {
   readonly id: string
   readonly name: string
@@ -2306,6 +2327,46 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
     },
   }
 
+  /**
+   * Canonical fixture implementation of the workspace file verbs: the same
+   * design-mock tree the browse primitives serve, with deterministic text
+   * reads for the file viewer and mixed listings for the file explorer.
+   */
+  const workspaceFileRemotes = {
+    readFile(path: string): ConnectionRpcResult<FixtureFileContents> {
+      if (directoryTree.has(path)) {
+        return { ok: false, error: { code: 'file-unreadable', message: `${path} is a directory`, details: { path } } }
+      }
+      const content = `fixture file: ${path}\nconst answer = 42\n`
+      return { ok: true, value: { path, content, size: content.length, truncated: false, binary: false } }
+    },
+    listFiles(path?: string): ConnectionRpcResult<FixtureFileListing> {
+      const target = path ?? FIXTURE_HOME
+      const children = childrenOf(target)
+      if (children === undefined) {
+        return {
+          ok: false,
+          error: { code: 'directory-unreadable', message: `cannot list ${target}: not in the fixture tree`, details: { path: target } },
+        }
+      }
+      return {
+        ok: true,
+        value: {
+          path: target,
+          entries: [...children].sort((a, b) => a.localeCompare(b))
+            .map(name => ({
+              name,
+              path: target === '/' ? `/${name}` : `${target}/${name}`,
+              kind: directoryTree.has(target === '/' ? `/${name}` : `${target}/${name}`) ? 'directory' as const : 'file' as const,
+              hidden: name.startsWith('.'),
+            })),
+          // The fixture tree is tiny; no level ever reaches a backend bound.
+          truncated: false,
+        },
+      }
+    },
+  }
+
   const goalRemotes = {
     create(id: SessionId, request: { objective: string; maxGoalRounds?: number }): RpcResult<{ ref: FxGoalRef }> {
       const missing = requireGoalSession(id)
@@ -3571,6 +3632,8 @@ function createFixtureWorld(options: FixtureOptions): FixtureWorld {
           request as WorkspaceInsertSessionBeforeRequest,
         )
         case 'workspace/archiveSession': return workspaceApi.archiveSession(request as WorkspaceArchiveSessionRequest)
+        case 'workspace/readFile': return Promise.resolve(workspaceFileRemotes.readFile(args.path as string))
+        case 'workspace/listFiles': return Promise.resolve(workspaceFileRemotes.listFiles(args.path))
         default:
           return Promise.reject(new Error(`fixture connection RPC endpoint ${JSON.stringify(endpoint)} is unavailable`))
       }

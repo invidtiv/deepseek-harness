@@ -1,0 +1,3 @@
+- text: a.txt {{cwd}}/a.txt
+- button "Close file viewer"
+- text: Failed to read file

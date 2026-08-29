@@ -1,7 +1,7 @@
 /**
  * Layout plugin, browser half: one register() call contributes AppFrame into
  * the runtime's built-in 'root' slot and, in the same breath, declares the
- * four child slots (declaration = exclusive render authority), seats the
+ * five child slots (declaration = exclusive render authority), seats the
  * layout store (panel geometry), and wires the panel-action service face.
  * ctx.layout is the cross-plugin panel-action contract; navigation state lives
  * with the runtime sessions service. A second effect seats the theme
@@ -74,6 +74,27 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
      */
     'details': { kind: 'single'; scope: 'session'; owner: DetailsOwnerProps }
     /**
+     * The rightmost file-viewer column, shown when the layout opens it.
+     * OCCUPIED by ui-file-viewer's FileViewer, which shows the active file's
+     * contents. Absent an occupant the column renders nothing. Global scope:
+     * the drawer is a single frame-wide surface (not per-session), so it
+     * receives the global `useSessions`/`useWorkspaces` kit but no `sessionId`.
+     *
+     * No owner props: the occupant reads its own store and `ctx.layout` owns
+     * whether the column is open.
+     */
+    'fileViewer': { kind: 'single'; scope: 'root'; owner: FileViewerOwnerProps }
+    /**
+     * The explorer column between center and the right panels, showing the
+     * project's file tree. OCCUPIED by ui-file-explorer's FileExplorerRoot;
+     * absent an occupant a closed column renders only its rail. Global scope:
+     * the tree is one frame-wide surface, not per-session.
+     *
+     * The occupant receives the frame's live column state (collapsed, width)
+     * and is expected to render the compact rail while collapsed.
+     */
+    'explorer': { kind: 'single'; scope: 'root'; owner: ExplorerOwnerProps }
+    /**
      * Frame-wide floating layer, above every column and outside their scroll
      * containers. Deliberately generic and unowned by any feature: a badge, a
      * toast stack or a status pill all belong here, and entries order among
@@ -107,6 +128,17 @@ export interface ConvOwnerProps {}
 /** Details owner share: empty — sessionId arrives as a framework-standard prop. */
 export interface DetailsOwnerProps {}
 
+/** File-viewer owner share: empty — the occupant reads its own store. */
+export interface FileViewerOwnerProps {}
+
+/** Explorer owner share: live column state from the frame's concession solve. */
+export interface ExplorerOwnerProps {
+  /** True when the explorer is closed (the column renders the compact rail). */
+  collapsed: boolean
+  /** Rendered column width in px (EXPLORER_COLLAPSED when collapsed). */
+  width: number
+}
+
 /** Required services (cordis fiber inject — the loader passes all module exports as an object plugin). */
 export const inject = ['slots', 'theme', 'locale']
 
@@ -127,6 +159,8 @@ export function apply(ctx: ClientContext): void {
         'sidebar': { kind: 'single', scope: 'root' },
         'conversation': { kind: 'single', scope: 'session-maybe' },
         'details': { kind: 'single', scope: 'session' },
+        'fileViewer': { kind: 'single', scope: 'root' },
+        'explorer': { kind: 'single', scope: 'root' },
         'shell.overlay': { kind: 'list', scope: 'root' },
       },
       // Exclusive store: the factory itself — the framework instantiates per

@@ -72,6 +72,9 @@
       "path": "../ui-conversation"
     },
     {
+      "path": "../ui-file-viewer"
+    },
+    {
       "path": "../ui-layout"
     },
     {

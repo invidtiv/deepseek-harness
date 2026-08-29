@@ -38,7 +38,7 @@ const UI_EXPANDED_EXPECTED = fileURLToPath(
 // Command-row goldens over the same conversation after direct host commands.
 const COMMAND_ROW_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/command-row.expected.md', import.meta.url))
 const FEEDBACK_ROW_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/feedback-row.expected.md', import.meta.url))
-const FILE_OPEN_FAILURE_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/file-open-failure.expected.md', import.meta.url))
+const FILE_READ_FAILURE_EXPECTED = fileURLToPath(new URL('../../../snapshots/web/seeded-history/file-read-failure.expected.md', import.meta.url))
 const MODE = webSnapshotMode()
 const SEED_ID = 'seeded-history-web-e2e'
 
@@ -409,53 +409,60 @@ describe('web e2e: seeded history renders through cold resume', () => {
 
   it.skipIf(MODE === 'record')('file-path tool rows rebuilt from the cold log stay details-inert', async () => {
     onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-toolrow'))
-    // Interaction over cold-resumed history: read summaries are host-open
-    // file links (not expand-in-place / not details). Runs after the golden
-    // capture; still zero model calls.
+    // Interaction over cold-resumed history: read summaries are in-app
+    // viewer links (not expand-in-place / not details), so the click opens
+    // the file-viewer drawer and the details column must stay inert. Runs
+    // after the golden capture; still zero model calls.
     const fileLink = page.locator('[data-variant="read"] button').first()
     await expandOwningTurnProcess(page, fileLink)
     await fileLink.waitFor({ timeout: 10_000 })
     const frame = page.locator('[style*="grid-template-columns"]').first()
     expect(await frame.getAttribute('data-details-collapsed')).toBe('true')
-    const openPath = vi.spyOn(scaffold.ctx.sessionController, 'openWorkspacePath')
-      .mockResolvedValue({ opened: true })
+    const drawer = page.locator('div[class*="fileViewerCol"]')
+    // Pin the drawer's ready state: the replay workspace does not restore the
+    // pre-seeded a.txt, so the unmocked host read would land in the error state.
+    const read = vi.spyOn(scaffold.ctx.workspaceController, 'readFile').mockResolvedValue({
+      path: 'a.txt', content: 'alpha\n', size: 6, truncated: false, binary: false,
+    })
     try {
       await fileLink.click()
       await expect.poll(() => frame.getAttribute('data-details-collapsed'), { timeout: 5_000 }).toBe('true')
+      await expect.poll(() => drawer.locator('[data-status="ready"]').count(), { timeout: 5_000 }).toBe(1)
+      // Path label survives from the recorded args (a.txt).
+      await expect.poll(() => page.getByText('a.txt', { exact: false }).count(), { timeout: 5_000 }).toBeGreaterThan(0)
     } finally {
-      openPath.mockRestore()
+      // Shared page: a leftover drawer blocks later cases even when this one fails.
+      if (await drawer.locator('[data-status]').count() > 0) {
+        await page.getByRole('button', { name: 'Close file viewer' }).click()
+      }
+      read.mockRestore()
     }
-    // Path label survives from the recorded args (a.txt).
-    await expect.poll(() => page.getByText('a.txt', { exact: false }).count(), { timeout: 5_000 }).toBeGreaterThan(0)
   })
 
-  it.skipIf(MODE === 'record')('a Host open refusal keeps the reason and retries the same path', async () => {
-    onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-file-open-failure'))
+  it.skipIf(MODE === 'record')('a failed host read keeps the viewer open and retries the same path', async () => {
+    onTestFailed(() => saveFailureShot(page, 'web-e2e-seeded-file-read-failure'))
     const fileLink = page.locator('[data-variant="read"] button').first()
     await fileLink.waitFor({ timeout: 10_000 })
-    const openPath = vi.spyOn(scaffold.ctx.sessionController, 'openWorkspacePath')
-      .mockRejectedValue(new Error('xdg-open is not available'))
+    const drawer = page.locator('div[class*="fileViewerCol"]')
+    const read = vi.spyOn(scaffold.ctx.workspaceController, 'readFile')
+      .mockRejectedValue(new Error('EACCES: permission denied'))
     try {
       await fileLink.click()
-      const dialog = page.getByRole('dialog', { name: 'Couldn’t open file' })
-      await dialog.waitFor({ timeout: 5_000 })
-      const snapshot = await captureStableAria(page, '[role="dialog"]', scaffold.workspaceCwd)
-      await compareOrRefreshGolden(FILE_OPEN_FAILURE_EXPECTED, snapshot, MODE)
-      await expect.poll(() => dialog.innerText(), { timeout: 5_000 })
-        .toContain('path open failed: xdg-open is not available')
-      await page.getByRole('button', { name: 'Retry' }).click()
-      await expect.poll(() => openPath.mock.calls.length, { timeout: 5_000 }).toBe(2)
-      expect(openPath.mock.calls[0]![0]).toEqual(openPath.mock.calls[1]![0])
-      await page.getByRole('button', { name: 'Cancel' }).click()
-      await expect.poll(() => page.getByRole('dialog', { name: 'Couldn’t open file' }).count(), {
-        timeout: 5_000,
-      }).toBe(0)
+      await drawer.locator('[data-status="error"]').waitFor({ timeout: 5_000 })
+      const snapshot = await captureStableAria(page, 'div[class*="fileViewerCol"]', scaffold.workspaceCwd)
+      await compareOrRefreshGolden(FILE_READ_FAILURE_EXPECTED, snapshot, MODE)
+      // Re-clicking the same link re-requests the same resolved path.
+      await fileLink.click()
+      await expect.poll(() => read.mock.calls.length, { timeout: 5_000 }).toBe(2)
+      expect(read.mock.calls[0]![0]).toEqual(read.mock.calls[1]![0])
+      await page.getByRole('button', { name: 'Close file viewer' }).click()
+      await expect.poll(() => drawer.locator('[data-status]').count(), { timeout: 5_000 }).toBe(0)
     } finally {
-      // Shared page: a leftover mask blocks later cases even when this one fails.
-      if (await page.getByRole('dialog', { name: 'Couldn’t open file' }).count() > 0) {
-        await page.keyboard.press('Escape')
+      // Shared page: a leftover drawer blocks later cases even when this one fails.
+      if (await drawer.locator('[data-status]').count() > 0) {
+        await page.getByRole('button', { name: 'Close file viewer' }).click()
       }
-      openPath.mockRestore()
+      read.mockRestore()
     }
   })
 
@@ -563,7 +570,7 @@ describe('web e2e: seeded history renders through cold resume', () => {
     expect(tripwire.pageErrors).toEqual([])
     expect(tripwire.warnings).toEqual([])
     await assertFixtureInventory(SNAPSHOT_DIR, [
-      'command-row.expected.md', 'feedback-row.expected.md', 'file-open-failure.expected.md',
+      'command-row.expected.md', 'feedback-row.expected.md', 'file-read-failure.expected.md',
       'session.jsonl', 'ui.expected.md', 'ui-expanded.expected.md',
     ])
   })

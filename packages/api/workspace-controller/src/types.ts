@@ -147,3 +147,55 @@ export type WorkspaceFollowIncrement =
 export type WorkspaceFollowFrame =
   | { readonly type: 'baseline'; readonly value: WorkspaceBaseline }
   | WorkspaceFollowIncrement
+
+/** One text file's contents as the file viewer renders them, with the truncation and binary display flags that bound it. */
+export interface FileContents {
+  /** The absolute path read (echoed back to the client). */
+  readonly path: string
+  /** Decoded UTF-8 text; empty when `binary` is true. */
+  readonly content: string
+  /** Byte length of the file on disk. */
+  readonly size: number
+  /** True when the file exceeded the read bound and `content` is a truncated prefix. */
+  readonly truncated: boolean
+  /** True when the file is not valid UTF-8 text (content is empty). */
+  readonly binary: boolean
+}
+
+/** Workspace file read request. */
+export interface FileReadRequest {
+  /** Absolute file path to read. */
+  readonly path: string
+}
+
+/**
+ * One row of a {@link FileListing}: a child directory or file of the listed
+ * level. Kind follows the filesystem dirent (a symlink resolves to its
+ * target's kind), so a client can render enterable rows without probing.
+ */
+export interface FileListingEntry {
+  /** Base name shown in an explorer row. */
+  readonly name: string
+  /** Absolute host path — the client never joins path segments itself. */
+  readonly path: string
+  /** `'directory'` rows may be listed again; `'file'` rows are readable via `readFile`. */
+  readonly kind: 'directory' | 'file'
+  /** Hidden by the host platform's convention (dot-prefixed on POSIX); the client owns whether to show it. */
+  readonly hidden: boolean
+}
+
+/** Workspace file listing response value: one mixed directory level for the file explorer. */
+export interface FileListing {
+  /** Absolute path of the listed directory (echoed back to the client). */
+  readonly path: string
+  /** Children of the listed level, name-sorted; symlinks resolved to their target's kind. */
+  readonly entries: readonly FileListingEntry[]
+  /** True when the backend cut `entries` at its complete-result bound (the name-sorted tail is absent). */
+  readonly truncated: boolean
+}
+
+/** Workspace file listing request. */
+export interface FileListRequest {
+  /** Absolute directory to list; absent lists the Host's default project root. */
+  readonly path?: string
+}

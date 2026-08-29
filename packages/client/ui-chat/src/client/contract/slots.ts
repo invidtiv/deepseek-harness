@@ -116,6 +116,14 @@ export interface ChatViewInjected {
     transcriptView: SnapshotStore<TranscriptViewMode>
   }
   openDetails: (target: SelectionTarget) => void
+  /**
+   * Open a tool-arg filesystem path (relative paths resolve against the
+   * session cwd). A file path opens in the in-app file viewer when that
+   * plugin is composed in (fulfilling immediately); a directory and an
+   * absent viewer keep the host OS default application: fulfills when the
+   * Host hands the path off, rejects when it cannot (the chat view shows
+   * that reason and a retry).
+   */
   openFile: (path: string) => Promise<void>
   loadOlder: () => void
   loadImage: MessageImageLoader

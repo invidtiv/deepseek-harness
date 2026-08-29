@@ -173,6 +173,7 @@ export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
   slots: 'client-side interface-typed browser service — packages/client/ui-renderer/README.md owns the API',
   theme: 'client-side interface-typed browser service — packages/client/ui-theme/README.md owns the API',
   workspaces: 'client-side interface-typed browser service — packages/api/workspace-controller/README.md owns the API',
+  fileViewer: 'client-side interface-typed browser service — packages/client/ui-file-viewer/README.md owns the API',
 }
 
 /**
@@ -615,6 +616,11 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   ProjectionCheckpoint: 'session-projection.md',
   DirectoryPickerCapability: 'workspace.md',
   DirectoryListing: 'workspace.md',
+  FileContents: 'workspace.md',
+  FileListing: 'workspace.md',
+  FileListingEntry: 'workspace.md',
+  FileReadRequest: 'workspace.md',
+  FileListRequest: 'workspace.md',
   TypertContribution: 'invariants.md',
   TypertRemoteEventSource: 'typert.md',
   RemoteEventHostInfo: 'typert.md',

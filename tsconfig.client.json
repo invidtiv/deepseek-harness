@@ -70,6 +70,8 @@
     { "path": "./packages/client/ui-conversation" },
     { "path": "./packages/client/ui-tool" },
     { "path": "./packages/client/ui-deliverables" },
+    { "path": "./packages/client/ui-file-viewer" },
+    { "path": "./packages/client/ui-file-explorer" },
     { "path": "./packages/client/ui-workflow-run" },
     { "path": "./packages/client/ui-workspace" },
     { "path": "./packages/client/ui-input-trigger" },

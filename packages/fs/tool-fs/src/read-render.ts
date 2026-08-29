@@ -175,6 +175,10 @@ ${body}
  * intentionally small — common source, config, and markup extensions a
  * line-numbered code view benefits from highlighting — not an exhaustive registry.
  */
+/* jscpd:ignore-start -- the Host tool-fs read-render table deliberately mirrors
+   the client drawer's copy: the module graph forbids a host tool package being a
+   browser-bundle dependency, and the alias surface stays pinned on each side by
+   unit tests */
 const LANG_BY_EXTENSION: Readonly<Record<string, string>> = {
   ts: 'ts', tsx: 'tsx', mts: 'ts', cts: 'ts',
   js: 'js', jsx: 'jsx', mjs: 'js', cjs: 'js',
@@ -208,6 +212,7 @@ export function langFromPath(path: string): string | undefined {
   // tool-output JSON validation.
   return Object.hasOwn(LANG_BY_EXTENSION, ext) ? LANG_BY_EXTENSION[ext] : undefined
 }
+/* jscpd:ignore-end */
 
 /**
  * The `read` tool's private `tool/result` `meta` payload: the structured

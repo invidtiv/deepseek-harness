@@ -233,6 +233,31 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 @Remote('archiveSession') archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue>
 
 /**
+ * Read one text file's contents for the file viewer, bounded and
+ * binary-refusing: a missing path, a directory, and a read failure each
+ * become their own wire failure, a file too large to show whole returns a
+ * truncated prefix, and a non-text file returns `binary` with empty
+ * content.
+ * @param request - the read request.
+ * @param signal - caller/connection lifetime.
+ * @returns the file contents.
+ */
+@Remote('readFile') readFile(request: FileReadRequest, signal: AbortSignal): Promise<FileContents>
+
+/**
+ * List one mixed directory level (child directories and files) for the
+ * file explorer, bounded: dirents stream once, symlink targets probe per
+ * row, and the answer keeps the name-sorted head plus the `truncated`
+ * flag. An unreadable or missing level — including a non-directory
+ * target — fails with the shared listing code.
+ * @param request - the listing request; an absent path lists the Host's
+ *   default project root.
+ * @param signal - caller/connection lifetime.
+ * @returns the mixed listing.
+ */
+@Remote('listFiles') listFiles(request: FileListRequest, signal: AbortSignal): Promise<FileListing>
+
+/**
  * Stream a complete Workspace baseline followed by ordered increments.
  * @param signal - generation cancellation.
  * @returns baseline followed by ordered Workspace increments.

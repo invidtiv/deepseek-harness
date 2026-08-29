@@ -232,6 +232,17 @@
     - id: ui-deliverables
       name: '@deepseek-ai/dsh-client-ui-deliverables'
 
+    # Right-side file viewer drawer: clickable file references open a
+    # syntax-highlighted source panel. Remove this entry to route file opens
+    # back to the Host's default application.
+    - id: ui-file-viewer
+      name: '@deepseek-ai/dsh-client-ui-file-viewer'
+
+    # Collapsible right-hand explorer column: a lazy project file tree whose
+    # rows open into the file viewer (or the Host opener when composed out).
+    # Remove this entry to drop the project navigator surface.
+    - id: ui-file-explorer
+      name: '@deepseek-ai/dsh-client-ui-file-explorer'
 
     - id: ui-workspace
       name: '@deepseek-ai/dsh-client-ui-workspace'
