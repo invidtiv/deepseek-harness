@@ -1,0 +1,52 @@
+# The dsh-telegram bundle patch: the Telegram forum-topic frontend over the
+# dsh-base layer, applied after dsh-base's insert. Rows here override base
+# rows by id, with the profile's own cordis.patch.yml and any --patch overlays
+# still to come.
+#
+# Every value below is a deployment choice, so the telegram row reads its
+# allowlists and workspace roots from environment seams (the base bundle's
+# DSH_PERMISSION_MODE idiom). A deployment that prefers static config
+# overrides this row in its own patch layer.
+
+- id: system-prompt
+  config:
+    persona: >-
+      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+
+# The shared module-reload HMR row stays off; a long-running bot reloads its
+# composition through the launcher's watch-only fallback instead.
+- id: hmr
+  disabled: true
+
+- insert:
+    # Durable plugin-private data: the storage trio the Telegram frontend's
+    # topic→session mapping domain rides on (same rows the web-app bundle ships).
+    - id: storage
+      name: '@deepseek-ai/dsh-storage'
+
+    - id: storage-json
+      name: '@deepseek-ai/dsh-storage-json'
+      config:
+        root: !!js dshHomePath('storages')
+
+    - id: storage-domain
+      name: '@deepseek-ai/dsh-storage-domain'
+      config:
+        backend: json
+
+    # Workspace registry: canonical-path validation and session archiving
+    # behind /reset.
+    - id: workspace
+      name: '@deepseek-ai/dsh-workspace'
+
+    # The Telegram frontend. The token is a credential reference resolved per
+    # operation; chat/user allowlists are comma-separated ids; workspace roots
+    # are comma-separated absolute directories.
+    - id: telegram
+      name: '@deepseek-ai/dsh-telegram'
+      config:
+        tokenRef: !!js process.env.DSH_TELEGRAM_TOKEN_REF ?? 'TELEGRAM_BOT_TOKEN'
+        allowedChatIds: !!js (process.env.DSH_TELEGRAM_ALLOWED_CHATS ?? '').split(',').filter(Boolean).map(Number)
+        allowedUserIds: !!js (process.env.DSH_TELEGRAM_ALLOWED_USERS ?? '').split(',').filter(Boolean).map(Number)
+        workspaceRoots: !!js (process.env.DSH_TELEGRAM_WORKSPACE_ROOTS ?? '').split(',').filter(Boolean)
+        defaultWorkspace: !!js process.env.DSH_TELEGRAM_DEFAULT_WORKSPACE

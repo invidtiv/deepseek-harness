@@ -1,0 +1,138 @@
+# Telegram forum-topic frontend: one durable coding-agent session per topic.
+# Run with `pnpm dsh --profile telegram-agent "<task>"` from this directory,
+# or boot the Loader directly (tests/fixtures shows the smoke composition).
+#
+# Deployment values arrive through environment seams, so the same leaf works
+# in a team chat and in CI:
+#   TELEGRAM_BOT_TOKEN            the bot token (credentials-local reads env)
+#   DSH_TELEGRAM_ALLOWED_CHATS    comma-separated chat ids
+#   DSH_TELEGRAM_ALLOWED_USERS    comma-separated user ids
+#   DSH_TELEGRAM_WORKSPACE_ROOTS  comma-separated absolute root directories
+
+- id: system-prompt
+  name: '@deepseek-ai/dsh-system-prompt'
+  config:
+    persona: >-
+      You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
+
+- id: llm
+  name: '@deepseek-ai/dsh-llm'
+
+- id: session
+  name: '@deepseek-ai/dsh-session'
+
+- id: agent
+  name: '@deepseek-ai/dsh-agent'
+
+- id: llm-deepseek
+  name: '@deepseek-ai/dsh-llm-deepseek'
+  config:
+    thinking: enabled
+
+- id: credentials
+  name: '@deepseek-ai/dsh-credentials-local'
+
+- id: session-checkpoints
+  name: '@deepseek-ai/dsh-session-checkpoint-policy'
+
+- id: subprocess
+  name: '@deepseek-ai/dsh-subprocess-local'
+
+- id: shell-env
+  name: '@deepseek-ai/dsh-shell-env'
+
+- id: tool-bash
+  name: '@deepseek-ai/dsh-tool-bash'
+
+- id: sandbox
+  name: '@deepseek-ai/dsh-sandbox-local'
+
+- id: sandbox-policy
+  name: '@deepseek-ai/dsh-sandbox-policy'
+  config:
+    mode: workspace-write
+    workspaceRoot: !!js process.cwd()
+
+- id: bash-sandbox
+  name: '@deepseek-ai/dsh-bash-sandbox'
+  disabled: !!js process.platform === 'win32'
+  config:
+    timeoutMs: 60000
+
+- id: pwsh-sandbox
+  name: '@deepseek-ai/dsh-pwsh-sandbox'
+  disabled: !!js process.platform !== 'win32'
+
+- id: tool-pwsh
+  name: '@deepseek-ai/dsh-tool-pwsh'
+  disabled: !!js process.platform !== 'win32'
+
+- id: approval
+  name: '@deepseek-ai/dsh-user-approval'
+  config:
+    policy: ask
+
+- id: user-questions
+  name: '@deepseek-ai/dsh-user-questions'
+
+- id: sessions
+  name: '@deepseek-ai/dsh-session-persistence-jsonl'
+  config:
+    root: !!js process.env.DSH_SESSION_ROOT ?? './.sessions'
+
+- id: attachment-local
+  name: '@deepseek-ai/dsh-attachment-local'
+
+- id: storage
+  name: '@deepseek-ai/dsh-storage'
+
+- id: storage-json
+  name: '@deepseek-ai/dsh-storage-json'
+  config:
+    root: './.storages'
+
+- id: storage-domain
+  name: '@deepseek-ai/dsh-storage-domain'
+  config:
+    backend: json
+
+- id: workspace
+  name: '@deepseek-ai/dsh-workspace'
+
+- id: commands
+  name: '@deepseek-ai/dsh-commands'
+
+- id: fs-sandbox
+  name: '@deepseek-ai/dsh-fs-sandbox'
+
+- id: fs-observation-policy
+  name: '@deepseek-ai/dsh-fs-observation-policy'
+
+- id: tool-fs
+  name: '@deepseek-ai/dsh-tool-fs'
+
+- id: token-meter
+  name: '@deepseek-ai/dsh-token-meter'
+
+- id: compaction-basic
+  name: '@deepseek-ai/dsh-compaction-basic'
+
+- id: tools
+  name: '@deepseek-ai/dsh-tools'
+
+- id: agent-loop
+  name: '@deepseek-ai/dsh-agent-loop'
+  config:
+    agents: []
+
+- id: telegram
+  name: '@deepseek-ai/dsh-telegram'
+  config:
+    tokenRef: !!js process.env.DSH_TELEGRAM_TOKEN_REF ?? 'TELEGRAM_BOT_TOKEN'
+    apiBase: !!js process.env.DSH_TELEGRAM_API_BASE
+    allowedChatIds: !!js (process.env.DSH_TELEGRAM_ALLOWED_CHATS ?? '').split(',').filter(Boolean).map(Number)
+    allowedUserIds: !!js (process.env.DSH_TELEGRAM_ALLOWED_USERS ?? '').split(',').filter(Boolean).map(Number)
+    workspaceRoots: !!js (process.env.DSH_TELEGRAM_WORKSPACE_ROOTS ?? process.cwd()).split(',').filter(Boolean)
+    agentOptions:
+      provider: !!js process.env.DSH_TELEGRAM_PROVIDER ?? 'deepseek-official'
+      model: !!js process.env.DSH_TELEGRAM_MODEL ?? 'deepseek-v4-flash'
