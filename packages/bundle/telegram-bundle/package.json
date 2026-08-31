@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-telegram-bundle",
   "description": "The dsh Telegram bundle: mounts the storage trio, the workspace registry, and the Telegram topic frontend over dsh-base",
-  "version": "0.1.2-alpha.1",
+  "version": "0.1.2-alpha.2",
   "publishConfig": {
     "access": "public"
   },

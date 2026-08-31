@@ -14,6 +14,7 @@ import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { credentialRef, CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { CredentialInfo, CredentialKey, CredentialRecord, CredentialRecordEntry, CredentialRecordInfo, CredentialRef, ResolvedCredential } from '@deepseek-ai/dsh-credentials'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import SessionProjectionRegistry from '@deepseek-ai/dsh-session-projection'
 import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as StorageJson from '@deepseek-ai/dsh-storage-json'
@@ -479,6 +480,9 @@ export async function makeTelegramHarness(options: {
   const api = new FakeTelegramApi()
   const ctx = new Context()
   await mountAgentLoopTestDependencies(ctx, { systemPrompt: { persona: '' } })
+  // The agent loop declares sessionProjections a required injection: mount the
+  // registry before the loop activates (the acp harness shape).
+  await ctx.plugin(SessionProjectionRegistry)
   if (options.attachments === true) await ctx.plugin(MemoryAttachmentStore)
   await ctx.plugin(AgentLoop, { agents: [] })
   ctx.llm.registerAdapter(['mock'], adapter)

@@ -16,7 +16,8 @@ import type { ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import type { CredentialRef } from '@deepseek-ai/dsh-credentials'
 import { parseCommand } from '@deepseek-ai/dsh-commands'
 import { createUserMessage } from '@deepseek-ai/dsh-llm'
-import { installSettingsSection, settingsNamespace } from '@deepseek-ai/dsh-settings'
+// Type-only: the ctx.settings Context merge for the optional section install.
+import type {} from '@deepseek-ai/dsh-settings'
 import type { SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import { mkdir, writeFile } from 'node:fs/promises'
@@ -44,7 +45,7 @@ export const inject = ['agents']
  * schema is the plugin Config; while a settings service exists, the runtime
  * reads the resolved section instead of the composition entry.
  */
-export const TELEGRAM_SETTINGS_NAMESPACE = settingsNamespace('telegram')
+export const TELEGRAM_SETTINGS_NAMESPACE = 'telegram'
 
 export { Config }
 export type { Config as TelegramConfig }
@@ -155,16 +156,12 @@ export class TelegramRuntime {
     // which settings describe/schema resolution must never carry (it is not
     // JSON and not part of the wire schema).
     const { transport: _transport, ...sectionBase } = this.config
-    installSettingsSection<Config>(
-      this.ctx,
-      TELEGRAM_SETTINGS_NAMESPACE,
-      Config,
-      sectionBase,
-      {
+    this.ctx.inject(['settings'], (settingsCtx) => {
+      settingsCtx.settings.installSection(this.ctx, TELEGRAM_SETTINGS_NAMESPACE, Config, sectionBase, {
         setSource: (source) => { this.currentConfig = source },
         onChange: () => { this.onSettingsCommitted() },
-      },
-    )
+      })
+    })
     this.api = this.currentConfig().transport
       ?? new HttpTelegramApi(() => this.resolveToken(), this.currentConfig().apiBase)
     const agents = this.ctx.agents

@@ -3,7 +3,6 @@ import { mkdtemp } from 'node:fs/promises'
 import { ToolCallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import { TELEGRAM_SETTINGS_NAMESPACE } from '../src/index.ts'
 import {
   ALLOWED_USER,
@@ -186,7 +185,6 @@ describe('Telegram settings section', () => {
     harness = await makeTelegramHarness({ script: [textResponse('x')] })
     await harness.api.waitForPoll()
     expect(harness.settings?.describe() ?? []).toHaveLength(0)
-    void settingsNamespace
   })
   it('creates a session when no agent options are configured anywhere', async () => {
     harness = await makeTelegramHarness({
