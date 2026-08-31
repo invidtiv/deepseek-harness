@@ -18,6 +18,7 @@ kind: "package-reference"
 - [插件](#plugin)
 - [话题 → 会话生命周期](#topic-session-lifecycle)
 - [工作区](#workspaces)
+- [工作区话题](#workspace-topics)
 - [命令](#commands)
 - [渲染](#rendering)
 - [安全](#security)
@@ -41,6 +42,7 @@ kind: "package-reference"
 | `allowedChatIds` / `allowedUserIds` | `[]` | 失败关闭的允许列表；加载时至少一侧非空。未知发送者被丢弃，日志只记录 id。 |
 | `workspaceRoots` | `[]` | 话题可选工作区的绝对目录根；加载时非空。每次选择都经 `fs.realpath` 规范化，且必须落在某个根内。 |
 | `defaultWorkspace` | — | 话题从未执行 `/folder` 时，首条消息创建工作区所用值；只配置一个根时该根即隐含默认值。 |
+| `workspaceTopicsChatId` | — | 机器人为本部署每个新建工作区创建话题的论坛超级群；缺省即关闭该功能。`allowedChatIds` 非空时必须包含该群，且组合必须挂载 workspace registry——否则加载即报错。 |
 | `pollTimeoutMs` | `25000` | 长轮询等待时间，受 Bot API 50 秒上限约束。 |
 | `queueCap` | `3` | 每个话题的排队消息上限；超出后机器人回复 busy 而不再排队。 |
 | `editIntervalMs` | `1000` | 单个话题状态占位消息的最短编辑间隔。 |
@@ -72,6 +74,13 @@ kind: "package-reference"
 ## 工作区
 
 不带参数的 `/folder` 列出当前选择与配置的根（绝不做原始目录列举）；`/folder <path>` 为下一个会话选择。每次选择必须为绝对路径、经 `fs.realpath` 解析为已存在目录，并通过规范化路径包含检查落在配置根内（Windows 大小写不敏感；不做环境变量或 `~` 展开；除非显式配置 UNC 根，否则不接受 UNC）。Harness 把同一目录作为会话不可变的 `cwd` 和每次调用的沙箱 `workspaceRoot` 强制执行；在线会话保留其目录，因此 `/folder` 的变更在 `/reset` 后生效。
+
+-----
+
+<a id="workspace-topics"></a>
+## 工作区话题
+
+配置 `workspaceTopicsChatId` 后，插件监听 workspace registry 的持久变更流（`domain/changed`），为本部署每个新建工作区创建一个论坛话题——Web GUI 的工作区列表驱动 Telegram 话题列表。话题以工作区标题命名（按 Telegram 的 128 字符上限截断），其映射行写入时把 `pendingWorkspace` 设为工作区的规范路径，于是话题的首条消息经普通准入路径在该工作区中打开会话。每条路径仍要通过工作区根围栏：位于 `workspaceRoots` 之外的工作区不会得到话题，路径已被某个话题映射或排队的工作区不会重复创建，且只有创建写入（重命名或会话挂载都不算）才会触发。配置的群必须是启用话题的超级群，且机器人在其中持有 `can_manage_topics` 权限；Bot API 调用失败只记录日志，不写映射行。
 
 -----
 
@@ -129,6 +138,7 @@ kind: "package-reference"
 - **暂无 `/files` 命令** — Agent 在文本中说明输出文件名；把工作区文件读回发送尚待实现。
 - **多选提问不提供自由文本"其他"答案** — 内联按钮只收集选项集合。
 - **在线 Agent 常驻直至插件停止或 `/reset`** — 恢复可重建持久化日志，因此闲置回收策略只是优化，不是正确性要求。
+- **工作区话题只覆盖运行期创建** — 桥接器监听变更流，插件停机期间创建的工作区不会得到话题；Bot API 调用与映射写入之间崩溃会留下一个首条消息回退到默认工作区的话题。
 - **速率限制** — 分块与编辑节流遵循 Bot API 的刷屏指南，但极长的独白仍可能触达群组发送速率上限。
 
 -----

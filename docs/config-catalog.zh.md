@@ -2597,6 +2597,14 @@ export interface Config {
   workspaceRoots?: string[]
   /** Workspace used for first-message creation when the topic never ran `/folder`. */
   defaultWorkspace?: string
+  /**
+   * Forum supergroup where the bot creates one topic per workspace created in
+   * this deployment; absent disables workspace-topic creation. Requires the
+   * workspace registry in the composition and the bot's `can_manage_topics`
+   * right in that chat; with a non-empty `allowedChatIds` the chat must be
+   * listed there.
+   */
+  workspaceTopicsChatId?: number
   /** Long-poll wait in milliseconds; bounded by the Bot API 50-second cap. */
   pollTimeoutMs?: number
   /** Queued-message cap per topic; beyond it the bot answers busy instead of queueing. */
@@ -2638,6 +2646,8 @@ export interface TelegramApi {
   sendPhoto(target: ChatTarget, data: Uint8Array, options?: MediaOptions): Promise<SentMessage>
   /** Post one document from raw bytes. */
   sendDocument(target: ChatTarget, data: Uint8Array, filename: string, options?: MediaOptions): Promise<SentMessage>
+  /** Create one forum topic in a topics-enabled supergroup; the bot needs the `can_manage_topics` right there. */
+  createForumTopic(chatId: number, name: string): Promise<CreatedForumTopic>
   /** Acknowledge one callback button press. */
   answerCallbackQuery(callbackId: string, options?: { readonly text?: string }): Promise<void>
   /** Remove one posted message's inline keyboard. */
@@ -2695,6 +2705,14 @@ export interface MediaOptions {
   readonly caption?: string
   /** Bot API parse mode for the caption; omitted sends the caption unparsed. */
   readonly parseMode?: ParseMode
+}
+
+/** `createForumTopic` result, narrowed to the fields the plugin stores and addresses. */
+export interface CreatedForumTopic {
+  /** Thread id of the created topic; posts into it carry this as `message_thread_id`. */
+  readonly message_thread_id: number
+  /** Topic title as the Bot API recorded it. */
+  readonly name: string
 }
 
 /** Outbound inline keyboard: one array per button row, in display order. */
@@ -2837,7 +2855,7 @@ export interface ForumTopicReopened {
 }
 ```
 
-来源：[`packages/telegram/telegram/src/config.ts:56`](../packages/telegram/telegram/src/config.ts)
+来源：[`packages/telegram/telegram/src/config.ts:57`](../packages/telegram/telegram/src/config.ts)
 
 <a id="deepseek-aidsh-terminal-bash"></a>
 

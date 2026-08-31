@@ -50,3 +50,4 @@
         allowedUserIds: !!js (process.env.DSH_TELEGRAM_ALLOWED_USERS ?? '').split(',').filter(Boolean).map(Number)
         workspaceRoots: !!js (process.env.DSH_TELEGRAM_WORKSPACE_ROOTS ?? '').split(',').filter(Boolean)
         defaultWorkspace: !!js process.env.DSH_TELEGRAM_DEFAULT_WORKSPACE
+        workspaceTopicsChatId: !!js process.env.DSH_TELEGRAM_WORKSPACE_TOPICS_CHAT ? Number(process.env.DSH_TELEGRAM_WORKSPACE_TOPICS_CHAT) : undefined

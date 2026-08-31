@@ -20,6 +20,7 @@ import * as StorageJson from '@deepseek-ai/dsh-storage-json'
 import * as StorageDomain from '@deepseek-ai/dsh-storage-domain'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import UserQuestionService from '@deepseek-ai/dsh-user-questions'
+import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
 import * as TelegramPlugin from '../src/index.ts'
 import type { Config, TelegramApi } from '../src/index.ts'
 import type { InlineKeyboard, SentMessage, TelegramFile, Update } from '../src/types.ts'
@@ -233,6 +234,13 @@ class FakeTelegramApi implements TelegramApi {
     return undefined
   }
 
+  async createForumTopic(chatId: number, name: string): Promise<{ message_thread_id: number; name: string }> {
+    this.throwIfFailing()
+    const threadId = 500 + this.sent.filter(send => send.method === 'createForumTopic').length
+    this.sent.push({ method: 'createForumTopic', target: { chatId, threadId }, text: name })
+    return { message_thread_id: threadId, name }
+  }
+
   async getUpdates(_offset: number | undefined, signal: AbortSignal, _timeoutSeconds: number): Promise<Update[]> {
     if (!this.polledOnce) {
       this.polledOnce = true
@@ -350,8 +358,8 @@ export function textUpdate(updateId: number, topic: TestTopic, text: string): Up
   }
 }
 
-/** An inbound photo update with a registered downloadable file. */
-export function photoUpdate(updateId: number, topic: TestTopic, fileId: string): Update {
+/** An inbound photo update with a registered downloadable file and an optional caption. */
+export function photoUpdate(updateId: number, topic: TestTopic, fileId: string, caption?: string): Update {
   return {
     update_id: updateId,
     message: {
@@ -360,12 +368,13 @@ export function photoUpdate(updateId: number, topic: TestTopic, fileId: string):
       ...topic.threadId !== null ? { message_thread_id: topic.threadId } : {},
       from: { id: ALLOWED_USER, is_bot: false, first_name: 'tester' },
       photo: [{ file_id: fileId, file_unique_id: fileId, width: 1, height: 1 }],
+      ...caption !== undefined ? { caption } : {},
     },
   }
 }
 
-/** An inbound document update. */
-export function documentUpdate(updateId: number, topic: TestTopic, fileId: string, name: string): Update {
+/** An inbound document update with an optional caption. */
+export function documentUpdate(updateId: number, topic: TestTopic, fileId: string, name: string, caption?: string): Update {
   return {
     update_id: updateId,
     message: {
@@ -374,6 +383,7 @@ export function documentUpdate(updateId: number, topic: TestTopic, fileId: strin
       ...topic.threadId !== null ? { message_thread_id: topic.threadId } : {},
       from: { id: ALLOWED_USER, is_bot: false, first_name: 'tester' },
       document: { file_id: fileId, file_unique_id: fileId, file_name: name, file_size: 10 },
+      ...caption !== undefined ? { caption } : {},
     },
   }
 }
@@ -433,6 +443,7 @@ export interface TelegramHarness {
     failNextDownload(error: Error): void
   }
   adapter: LlmAdapter & { readonly requests: GenerateOptions[] }
+  workspaces: WorkspaceRegistry | undefined
   attachments: (AttachmentStore & { readonly saved: SaveImageAttachment[] }) | undefined
   roots: string[]
   persistenceRoot: string
@@ -461,6 +472,7 @@ export async function makeTelegramHarness(options: {
   persistenceRoot?: string
   commands?: boolean
   userQuestions?: boolean
+  workspaceRegistry?: boolean
   omitConfig?: ReadonlyArray<keyof Config>
 } = {}): Promise<TelegramHarness> {
   const adapter = new MockAdapter(options.script ?? [], options.imageCapable === true)
@@ -481,6 +493,7 @@ export async function makeTelegramHarness(options: {
   if (options.commands !== false) await ctx.plugin(CommandRuntime)
   if (options.userQuestions !== false) await ctx.plugin(UserQuestionService)
   await ctx.plugin(ApprovalService)
+  if (options.workspaceRegistry === true) await ctx.plugin(WorkspaceRegistry)
   if (options.settings === true) {
     const settingsPath = join(await mkdtemp(join(tmpdir(), 'telegram-settings-')), 'settings.yaml')
     await ctx.plugin(FileSettingsProvider, { path: settingsPath })
@@ -514,6 +527,7 @@ export async function makeTelegramHarness(options: {
     ctx,
     api,
     adapter,
+    workspaces: ctx.get('workspaceRegistry'),
     attachments: ctx.get('attachments') as MemoryAttachmentStore | undefined,
     roots,
     persistenceRoot,

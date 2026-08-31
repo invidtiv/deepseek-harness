@@ -71,6 +71,14 @@ export interface ForumTopicCreated {
   readonly icon_custom_emoji_id?: string
 }
 
+/** `createForumTopic` result, narrowed to the fields the plugin stores and addresses. */
+export interface CreatedForumTopic {
+  /** Thread id of the created topic; posts into it carry this as `message_thread_id`. */
+  readonly message_thread_id: number
+  /** Topic title as the Bot API recorded it. */
+  readonly name: string
+}
+
 /** Service payload of a `forum_topic_closed` message: its presence is the whole signal that the topic accepts no posts. */
 export interface ForumTopicClosed {
   /* empty in the Bot API */

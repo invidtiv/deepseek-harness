@@ -382,7 +382,7 @@ describe('Telegram topic frontend', () => {
     })
     harness.api.registerFile('photo1', 'photos/file_1.jpg', new Uint8Array([1, 2, 3]))
     await harness.api.waitForPoll()
-    harness.api.push(photoUpdate(1, GENERAL_TOPIC, 'photo1'))
+    harness.api.push(photoUpdate(1, GENERAL_TOPIC, 'photo1', 'holiday pic'))
     await waitFor(() => {
       expect(harness?.attachments?.saved ?? []).toHaveLength(1)
     })
@@ -390,6 +390,7 @@ describe('Telegram topic frontend', () => {
     const request = harness.adapter.requests[0]
     const content = JSON.stringify(request?.messages)
     expect(content).toContain('"type":"image"')
+    expect(content).toContain('holiday pic')
     await waitFor(() => {
       expect(harness?.api.texts()).toContain('nice photo')
     })
@@ -409,12 +410,13 @@ describe('Telegram topic frontend', () => {
     harness = await makeTelegramHarness({ script: [textResponse('got the file')] })
     harness.api.registerFile('doc1', 'documents/file_1.txt', new TextEncoder().encode('hello doc'))
     await harness.api.waitForPoll()
-    harness.api.push(documentUpdate(1, GENERAL_TOPIC, 'doc1', 'notes.txt'))
+    harness.api.push(documentUpdate(1, GENERAL_TOPIC, 'doc1', 'notes.txt', 'read this first'))
     await waitFor(() => {
       expect(harness?.api.texts().join('\n')).toContain('Saved _telegram_inbox/notes.txt')
     })
     const inbox = join(harness.roots[0] as string, '_telegram_inbox', 'notes.txt')
     expect(await readFile(inbox, 'utf8')).toBe('hello doc')
+    expect(JSON.stringify(harness.adapter.requests[0]?.messages)).toContain('read this first')
     await waitFor(() => {
       expect(harness?.api.texts()).toContain('got the file')
     })

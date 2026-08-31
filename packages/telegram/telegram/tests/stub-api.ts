@@ -12,6 +12,7 @@ export type StubMethod =
   | 'removeInlineKeyboard'
   | 'editInlineKeyboard'
   | 'answerCallbackQuery'
+  | 'createForumTopic'
 
 /** One recorded outbound call. */
 export interface StubCall {
@@ -92,6 +93,11 @@ export class StubTelegramApi implements TelegramApi {
 
   async answerCallbackQuery(callbackId: string, options?: { readonly text?: string }): Promise<void> {
     this.record('answerCallbackQuery', { text: options?.text ?? callbackId })
+  }
+
+  async createForumTopic(chatId: number, name: string): Promise<{ message_thread_id: number; name: string }> {
+    const sent = this.record('createForumTopic', { target: { chatId, threadId: null }, text: name })
+    return { message_thread_id: sent.message_id, name }
   }
 
   async removeInlineKeyboard(target: ChatTarget, messageId: number): Promise<SentMessage> {

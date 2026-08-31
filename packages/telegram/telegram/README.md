@@ -18,6 +18,7 @@ This package is a transport adapter, not a capability seam or a UI integration. 
 - [Plugin](#plugin)
 - [Topic → session lifecycle](#topic-session-lifecycle)
 - [Workspaces](#workspaces)
+- [Workspace topics](#workspace-topics)
 - [Commands](#commands)
 - [Rendering](#rendering)
 - [Security](#security)
@@ -41,6 +42,7 @@ This package is a transport adapter, not a capability seam or a UI integration. 
 | `allowedChatIds` / `allowedUserIds` | `[]` | Fail-closed allowlists; at least one non-empty side is required at load. Unknown senders are dropped and logged with ids only. |
 | `workspaceRoots` | `[]` | Absolute directory roots a topic workspace may select from; non-empty at load. Every selection canonicalizes via `fs.realpath` and must land inside a root. |
 | `defaultWorkspace` | — | Workspace used for first-message creation when the topic never ran `/folder`; with exactly one configured root that root is the implicit default. |
+| `workspaceTopicsChatId` | — | Forum supergroup where the bot creates one topic per workspace created in this deployment; absent disables the feature. With a non-empty `allowedChatIds` the chat must be listed there, and the composition must mount the workspace registry — both fail load otherwise. |
 | `pollTimeoutMs` | `25000` | Long-poll wait, bounded by the Bot API 50-second cap. |
 | `queueCap` | `3` | Queued-message cap per topic; beyond it the bot answers busy instead of queueing. |
 | `editIntervalMs` | `1000` | Minimum interval between status-placeholder edits for one topic. |
@@ -72,6 +74,13 @@ Routing key: `chat.id + message_thread_id`; the absent thread id (the General to
 ## Workspaces
 
 `/folder` without an argument lists the current selection plus the configured roots (never a raw directory listing); `/folder <path>` selects for the next session. Every selection must be absolute, resolve to an existing directory through `fs.realpath`, and land inside a configured root by canonical-path containment (case-insensitive on Windows; no env-var or tilde expansion; UNC only when a UNC root is configured). The harness enforces the same folder as the session's immutable `cwd` and per-call sandbox `workspaceRoot`; a live session keeps its folder, so a `/folder` change takes effect with `/reset`.
+
+-----
+
+<a id="workspace-topics"></a>
+## Workspace topics
+
+With `workspaceTopicsChatId` configured, the plugin observes the workspace registry's durable change stream (`domain/changed`) and creates one forum topic per workspace created in this deployment — the web GUI's workspace list drives the Telegram topic list. The topic is named after the workspace title (clamped to Telegram's 128-character bound) and its mapping row is written with `pendingWorkspace` set to the workspace's canonical path, so the topic's first message opens its session in that workspace through the ordinary admission path. Every path still passes the workspace-root fence: a workspace outside `workspaceRoots` gets no topic, a workspace whose path some topic already maps or queues gets no duplicate, and only a creation write (never a rename or session attach) triggers one. The configured chat must be a forum-enabled supergroup where the bot holds the `can_manage_topics` right; a failed Bot API call is logged and creates no mapping row.
 
 -----
 
@@ -129,6 +138,7 @@ Append-only through the session's own user-message history; the plugin contribut
 - **No `/files` command yet** — the agent names its outputs in text; reading a workspace file back out is deferred.
 - **Multi-select questions offer no free-text "Other" answer** — inline buttons collect option sets only.
 - **Live agents stay resident until the plugin stops or `/reset`** — resume rebuilds from the persisted log, so an idle-reclaim policy is an optimization, not a correctness requirement.
+- **Workspace topics cover live creations only** — the bridge observes the change stream, so a workspace created while the plugin was down gets no topic, and a crash between the Bot API call and the mapping write leaves a topic whose first message falls back to the default workspace.
 - **Rate limits** — chunking and edit throttling follow the Bot API flood guidance, but a very long monologue can still reach the per-group send ceiling.
 
 -----

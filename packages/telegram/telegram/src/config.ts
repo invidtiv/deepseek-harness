@@ -36,6 +36,7 @@ export const Config = Schema.object({
   allowedUserIds: Schema.array(Schema.number()).default([]),
   workspaceRoots: Schema.array(Schema.string()).default([]),
   defaultWorkspace: Schema.string(),
+  workspaceTopicsChatId: Schema.number().step(1),
   pollTimeoutMs: Schema.number().min(1000).max(MAX_POLL_TIMEOUT_MS).default(25_000),
   queueCap: Schema.number().step(1).min(1).default(DEFAULT_QUEUE_CAP),
   editIntervalMs: Schema.number().min(250).default(DEFAULT_EDIT_INTERVAL_MS),
@@ -66,6 +67,14 @@ export interface Config {
   workspaceRoots?: string[]
   /** Workspace used for first-message creation when the topic never ran `/folder`. */
   defaultWorkspace?: string
+  /**
+   * Forum supergroup where the bot creates one topic per workspace created in
+   * this deployment; absent disables workspace-topic creation. Requires the
+   * workspace registry in the composition and the bot's `can_manage_topics`
+   * right in that chat; with a non-empty `allowedChatIds` the chat must be
+   * listed there.
+   */
+  workspaceTopicsChatId?: number
   /** Long-poll wait in milliseconds; bounded by the Bot API 50-second cap. */
   pollTimeoutMs?: number
   /** Queued-message cap per topic; beyond it the bot answers busy instead of queueing. */

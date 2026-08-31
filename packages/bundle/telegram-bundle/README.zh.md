@@ -23,7 +23,7 @@ dsh Telegram 前端配置包：[`cordis.patch.yml`](cordis.patch.yml) 在 `dsh-b
 <a id="use-this-bundle"></a>
 ## 使用本配置包
 
-`telegram` 行从环境缝隙读取部署值（沿用 base 配置包的 `DSH_PERMISSION_MODE` 惯例）：`DSH_TELEGRAM_TOKEN_REF`（凭证引用覆盖；令牌本身始终存放于凭证存储）、`DSH_TELEGRAM_ALLOWED_CHATS` 与 `DSH_TELEGRAM_ALLOWED_USERS`（逗号分隔的 id）、`DSH_TELEGRAM_WORKSPACE_ROOTS`（逗号分隔的绝对根目录）以及 `DSH_TELEGRAM_DEFAULT_WORKSPACE`。偏好静态配置的部署可在自己的补丁层覆盖 `telegram` 行；允许列表或根目录为空时插件加载即报错。与 headless 配置包一致，本包禁用了共享 HMR 行。
+`telegram` 行从环境缝隙读取部署值（沿用 base 配置包的 `DSH_PERMISSION_MODE` 惯例）：`DSH_TELEGRAM_TOKEN_REF`（凭证引用覆盖；令牌本身始终存放于凭证存储）、`DSH_TELEGRAM_ALLOWED_CHATS` 与 `DSH_TELEGRAM_ALLOWED_USERS`（逗号分隔的 id）、`DSH_TELEGRAM_WORKSPACE_ROOTS`（逗号分隔的绝对根目录）、`DSH_TELEGRAM_DEFAULT_WORKSPACE`，以及 `DSH_TELEGRAM_WORKSPACE_TOPICS_CHAT`（用于工作区话题创建的论坛超级群 id）。偏好静态配置的部署可在自己的补丁层覆盖 `telegram` 行；允许列表或根目录为空时插件加载即报错。与 headless 配置包一致，本包禁用了共享 HMR 行。
 
 以 `dsh --profile telegram` 使用随附的配置模板启动，或在任意配置文件的 `dsh.profile.bundles` 中列出它。加入 Web profile 的配置包列表（base → web-app → telegram-bundle）后，插件还会注册 `telegram` 设置命名空间，浏览器插件 → 插件配置页会渲染其卡片。
 

@@ -8,6 +8,7 @@
 
 import type {
   ChatTarget,
+  CreatedForumTopic,
   InlineKeyboard,
   ParseMode,
   SentMessage,
@@ -101,6 +102,8 @@ export interface TelegramApi {
   sendPhoto(target: ChatTarget, data: Uint8Array, options?: MediaOptions): Promise<SentMessage>
   /** Post one document from raw bytes. */
   sendDocument(target: ChatTarget, data: Uint8Array, filename: string, options?: MediaOptions): Promise<SentMessage>
+  /** Create one forum topic in a topics-enabled supergroup; the bot needs the `can_manage_topics` right there. */
+  createForumTopic(chatId: number, name: string): Promise<CreatedForumTopic>
   /** Acknowledge one callback button press. */
   answerCallbackQuery(callbackId: string, options?: { readonly text?: string }): Promise<void>
   /** Remove one posted message's inline keyboard. */
@@ -228,6 +231,11 @@ export class HttpTelegramApi implements TelegramApi {
       ...options?.parseMode !== undefined ? { parse_mode: options.parseMode } : {},
     }
     return await this.sendMultipart('sendDocument', 'document', filename, data, payload)
+  }
+
+  async createForumTopic(chatId: number, name: string): Promise<CreatedForumTopic> {
+    const response = await this.call('createForumTopic', { chat_id: chatId, name }, undefined, true)
+    return response.result as CreatedForumTopic
   }
 
   async answerCallbackQuery(callbackId: string, options?: { readonly text?: string }): Promise<void> {

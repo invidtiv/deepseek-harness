@@ -143,6 +143,15 @@ describe('HttpTelegramApi outbound calls', () => {
     })
   })
 
+  it('creates a forum topic and returns its thread id', async () => {
+    const requests = stubFetch(() => accepted({ message_thread_id: 88, name: 'proj' }))
+    const api = client()
+    const topic = await api.createForumTopic(11, 'proj')
+    expect(topic).toEqual({ message_thread_id: 88, name: 'proj' })
+    expect(requests[0]?.url).toBe('http://bot.test/botT/createForumTopic')
+    expect(jsonBody(requests[0])).toEqual({ chat_id: 11, name: 'proj' })
+  })
+
   it('long-polls with the confirmation offset only after the first batch', async () => {
     const requests = stubFetch(() => accepted([{ update_id: 12 }]))
     const api = client()

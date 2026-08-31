@@ -32,6 +32,7 @@ import { SessionManager } from './sessions.ts'
 import type { TelegramAgentOptions } from './sessions.ts'
 import { telegramTopicsDomain, topicKeyOf, TopicRegistry, sessionIdForKey } from './topics.ts'
 import type { ChatTarget, TelegramDocument, TelegramMessage, TopicKey, Update } from './types.ts'
+import { WorkspaceTopicBridge } from './workspace-topics.ts'
 import { WorkspaceGuard } from './workspaces.ts'
 
 export const name = 'telegram'
@@ -139,6 +140,9 @@ export class TelegramRuntime {
     if (roots.length === 0) {
       throw new Error('telegram: workspaceRoots must list at least one allowed root directory')
     }
+    if (config.workspaceTopicsChatId !== undefined && chatList.length > 0 && !chatList.includes(config.workspaceTopicsChatId)) {
+      throw new Error('telegram: workspaceTopicsChatId must be listed in allowedChatIds')
+    }
     this.authz = new AuthzGate(chatList, userList)
     this.currentConfig = () => config
   }
@@ -236,6 +240,25 @@ export class TelegramRuntime {
     const commandRuntime = this.ctx.get('commands')
     if (commandRuntime !== undefined) {
       this.disposers.push(...this.commands.register(commandRuntime))
+    }
+
+    // Workspace→topic creation observes the workspace domain in this process;
+    // a configured chat without the registry is misconfiguration, not a
+    // feature to skip silently.
+    const workspaceRegistry = this.ctx.get('workspaceRegistry')
+    if (this.currentConfig().workspaceTopicsChatId !== undefined && workspaceRegistry === undefined) {
+      throw new Error('telegram: workspaceTopicsChatId requires the workspace registry (@deepseek-ai/dsh-workspace) in the composition')
+    }
+    if (workspaceRegistry !== undefined) {
+      const bridge = new WorkspaceTopicBridge({
+        api: () => this.api,
+        registry: this.registry,
+        workspaceById: id => workspaceRegistry.get(id),
+        guard: () => this.ensureGuard(),
+        config: () => this.currentConfig(),
+        logger: this.ctx.logger,
+      })
+      this.ctx.on('domain/changed', (change) => { void bridge.onDomainChanged(change) })
     }
 
     this.poll = this.pollLoop()
