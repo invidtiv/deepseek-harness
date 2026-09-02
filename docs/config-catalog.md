@@ -2517,6 +2517,291 @@ export interface Config {
 
 Source: [`packages/core/system-prompt/src/index.ts:237`](../packages/core/system-prompt/src/index.ts)
 
+<a id="deepseek-aidsh-telegram"></a>
+
+## `@deepseek-ai/dsh-telegram`
+
+Requires: `agents`
+
+```ts config-catalog
+/**
+ * Plugin configuration. Validation is schemastery; the two allowlists and the
+ * workspace roots are runtime-validated again in `apply` because empty values
+ * are load-time misconfiguration for this plugin specifically.
+ */
+export interface Config {
+  /** Credential reference (POSIX env-var name) holding the bot token; defaults to `TELEGRAM_BOT_TOKEN`. */
+  tokenRef?: string
+  /** Bot API base URL; default `https://api.telegram.org`. */
+  apiBase?: string
+  /** Chat ids allowed to drive a topic; absent/empty plus empty `allowedUserIds` fails load. */
+  allowedChatIds?: number[]
+  /** User ids allowed to drive a topic. */
+  allowedUserIds?: number[]
+  /** Absolute directory roots a topic workspace may select from; empty fails load. */
+  workspaceRoots?: string[]
+  /** Workspace used for first-message creation when the topic never ran `/folder`. */
+  defaultWorkspace?: string
+  /**
+   * Forum supergroup where the bot creates one topic per workspace created in
+   * this deployment; absent disables workspace-topic creation. Requires the
+   * workspace registry in the composition and the bot's `can_manage_topics`
+   * right in that chat; with a non-empty `allowedChatIds` the chat must be
+   * listed there.
+   */
+  workspaceTopicsChatId?: number
+  /** Long-poll wait in milliseconds; bounded by the Bot API 50-second cap. */
+  pollTimeoutMs?: number
+  /** Queued-message cap per topic; beyond it the bot answers busy instead of queueing. */
+  queueCap?: number
+  /** Minimum interval between placeholder edits for one topic. */
+  editIntervalMs?: number
+  /** Unanswered approval/question timeout; resolves fail-closed. */
+  approvalTimeoutMs?: number
+  /** Provider/model selection for created agents, mirroring the ACP bridge. */
+  agentOptions?: {
+    /** LLM provider key for created agents; omitted leaves the composition's default route. */
+    provider?: string
+    /** Model id for created agents; image input is offered only when this route declares it. */
+    model?: string
+  }
+  /** Runtime-only transport override for tests. */
+  transport?: TelegramApi
+}
+
+/**
+ * The Telegram wire surface the plugin drives. Implementations must resolve
+ * the credential per call (the token never rides config text) and surface Bot
+ * API failures as {@link TelegramApiError}.
+ */
+export interface TelegramApi {
+  /**
+   * Long-poll one batch; resolves with possibly-empty updates. `offset` is
+   * the `update_id + 1` confirmation; `timeoutSeconds` is the Bot API
+   * long-poll wait bound.
+   */
+  getUpdates(offset: number | undefined, signal: AbortSignal, timeoutSeconds: number): Promise<Update[]>
+  /** Post one text message in a topic (thread omitted for the General topic). */
+  sendMessage(target: ChatTarget, text: string, options?: SendOptions): Promise<SentMessage>
+  /** Edit one posted message's text in place. */
+  editMessageText(target: ChatTarget, messageId: number, text: string, options?: SendOptions): Promise<SentMessage>
+  /** Delete one posted message. */
+  deleteMessage(target: ChatTarget, messageId: number): Promise<void>
+  /** Post one photo from raw bytes. */
+  sendPhoto(target: ChatTarget, data: Uint8Array, options?: MediaOptions): Promise<SentMessage>
+  /** Post one document from raw bytes. */
+  sendDocument(target: ChatTarget, data: Uint8Array, filename: string, options?: MediaOptions): Promise<SentMessage>
+  /** Create one forum topic in a topics-enabled supergroup; the bot needs the `can_manage_topics` right there. */
+  createForumTopic(chatId: number, name: string): Promise<CreatedForumTopic>
+  /** Acknowledge one callback button press. */
+  answerCallbackQuery(callbackId: string, options?: { readonly text?: string }): Promise<void>
+  /** Remove one posted message's inline keyboard. */
+  removeInlineKeyboard(target: ChatTarget, messageId: number): Promise<SentMessage>
+  /** Replace one posted message's inline keyboard in place. */
+  editInlineKeyboard(target: ChatTarget, messageId: number, replyMarkup: InlineKeyboard): Promise<SentMessage>
+  /** Resolve a file reference to its download path. */
+  getFile(fileId: string): Promise<TelegramFile>
+  /** Download one file by `getFile`'s `file_path`. */
+  downloadFile(filePath: string, signal?: AbortSignal): Promise<Uint8Array>
+}
+
+/** One update from `getUpdates`, narrowed to the kinds the plugin handles. */
+export interface Update {
+  /** Monotonic update id; `update_id + 1` is the offset that confirms it. */
+  readonly update_id: number
+  /** A new message. */
+  readonly message?: TelegramMessage
+  /** An edited message; the poll requests the kind, and the plugin admits no edit as model input. */
+  readonly edited_message?: TelegramMessage
+  /** An inline-keyboard press routed to the interaction bridge. */
+  readonly callback_query?: CallbackQuery
+}
+
+/** Chat target for outbound calls: the thread id is omitted for the General topic (posting `message_thread_id: 1` is rejected). */
+export interface ChatTarget {
+  /** Telegram chat id to post into. */
+  readonly chatId: number
+  /** Forum topic to post into; `null` posts into the General topic or a plain chat. */
+  readonly threadId: number | null
+}
+
+/** Outbound send options shared by message-like calls. */
+export interface SendOptions {
+  /** Bot API parse mode for the message text; omitted sends the text unparsed. */
+  readonly parseMode?: ParseMode
+  /** Inline keyboard rows to attach; omitted posts the message without buttons. */
+  readonly replyMarkup?: InlineKeyboard
+}
+
+/** A message the Bot API reported as sent. */
+export interface SentMessage {
+  /** Message id of the sent message, used to edit or delete it later. */
+  readonly message_id: number
+  /** Chat the message landed in. */
+  readonly chat: {
+    /** Telegram chat id of the sent message. */
+    readonly id: number
+  }
+}
+
+/** Photo/document caption options. */
+export interface MediaOptions {
+  /** Caption posted alongside the media; omitted posts the file with no caption. */
+  readonly caption?: string
+  /** Bot API parse mode for the caption; omitted sends the caption unparsed. */
+  readonly parseMode?: ParseMode
+}
+
+/** `createForumTopic` result, narrowed to the fields the plugin stores and addresses. */
+export interface CreatedForumTopic {
+  /** Thread id of the created topic; posts into it carry this as `message_thread_id`. */
+  readonly message_thread_id: number
+  /** Topic title as the Bot API recorded it. */
+  readonly name: string
+}
+
+/** Outbound inline keyboard: one array per button row, in display order. */
+export type InlineKeyboard = readonly InlineButton[][]
+
+/** Minimal `getFile` result. */
+export interface TelegramFile {
+  /** The reference the lookup was made with. */
+  readonly file_id: string
+  /** Path to append to the file-download URL; absent when Telegram serves no path for the file. */
+  readonly file_path?: string
+  /** Size in bytes, when Telegram reports it. */
+  readonly file_size?: number
+}
+
+/** One inbound message. Only the fields the plugin consumes are declared. */
+export interface TelegramMessage {
+  /** Per-chat message id, used to address edits and deletions. */
+  readonly message_id: number
+  /** Forum topic the message was posted in; absent in the General topic and in plain chats. */
+  readonly message_thread_id?: number
+  /** Sender, absent for channel and anonymous posts. */
+  readonly from?: TelegramUser
+  /** Chat the message was posted in; its id is the routing carrier the authorization gate reads. */
+  readonly chat: {
+    /** Telegram chat id; the value `allowedChatIds` is matched against. */
+    readonly id: number
+    /** Chat kind Telegram reports, such as `private`, `group`, or `supergroup`. */
+    readonly type?: string
+    /** Whether the supergroup has forum topics enabled. */
+    readonly is_forum?: boolean
+  }
+  /** Message text; commands arrive here, and empty or absent text is ignored. */
+  readonly text?: string
+  /** Caption attached to a photo or document message. */
+  readonly caption?: string
+  /** Photo sizes of one image, ascending; the plugin ingests the largest. */
+  readonly photo?: readonly PhotoSize[]
+  /** Document attachment, downloaded into the topic workspace's inbox directory. */
+  readonly document?: TelegramDocument
+  /** Present on the topic-creation service message; carries the title, never model input. */
+  readonly forum_topic_created?: ForumTopicCreated
+  /** Present on the topic-closed service message; posting pauses while the topic stays mapped. */
+  readonly forum_topic_closed?: ForumTopicClosed
+  /** Present on the topic-reopened service message; posting resumes. */
+  readonly forum_topic_reopened?: ForumTopicReopened
+}
+
+/** One callback button press. */
+export interface CallbackQuery {
+  /** Callback id the bot must acknowledge, whether or not the press is acted on. */
+  readonly id: string
+  /** User who pressed the button. */
+  readonly from: TelegramUser
+  /** Message carrying the pressed keyboard; absent for presses on messages too old for Telegram to include. */
+  readonly message?: {
+    /** Message id of the prompt, matched against the pending prompt's own id. */
+    readonly message_id: number
+    /** Chat the prompt lives in; checked against the pending prompt's target before settling. */
+    readonly chat: {
+      /** Telegram chat id of the prompt. */
+      readonly id: number
+    }
+    /** Forum topic of the prompt; absent in the General topic and in plain chats. */
+    readonly message_thread_id?: number
+  }
+  /** Button payload the bot encoded; unknown or stale values are acknowledged and ignored. */
+  readonly data?: string
+}
+
+/** Parsing modes the Bot API accepts. */
+export type ParseMode = 'HTML' | 'MarkdownV2'
+
+/** Outbound keyboard button. */
+export interface InlineButton {
+  /** Button label; Telegram's limit is 64 characters, so longer labels are truncated before the row is built. */
+  readonly text: string
+  /** Payload echoed back in the callback query; the plugin's prompt id and choice. */
+  readonly callback_data: string
+}
+
+/** One user of the Bot API, as referenced by a message or callback. */
+export interface TelegramUser {
+  /** Telegram user id; the value `allowedUserIds` is matched against. */
+  readonly id: number
+  /** Whether Telegram marks the sender as a bot. */
+  readonly is_bot?: boolean
+  /** Display first name, absent for senders that hide it. */
+  readonly first_name?: string
+  /** `@`-handle without the sign, absent for users that have none. */
+  readonly username?: string
+}
+
+/** One file reference in a photo set. */
+export interface PhotoSize {
+  /** Download reference for this size, usable with `getFile`. */
+  readonly file_id: string
+  /** Identifier stable across bots; usable for deduplication, not for downloading. */
+  readonly file_unique_id: string
+  /** Pixel width Telegram reports for this size. */
+  readonly width?: number
+  /** Pixel height Telegram reports for this size. */
+  readonly height?: number
+  /** Encoded size in bytes, when Telegram reports it. */
+  readonly file_size?: number
+}
+
+/** One document attachment. */
+export interface TelegramDocument {
+  /** Download reference for the document, usable with `getFile`. */
+  readonly file_id: string
+  /** Identifier stable across bots; usable for deduplication, not for downloading. */
+  readonly file_unique_id: string
+  /** Sender-supplied filename; untrusted text the plugin sanitizes before touching disk. */
+  readonly file_name?: string
+  /** Sender-declared MIME type; not verified against the bytes. */
+  readonly mime_type?: string
+  /** Size in bytes, compared against the 20 MB Bot API download limit. */
+  readonly file_size?: number
+}
+
+/** Service payload of a `forum_topic_created` message. */
+export interface ForumTopicCreated {
+  /** Topic title as created, recorded as mapping metadata. */
+  readonly name: string
+  /** Topic icon color as an RGB integer. */
+  readonly icon_color?: number
+  /** Custom-emoji id used as the topic icon, when one was chosen. */
+  readonly icon_custom_emoji_id?: string
+}
+
+/** Service payload of a `forum_topic_closed` message: its presence is the whole signal that the topic accepts no posts. */
+export interface ForumTopicClosed {
+  /* empty in the Bot API */
+}
+
+/** Service payload of a `forum_topic_reopened` message: its presence is the whole signal that the topic accepts posts again. */
+export interface ForumTopicReopened {
+  /* empty in the Bot API */
+}
+```
+
+Source: [`packages/telegram/telegram/src/config.ts:57`](../packages/telegram/telegram/src/config.ts)
+
 <a id="deepseek-aidsh-terminal-bash"></a>
 
 ## `@deepseek-ai/dsh-terminal-bash`
@@ -3470,6 +3755,7 @@ Imported as libraries by other packages; a `cordis.yml` cannot load them.
 - `@deepseek-ai/dsh-session-telemetry` ([`packages/session/session-telemetry/src/index.ts`](../packages/session/session-telemetry/src/index.ts))
 - `@deepseek-ai/dsh-session-title-llm` ([`packages/session/session-title-llm/src/index.ts`](../packages/session/session-title-llm/src/index.ts))
 - `@deepseek-ai/dsh-subagent-in-process-driver` ([`packages/subagent/subagent-in-process-driver/src/index.ts`](../packages/subagent/subagent-in-process-driver/src/index.ts))
+- `@deepseek-ai/dsh-telegram-bundle` ([`packages/bundle/telegram-bundle/src/index.ts`](../packages/bundle/telegram-bundle/src/index.ts))
 - `@deepseek-ai/dsh-timeout` ([`packages/util/timeout/src/index.ts`](../packages/util/timeout/src/index.ts))
 - `@deepseek-ai/dsh-typert-generator` ([`packages/typert/generator/src/index.ts`](../packages/typert/generator/src/index.ts))
 - `@deepseek-ai/dsh-typert-protocol` ([`packages/typert/protocol/src/index.ts`](../packages/typert/protocol/src/index.ts))

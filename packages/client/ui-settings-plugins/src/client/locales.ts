@@ -4,10 +4,19 @@
 export type PluginsSettingsLocaleKey =
   | 'nav' | 'title' | 'intro' | 'tabs' | 'configurableTab' | 'empty'
   | 'overridden' | 'reset' | 'readOnly' | 'expand' | 'collapse'
-  | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed' | 'invalidNumber'
+  | 'save' | 'saving' | 'discard' | 'unsaved' | 'saveFailed' | 'invalidNumber' | 'invalidList'
   | 'bashTitle' | 'bashDescription' | 'bashTimeoutMs' | 'bashTimeoutMsHint'
   | 'bashMaxOutputBytes' | 'bashMaxOutputBytesHint'
   | 'agentLoopTitle' | 'agentLoopDescription' | 'agentLoopMaxParallel' | 'agentLoopMaxParallelHint'
+  | 'telegramTitle' | 'telegramDescription'
+  | 'telegramTokenRef' | 'telegramTokenRefHint' | 'telegramApiBase' | 'telegramApiBaseHint'
+  | 'telegramDefaultWorkspace' | 'telegramDefaultWorkspaceHint'
+  | 'telegramPollTimeoutMs' | 'telegramPollTimeoutMsHint' | 'telegramQueueCap' | 'telegramQueueCapHint'
+  | 'telegramEditIntervalMs' | 'telegramEditIntervalMsHint'
+  | 'telegramApprovalTimeoutMs' | 'telegramApprovalTimeoutMsHint'
+  | 'telegramAllowedChatIds' | 'telegramAllowedChatIdsHint'
+  | 'telegramAllowedUserIds' | 'telegramAllowedUserIdsHint'
+  | 'telegramWorkspaceRoots' | 'telegramWorkspaceRootsHint'
   | 'webSearchTitle' | 'webSearchDescription'
   | 'webSearchApiKey' | 'webSearchApiKeyHint' | 'webSearchApiKeySet' | 'webSearchApiKeyUnset'
   | 'webSearchBaseUrl' | 'webSearchBaseUrlHint' | 'webSearchMaxUses' | 'webSearchMaxUsesHint'
@@ -37,6 +46,7 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   unsaved: 'Unsaved',
   saveFailed: 'The deployment did not accept these values; they were left for you to correct.',
   invalidNumber: 'Enter a number, or leave blank to use the default.',
+  invalidList: 'Enter comma-separated values, or leave blank to use the default.',
   bashTitle: 'Shell',
   bashDescription: 'Limits every command the agent runs.',
   bashTimeoutMs: 'Command timeout (ms)',
@@ -47,6 +57,28 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   agentLoopDescription: 'How the agent dispatches tool calls.',
   agentLoopMaxParallel: 'Parallel tool calls',
   agentLoopMaxParallelHint: 'Upper bound on parallel-safe calls running at once within one step.',
+  telegramTitle: 'Telegram',
+  telegramDescription: 'Routing, workspaces, and pacing for the Telegram bot.',
+  telegramTokenRef: 'Bot token reference',
+  telegramTokenRefHint: 'Name of the environment variable holding the bot token; the token itself is never stored here.',
+  telegramApiBase: 'Bot API endpoint',
+  telegramApiBaseHint: 'Leave blank to use the official endpoint.',
+  telegramDefaultWorkspace: 'Default workspace',
+  telegramDefaultWorkspaceHint: 'Workspace used when a topic never selected one.',
+  telegramPollTimeoutMs: 'Long-poll wait (ms)',
+  telegramPollTimeoutMsHint: 'How long one update poll may wait before returning empty.',
+  telegramQueueCap: 'Queued messages per topic',
+  telegramQueueCapHint: 'Beyond this the bot answers busy instead of queueing.',
+  telegramEditIntervalMs: 'Status edit interval (ms)',
+  telegramEditIntervalMsHint: 'Minimum delay between edits of the status placeholder.',
+  telegramApprovalTimeoutMs: 'Approval timeout (ms)',
+  telegramApprovalTimeoutMsHint: 'Unanswered approvals and questions fail closed after this long.',
+  telegramAllowedChatIds: 'Allowed chat ids',
+  telegramAllowedChatIdsHint: 'Comma-separated chat ids the bot serves.',
+  telegramAllowedUserIds: 'Allowed user ids',
+  telegramAllowedUserIdsHint: 'Comma-separated sender ids the bot serves.',
+  telegramWorkspaceRoots: 'Workspace roots',
+  telegramWorkspaceRootsHint: 'Comma-separated absolute directories a topic may select from.',
   webSearchTitle: 'Web search',
   webSearchDescription: 'The DeepSeek search provider.',
   webSearchApiKey: 'API key',
@@ -93,6 +125,7 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   unsaved: '未保存',
   saveFailed: '本部署没有接受这些值，已保留供你修改。',
   invalidNumber: '请填数字；留空表示使用默认值。',
+  invalidList: '请填逗号分隔的值；留空表示使用默认值。',
   bashTitle: '终端',
   bashDescription: '限制 agent 运行的每一条命令。',
   bashTimeoutMs: '命令超时（毫秒）',
@@ -103,6 +136,28 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   agentLoopDescription: 'Agent 如何派发工具调用。',
   agentLoopMaxParallel: '并行工具调用数',
   agentLoopMaxParallelHint: '同一步内最多同时运行多少个可并行的调用。',
+  telegramTitle: 'Telegram',
+  telegramDescription: 'Telegram 机器人的路由、工作区与节奏设置。',
+  telegramTokenRef: '机器人令牌引用',
+  telegramTokenRefHint: '存放机器人令牌的环境变量名；令牌本身不会保存在这里。',
+  telegramApiBase: 'Bot API 地址',
+  telegramApiBaseHint: '留空则使用官方地址。',
+  telegramDefaultWorkspace: '默认工作区',
+  telegramDefaultWorkspaceHint: '话题未选择工作区时使用的目录。',
+  telegramPollTimeoutMs: '长轮询等待（毫秒）',
+  telegramPollTimeoutMsHint: '单次更新轮询最多等待多久。',
+  telegramQueueCap: '每话题排队上限',
+  telegramQueueCapHint: '超出后机器人会回复忙碌而不是继续排队。',
+  telegramEditIntervalMs: '状态编辑间隔（毫秒）',
+  telegramEditIntervalMsHint: '状态占位消息两次编辑之间的最小间隔。',
+  telegramApprovalTimeoutMs: '审批超时（毫秒）',
+  telegramApprovalTimeoutMsHint: '审批与提问超过此时长未回应即按拒绝处理。',
+  telegramAllowedChatIds: '允许的会话 ID',
+  telegramAllowedChatIdsHint: '机器人服务的会话 ID，逗号分隔。',
+  telegramAllowedUserIds: '允许的用户 ID',
+  telegramAllowedUserIdsHint: '机器人服务的发送者 ID，逗号分隔。',
+  telegramWorkspaceRoots: '工作区根目录',
+  telegramWorkspaceRootsHint: '话题可选择的绝对路径根目录，逗号分隔。',
   webSearchTitle: '网页搜索',
   webSearchDescription: 'DeepSeek 搜索提供方。',
   webSearchApiKey: 'API Key',
