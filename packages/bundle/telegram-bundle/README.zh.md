@@ -52,6 +52,6 @@ dsh Telegram 前端配置包：[`cordis.patch.yml`](cordis.patch.yml) 在 `dsh-b
 <details>
 <summary>维护者工作背景——点击展开</summary>
 
-无。
+本包不发布运行时不变量伴随模块；它是静态补丁清单载体（由其他包拥有的 loader 行组成的 YAML 文档）：不挂载服务、不发出事件、也没有可校验的可变关系。
 
 </details>

@@ -1,9 +1,10 @@
 /**
- * Three-column shell frame, registered into the built-in 'root' slot (the web
+ * Five-column shell frame, registered into the built-in 'root' slot (the web
  * shell renders only 'root'). Owns the grid tracks (sidebar | center |
- * details), the drag handles (pointer capture + rAF throttle), the concession
- * chain (columns.ts), and the child-slot render decisions: the sidebar slot
- * renders HERE with live parameters from the concession solve, and the
+ * explorer | details), the drag handles (pointer capture + rAF throttle), the
+ * concession chain (columns.ts), and the child-slot render decisions: the
+ * sidebar slot renders HERE with live parameters from the concession solve,
+ * the explorer slot likewise carries the resolved rail state, and the
  * session-aware occupants render in fixed column positions; strict entries
  * gate themselves on current-session availability while session-maybe
  * entries retain identity. Pure component: everything arrives
@@ -15,7 +16,9 @@ import type { ReactNode } from 'react'
 import type {
   PropsLocale, PropsRenderSlots, PropsRuntime, PropsStore,
 } from '@deepseek-ai/dsh-client-ui-slots'
-import { computeColumns, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT } from './columns.ts'
+import {
+  computeColumns, EXPLORER_COLLAPSED, SIDEBAR_AUTO_COLLAPSE, SIDEBAR_DEFAULT,
+} from './columns.ts'
 import { DocumentTitle } from './DocumentTitle.tsx'
 import type { createLayoutStore } from './stores.ts'
 import css from './AppFrame.module.css'
@@ -23,7 +26,7 @@ import css from './AppFrame.module.css'
 /** Full composed props: runtime share + child-slot render share + store share. */
 export type AppFrameProps =
   & PropsRuntime<'root'>
-  & PropsRenderSlots<'sidebar' | 'conversation' | 'details' | 'shell.overlay'>
+  & PropsRenderSlots<'sidebar' | 'conversation' | 'explorer' | 'details' | 'fileViewer' | 'shell.overlay'>
   & PropsStore<ReturnType<typeof createLayoutStore>>
   & PropsLocale<'common'>
 
@@ -37,11 +40,21 @@ function DetailsColumn(props: { children?: ReactNode }) {
   return <div className={css.detailsCol}>{props.children}</div>
 }
 
+/** File-viewer column grid item; width 0 keeps the subtree mounted (never unmount on close). */
+function FileViewerColumn(props: { children?: ReactNode }) {
+  return <div className={css.fileViewerCol}>{props.children}</div>
+}
+
+/** Explorer column grid item; closed keeps the mounted slot at rail width. */
+function ExplorerColumn(props: { children?: ReactNode }) {
+  return <div className={css.explorerCol}>{props.children}</div>
+}
+
 /**
  * One drag handle: pointer capture, rAF-throttled dx reports against the drag-start origin.
  * `side` keys the hover-reveal CSS to the owning column.
  */
-function DragHandle(props: { side: 'sidebar' | 'details'; left: number; onStart: () => void; onDrag: (dx: number) => void; onEnd: () => void }) {
+function DragHandle(props: { side: 'sidebar' | 'explorer' | 'details' | 'fileViewer'; left: number; onStart: () => void; onDrag: (dx: number) => void; onEnd: () => void }) {
   const [dragging, setDragging] = useState(false)
   const origin = useRef(0)
   const latest = useRef(0)
@@ -149,7 +162,17 @@ export function AppFrame({
   const sidebarPreference = sidebarCollapsed
     ? 0
     : panels.sidebar === 0 ? SIDEBAR_DEFAULT : panels.sidebar
-  const cols = computeColumns(viewport, sidebarPreference, detailsSession === undefined ? 0 : panels.details)
+  const cols = computeColumns(
+    viewport,
+    sidebarPreference,
+    detailsSession === undefined ? 0 : panels.details,
+    panels.fileViewer,
+    panels.explorer,
+  )
+  // The explorer's collapsed flag follows the resolved rail exactly like the
+  // sidebar's: a preference-closed column and a solver auto-collapse both
+  // render the rail UI, and reopening from either state is one toggle.
+  const explorerCollapsed = cols.explorer <= EXPLORER_COLLAPSED
   const colsRef = useRef(cols)
   colsRef.current = cols
 
@@ -158,17 +181,27 @@ export function AppFrame({
   // it stays frozen for the whole gesture so dx deltas do not compound.
   const sidebarBase = useRef(0)
   const detailsBase = useRef(0)
+  const fileViewerBase = useRef(0)
+  const explorerBase = useRef(0)
   // Track-level transitions pause for the whole gesture: eased tracks would
   // detach the column edge from the pointer (AppFrame.module.css).
   const [dragging, setDragging] = useState(false)
   const onDragEnd = useCallback(() => { setDragging(false) }, [])
   const onSidebarStart = useCallback(() => { sidebarBase.current = colsRef.current.sidebar; setDragging(true) }, [])
   const onDetailsStart = useCallback(() => { detailsBase.current = colsRef.current.details; setDragging(true) }, [])
+  const onFileViewerStart = useCallback(() => { fileViewerBase.current = colsRef.current.fileViewer; setDragging(true) }, [])
+  const onExplorerStart = useCallback(() => { explorerBase.current = colsRef.current.explorer; setDragging(true) }, [])
   const onSidebarDrag = useCallback((dx: number) => {
     actions.setSidebar(sidebarBase.current + dx)
   }, [actions])
   const onDetailsDrag = useCallback((dx: number) => {
     actions.setDetails(detailsBase.current - dx)
+  }, [actions])
+  const onFileViewerDrag = useCallback((dx: number) => {
+    actions.setFileViewer(fileViewerBase.current - dx)
+  }, [actions])
+  const onExplorerDrag = useCallback((dx: number) => {
+    actions.setExplorer(explorerBase.current + dx)
   }, [actions])
   const productTitle = process.env.DSH_CLIENT_TITLE ?? t('brand.localBuild')
 
@@ -176,9 +209,11 @@ export function AppFrame({
     <div
       ref={frameRef}
       className={css.frame}
-      style={{ gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${cols.details}px` }}
+      style={{ gridTemplateColumns: `${cols.sidebar}px minmax(0, 1fr) ${cols.explorer}px ${cols.details}px ${cols.fileViewer}px` }}
       data-sidebar-collapsed={sidebarCollapsed || undefined}
+      data-explorer-collapsed={explorerCollapsed || undefined}
       data-details-collapsed={cols.details === 0 || undefined}
+      data-file-viewer-collapsed={cols.fileViewer === 0 || undefined}
       data-dragging={dragging || undefined}
     >
       <DocumentTitle
@@ -203,16 +238,25 @@ export function AppFrame({
             is session-maybe; SessionProvider withholds the strict details
             entry while no session is current. */}
         <CenterColumn>{renderSlot('conversation', {})}</CenterColumn>
+        <ExplorerColumn>
+          {/* Same render-site contract as the sidebar slot: the occupant sees
+              its live solved column state (collapsed follows the resolved
+              rail, so a derived auto-collapse renders the rail UI too). */}
+          {renderSlot('explorer', { collapsed: explorerCollapsed, width: cols.explorer })}
+        </ExplorerColumn>
         <DetailsColumn>
           <SessionProvider>{renderSlot('details', {})}</SessionProvider>
         </DetailsColumn>
+        <FileViewerColumn>{renderSlot('fileViewer', {})}</FileViewerColumn>
       </>
       <div className={css.overlayLayer} data-shell-overlay>
         {renderSlot('shell.overlay', {})}
       </div>
-      {/* The collapsed rail is fixed-width: no resize handle while closed. */}
+      {/* The collapsed rails are fixed-width: no resize handle while closed. */}
       {!sidebarCollapsed && <DragHandle side="sidebar" left={cols.sidebar} onStart={onSidebarStart} onDrag={onSidebarDrag} onEnd={onDragEnd} />}
-      {cols.details > 0 && <DragHandle side="details" left={viewport - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
+      {!explorerCollapsed && <DragHandle side="explorer" left={viewport - cols.fileViewer - cols.details - cols.explorer} onStart={onExplorerStart} onDrag={onExplorerDrag} onEnd={onDragEnd} />}
+      {cols.details > 0 && <DragHandle side="details" left={viewport - cols.fileViewer - cols.details} onStart={onDetailsStart} onDrag={onDetailsDrag} onEnd={onDragEnd} />}
+      {cols.fileViewer > 0 && <DragHandle side="fileViewer" left={viewport - cols.fileViewer} onStart={onFileViewerStart} onDrag={onFileViewerDrag} onEnd={onDragEnd} />}
     </div>
   )
 }

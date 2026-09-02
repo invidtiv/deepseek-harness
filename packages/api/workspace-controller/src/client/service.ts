@@ -4,7 +4,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
-import type { WorkspaceView } from '../types.ts'
+import type { FileContents, FileListing, WorkspaceView } from '../types.ts'
 import type { ClientWorkspaceModel, WorkspaceSnapshot } from './model.ts'
 
 /** Structured create failure for callers that distinguish Host business errors. */
@@ -14,6 +14,26 @@ export class WorkspaceCreateError extends Error {
   /** @param rpcError - Host business or folded carrier failure. */
   constructor(readonly rpcError: RemoteFailure) {
     super(`workspace create failed: ${rpcError.code}: ${rpcError.message}`)
+  }
+}
+
+/** Structured file-read failure for file-viewer consumers. */
+export class FileReadError extends Error {
+  override readonly name = 'FileReadError'
+
+  /** @param rpcError - Host business or folded transport failure. */
+  constructor(readonly rpcError: RemoteFailure) {
+    super(`file read failed: ${rpcError.code}: ${rpcError.message}`)
+  }
+}
+
+/** Structured file-listing failure for file-explorer consumers. */
+export class FileListError extends Error {
+  override readonly name = 'FileListError'
+
+  /** @param rpcError - Host business or folded transport failure. */
+  constructor(readonly rpcError: RemoteFailure) {
+    super(`file listing failed: ${rpcError.code}: ${rpcError.message}`)
   }
 }
 
@@ -74,6 +94,20 @@ export interface IWorkspaces {
     sessionId: SessionId,
     beforeSessionId?: SessionId,
   ): Promise<WorkspaceView>
+  /**
+   * Read one text file's contents for the file viewer.
+   * @param path - absolute file path.
+   * @param signal - caller lifetime.
+   * @returns the file contents.
+   */
+  readFile(path: string, signal?: AbortSignal): Promise<FileContents>
+  /**
+   * List one mixed directory level for the file explorer.
+   * @param path - absolute directory; absent lists the Host's default project root.
+   * @param signal - caller lifetime.
+   * @returns the level's listing.
+   */
+  listFiles(path?: string, signal?: AbortSignal): Promise<FileListing>
 }
 
 /** Owns the bare Workspace snapshot and Workspace-only commands. */
@@ -124,6 +158,18 @@ export class WorkspaceController extends Service implements IWorkspaces {
     const result = await this.model.insertSessionBefore(workspaceId, sessionId, beforeSessionId)
     if (!result.ok) throw commandError('move', result.error)
     return result.value.workspace
+  }
+
+  async readFile(path: string, signal?: AbortSignal): Promise<FileContents> {
+    const result = await this.model.readFile(path, signal)
+    if (!result.ok) throw new FileReadError(result.error)
+    return result.value
+  }
+
+  async listFiles(path?: string, signal?: AbortSignal): Promise<FileListing> {
+    const result = await this.model.listFiles(path, signal)
+    if (!result.ok) throw new FileListError(result.error)
+    return result.value
   }
 }
 

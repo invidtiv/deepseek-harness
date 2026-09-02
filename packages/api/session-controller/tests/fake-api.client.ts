@@ -268,6 +268,22 @@ export class FakeApiClient {
           payload,
           this.onWorkspaceArchiveSession(payload),
         ),
+        readFile: payload => this.record(
+          'workspace.readFile',
+          payload,
+          Promise.resolve(ok({
+            path: payload.path,
+            content: `fixture file: ${payload.path}\nconst answer = 42\n`,
+            size: `fixture file: ${payload.path}\nconst answer = 42\n`.length,
+            truncated: false,
+            binary: false,
+          })),
+        ),
+        listFiles: payload => this.record(
+          'workspace.listFiles',
+          payload,
+          Promise.resolve(ok({ path: payload.path ?? '/home/fixture', entries: [], truncated: false })),
+        ),
         follow: signal => this.openWorkspace(signal),
       },
     }

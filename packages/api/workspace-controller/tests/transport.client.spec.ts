@@ -19,6 +19,7 @@ import {
   type WorkspaceRemote,
 } from '../src/client/index.ts'
 import type {
+  FileContents, FileListRequest, FileListing, FileReadRequest,
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
   WorkspaceCreateRequest,
@@ -140,6 +141,14 @@ class ScriptedWorkspaceRemote implements WorkspaceRemote {
     throw new Error('unused')
   }
 
+  readFile(_request: FileReadRequest): Promise<RemoteResult<FileContents>> {
+    throw new Error('unused')
+  }
+
+  listFiles(_request: FileListRequest): Promise<RemoteResult<FileListing>> {
+    throw new Error('unused')
+  }
+
   async *follow(signal = new AbortController().signal): AsyncIterable<WorkspaceFollowFrame> {
     const generation = this.generations[this.calls++]
     if (generation === undefined) throw new Error('no scripted Workspace generation')
@@ -178,6 +187,14 @@ class CommandWorkspaceRemote implements WorkspaceRemote {
 
   readonly archiveSession = vi.fn<WorkspaceRemote['archiveSession']>(request => Promise.resolve(remoteOk({
     archivedSessionIds: [request.sessionId],
+  })))
+
+  readonly readFile = vi.fn<WorkspaceRemote['readFile']>(() => Promise.resolve(remoteOk({
+    path: '/f', content: '', size: 0, truncated: false, binary: false,
+  })))
+
+  readonly listFiles = vi.fn<WorkspaceRemote['listFiles']>(() => Promise.resolve(remoteOk({
+    path: '/home/test', entries: [], truncated: false,
   })))
 
   async *follow(_signal?: AbortSignal): AsyncIterable<WorkspaceFollowFrame> {}

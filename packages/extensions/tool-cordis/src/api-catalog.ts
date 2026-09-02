@@ -2814,6 +2814,18 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the complete resulting archive set.',
       },
       {
+        signature: '@Remote(\'readFile\') readFile(request: FileReadRequest, signal: AbortSignal): Promise<FileContents>',
+        description: 'Read one text file\'s contents for the file viewer, bounded and binary-refusing: a missing path, a directory, and a read failure each become their own wire failure, a file too large to show whole returns a truncated prefix, and a non-text file returns `binary` with empty content.',
+        parameters: [{ name: 'request', description: 'the read request.' }, { name: 'signal', description: 'caller/connection lifetime.' }],
+        returns: 'the file contents.',
+      },
+      {
+        signature: '@Remote(\'listFiles\') listFiles(request: FileListRequest, signal: AbortSignal): Promise<FileListing>',
+        description: 'List one mixed directory level (child directories and files) for the file explorer, bounded: dirents stream once, symlink targets probe per row, and the answer keeps the name-sorted head plus the `truncated` flag. An unreadable or missing level — including a non-directory target — fails with the shared listing code.',
+        parameters: [{ name: 'request', description: 'the listing request; an absent path lists the Host\'s default project root.' }, { name: 'signal', description: 'caller/connection lifetime.' }],
+        returns: 'the mixed listing.',
+      },
+      {
         signature: '@Remote({ mode: \'stream\' }) follow(signal: AbortSignal): AsyncIterable<WorkspaceFollowFrame>',
         description: 'Stream a complete Workspace baseline followed by ordered increments.',
         parameters: [{ name: 'signal', description: 'generation cancellation.' }],
@@ -4003,12 +4015,32 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type FiberState = FiberStateEnum;',
   },
   {
+    name: 'FileContents',
+    declaration: 'export interface FileContents {\n    readonly path: string;\n    readonly content: string;\n    readonly size: number;\n    readonly truncated: boolean;\n    readonly binary: boolean;\n}',
+  },
+  {
     name: 'FileDiff',
     declaration: 'export interface FileDiff {\n    path: string;\n    oldText: string | null;\n    newText: string;\n}',
   },
   {
+    name: 'FileListing',
+    declaration: 'export interface FileListing {\n    readonly path: string;\n    readonly entries: readonly FileListingEntry[];\n    readonly truncated: boolean;\n}',
+  },
+  {
+    name: 'FileListingEntry',
+    declaration: 'export interface FileListingEntry {\n    readonly name: string;\n    readonly path: string;\n    readonly kind: \'directory\' | \'file\';\n    readonly hidden: boolean;\n}',
+  },
+  {
+    name: 'FileListRequest',
+    declaration: 'export interface FileListRequest {\n    readonly path?: string;\n}',
+  },
+  {
     name: 'FileLocation',
     declaration: 'export interface FileLocation {\n    path: string;\n    line?: number;\n}',
+  },
+  {
+    name: 'FileReadRequest',
+    declaration: 'export interface FileReadRequest {\n    readonly path: string;\n}',
   },
   {
     name: 'FileReferenceCandidate',

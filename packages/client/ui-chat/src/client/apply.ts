@@ -9,6 +9,8 @@ import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 // Type-only service and declaration merges used by the apply world.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: pulls the file viewer's Context merge (ctx.get('fileViewer')).
+import type {} from '@deepseek-ai/dsh-client-ui-file-viewer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
@@ -121,9 +123,16 @@ export function apply(ctx: Context): void {
           fileMentions: (owner: TurnTailOwnerProps) => ctx.get('chatFileMentions')?.forClosing(owner),
           openFile: async (path) => {
             const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
-            const result = await ctx.remote.session.openWorkspacePath({
-              path: resolveWorkspacePath(cwd, path),
-            })
+            const resolved = resolveWorkspacePath(cwd, path)
+            // A file reference opens in the in-app viewer when that plugin is
+            // composed in; a directory (the "Show in folder" gesture) and an
+            // absent viewer keep the Host's native opener.
+            const fileViewer = ctx.get('fileViewer')
+            if (fileViewer !== undefined && path !== '.' && !/[/\\]$/.test(path)) {
+              fileViewer.open(resolved)
+              return
+            }
+            const result = await ctx.remote.session.openWorkspacePath({ path: resolved })
             if (!result.ok) throw new Error(`path open failed: ${result.error.message}`)
           },
           loadOlder: () => { void session.loadOlder() },

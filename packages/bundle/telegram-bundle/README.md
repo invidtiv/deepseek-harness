@@ -52,6 +52,6 @@ None directly; each inserted row's package owns its effect.
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-None.
+No runtime invariant companion is published; the package is a static patch-list carrier (a YAML document of loader rows owned by other packages): it mounts no service, emits no events, and owns no mutable relation to check.
 
 </details>

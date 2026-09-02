@@ -42,9 +42,30 @@
   border-left: 0.5px solid var(--dsw-alias-border-l3);
 }
 
+/* The explorer uses the sidebar's fill so the project navigator reads as a
+   side column, not a floating panel; a closed explorer keeps its bordered
+   compact rail (the rail renders content, unlike the zero-width panels). */
+.explorerCol {
+  min-width: 0;
+  overflow: hidden;
+  background: var(--dsw-specific-sidebar-fill);
+  border-left: 1px solid var(--dsw-alias-border-l1);
+}
+
+.fileViewerCol {
+  min-width: 0;
+  overflow: hidden;
+  border-left: 1px solid var(--dsw-alias-border-l2);
+}
+
 /* The details subtree stays mounted at zero width, so its border must not paint
    a 1px seam. The collapsed sidebar instead retains a bordered compact rail. */
 .frame[data-details-collapsed] .detailsCol {
+  border-left: none;
+}
+
+/* Same zero-width seam rule for the file-viewer column. */
+.frame[data-file-viewer-collapsed] .fileViewerCol {
   border-left: none;
 }
 
@@ -75,7 +96,9 @@
   }
 }
 
-.handle[data-side='details']::after {
+.handle[data-side='details']::after,
+.handle[data-side='fileViewer']::after,
+.handle[data-side='explorer']::after {
   content: '';
   position: absolute;
   top: 50%;
@@ -96,13 +119,23 @@
 }
 
 .detailsCol:hover ~ .handle[data-side='details']::after,
+.fileViewerCol:hover ~ .handle[data-side='fileViewer']::after,
+.explorerCol:hover ~ .handle[data-side='explorer']::after,
 .handle[data-side='details']:hover::after,
-.handle[data-side='details'][data-dragging='true']::after {
+.handle[data-side='fileViewer']:hover::after,
+.handle[data-side='explorer']:hover::after,
+.handle[data-side='details'][data-dragging='true']::after,
+.handle[data-side='fileViewer'][data-dragging='true']::after,
+.handle[data-side='explorer'][data-dragging='true']::after {
   opacity: 1;
 }
 
 .handle[data-side='details']:hover::after,
-.handle[data-side='details'][data-dragging='true']::after {
+.handle[data-side='fileViewer']:hover::after,
+.handle[data-side='explorer']:hover::after,
+.handle[data-side='details'][data-dragging='true']::after,
+.handle[data-side='fileViewer'][data-dragging='true']::after,
+.handle[data-side='explorer'][data-dragging='true']::after {
   background: var(--dsw-alias-button-floating-hover);
   border-color: var(--dsw-alias-border-l3);
 }

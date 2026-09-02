@@ -149,6 +149,6 @@ Append-only through the session's own user-message history; the plugin contribut
 <details>
 <summary>Working context for maintainers — click to expand</summary>
 
-None.
+No runtime invariant companion is published; the transport owns no durable package-local event stream — its topic mapping is storage-domain data validated by that package’s own invariant, and routing/lifecycle tests cover the mapping relations.
 
 </details>

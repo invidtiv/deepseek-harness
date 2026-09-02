@@ -149,6 +149,6 @@ kind: "package-reference"
 <details>
 <summary>维护者工作背景——点击展开</summary>
 
-无。
+本包不发布运行时不变量伴随模块；该传输层没有持久的包内事件流——话题映射是 storage-domain 数据，由其所属包的不变量校验，路由与生命周期测试覆盖映射关系。
 
 </details>

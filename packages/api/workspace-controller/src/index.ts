@@ -4,8 +4,13 @@ import { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { WorkspaceCommands } from './commands.ts'
 import { DirectoryPickerController } from './directory-picker.ts'
+import { WorkspaceFileBrowse } from './file-browse.ts'
 import { WorkspaceFeed } from './feed.ts'
 import type {
+  FileContents,
+  FileListRequest,
+  FileListing,
+  FileReadRequest,
   WorkspaceArchiveSessionRequest,
   WorkspaceArchiveValue,
   WorkspaceCreateRequest,
@@ -22,6 +27,8 @@ import type {
 
 export type * from './types.ts'
 export { DirectoryPickerController } from './directory-picker.ts'
+export { WorkspaceFileBrowse } from './file-browse.ts'
+export type { WorkspaceFileBrowseConfig } from './file-browse.ts'
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
@@ -36,12 +43,14 @@ export class WorkspaceController extends TypertRemoteService {
 
   private readonly commands: WorkspaceCommands
   private readonly feed: WorkspaceFeed
+  private readonly browse: WorkspaceFileBrowse
 
   /** @param ctx - Host context containing the Workspace registry. */
   constructor(ctx: Context) {
     super(ctx, 'workspaceController', { namespace: 'workspace' })
     this.commands = new WorkspaceCommands(ctx)
     this.feed = new WorkspaceFeed(ctx)
+    this.browse = new WorkspaceFileBrowse()
     // This package is the Loader entry for both Remote owners it hosts: the
     // directory-picking seam is abstract and never an entry itself. The child
     // stays pending until a picking backend is composed, so a host without one
@@ -107,6 +116,37 @@ export class WorkspaceController extends TypertRemoteService {
   @Remote('archiveSession')
   archiveSession(request: WorkspaceArchiveSessionRequest): Promise<WorkspaceArchiveValue> {
     return this.commands.archiveSession(request)
+  }
+
+  /**
+   * Read one text file's contents for the file viewer, bounded and
+   * binary-refusing: a missing path, a directory, and a read failure each
+   * become their own wire failure, a file too large to show whole returns a
+   * truncated prefix, and a non-text file returns `binary` with empty
+   * content.
+   * @param request - the read request.
+   * @param signal - caller/connection lifetime.
+   * @returns the file contents.
+   */
+  @Remote('readFile')
+  readFile(request: FileReadRequest, signal: AbortSignal): Promise<FileContents> {
+    return this.browse.readFile(request, signal)
+  }
+
+  /**
+   * List one mixed directory level (child directories and files) for the
+   * file explorer, bounded: dirents stream once, symlink targets probe per
+   * row, and the answer keeps the name-sorted head plus the `truncated`
+   * flag. An unreadable or missing level — including a non-directory
+   * target — fails with the shared listing code.
+   * @param request - the listing request; an absent path lists the Host's
+   *   default project root.
+   * @param signal - caller/connection lifetime.
+   * @returns the mixed listing.
+   */
+  @Remote('listFiles')
+  listFiles(request: FileListRequest, signal: AbortSignal): Promise<FileListing> {
+    return this.browse.listFiles(request, signal)
   }
 
   /**
