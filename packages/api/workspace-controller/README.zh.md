@@ -22,7 +22,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-Host 控制器会串行执行正确性取决于当前 registry 状态的变更，并为预期失败返回稳定的 `WorkspaceError` 值。它的 `follow()` 流会同步订阅持久 Workspace 变更，先发出一份完整 baseline，再按顺序发出 `upsert`、`remove`、`order` 和 `archived` 增量。重连会以替换 baseline 开始新一代，因此消费方不依赖收到断线期间的每个增量。
+Host 控制器会串行执行正确性取决于当前 registry 状态的变更，并为预期失败抛出带稳定 `workspace/*` 或 `directory-picker/*` 码的 `RemoteError`。它的 `follow()` 流会同步订阅持久 Workspace 变更，先发出一份完整 baseline，再按顺序发出 `upsert`、`remove`、`order` 和 `archived` 增量。重连会以替换 baseline 开始新一代，因此消费方不依赖收到断线期间的每个增量。
 
 `readFile` 与 `listFiles` 动词由 `WorkspaceFileBrowse` 在 Host 文件系统上实现：读取以 2 MiB 封顶并带截断标记、通过 NUL 字节检查拒绝二进制内容；列表单次流式枚举，在 1000 条上限内保留按名称排序的头部；缺省的列表路径解析为 Host 默认项目根。预期失败携带稳定代码（`file-not-found`、`file-unreadable`、`directory-unreadable`、`cancelled`）。
 
@@ -56,3 +56,5 @@ Client 入口提供 `ClientWorkspaceModel` 和 `createWorkspaceStateStream()`。
 无。
 
 </details>
+
+**运行时不变式：** 不发布伴生入口。Workspace Registry 负责持久化，每次流生成都是完整投影。

@@ -1,0 +1,19 @@
+# Keyless smoke composition: the real telegram-agent leaf with the model
+# adapter replaced by a scripted one and the Bot API pointed at the test's
+# local mock server (DSH_TELEGRAM_API_BASE and friends come from the test
+# environment).
+
+- id: logger
+  name: '@deepseek-ai/cordis-plugin-logger-console'
+
+- id: cli-mock-llm
+  name: './cli-mock-llm.ts'
+
+- id: base
+  name: '@deepseek-ai/cordis-plugin-include'
+  config:
+    path: ../../cordis.yml
+    patches:
+      - id: llm-deepseek
+        name: '@deepseek-ai/dsh-llm-deepseek'
+        disabled: true

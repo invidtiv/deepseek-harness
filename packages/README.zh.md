@@ -52,6 +52,7 @@ harness 由 `packages/` 下的 npm 包组装而成，按能力系列分组：会
 | [`experimental/`](experimental/README.zh.md) | 私有原型与内部专用插件 |
 | [`workflow/`](workflow/README.zh.md) | 工作流 seam、worker 线程引擎、面向模型的 `workflow`/`ralph` 工具 |
 | [`webhook/`](webhook/README.zh.md) | 已验证外部事件、受信规则与即发即弃 Workspace Session |
+| [`telegram/`](telegram/README.zh.md) | Telegram 论坛话题前端，每个聊天话题驱动一个持久 agent 会话 |
 | [`web/`](web/README.zh.md) | Web 能力系列：seam、搜索/获取提供方、面向模型的 Web 工具 |
 | [`attachment/`](attachment/README.zh.md) | 持久附件标识、校验、本地内容寻址存储 |
 | [`spill/`](spill/README.zh.md) | spill 能力系列：存储 seam、本地实现、工具结果 spill 策略 |
@@ -74,7 +75,6 @@ harness 由 `packages/` 下的 npm 包组装而成，按能力系列分组：会
 | [`boot/`](boot/README.zh.md) | 共享的 app bin 启动粘合层 |
 | [`host/`](host/README.zh.md) | web GUI 宿主半侧：API 网关 + HTTP 路由服务器 |
 | [`client/`](client/README.zh.md) | web GUI 浏览器半侧：shell、协议层、对象服务、slot、`ui-*` 插件 |
-| [`examples/`](examples/README.zh.md) | 供测试与自定义部署复用的组合包 |
 | [`test-support/`](test-support/README.zh.md) | 支持基础设施（testkit、不变式、回放、Loader 冒烟测试） |
 | [`runtime-diagnostics/`](runtime-diagnostics/README.zh.md) | 运行时诊断：按包归属的运行时不变式检查与报告 |
 | [`util/`](util/README.zh.md) | 组间共享的低层零依赖工具（`Branded<B>`、home/路径辅助函数、超时、留存） |
@@ -84,7 +84,7 @@ harness 由 `packages/` 下的 npm 包组装而成，按能力系列分组：会
 <a id="release-expectations"></a>
 ## 发布预期
 
-大多数组是产品——稳定 API。例外：`e2b/` 是 POC，`experimental/` 不发布，`examples/`、`test-support/`、`runtime-diagnostics/` 与 `util/` 是兼容性预期较低的支持组。
+大多数组是产品——稳定 API。例外：`e2b/` 是 POC，`experimental/` 不发布，`test-support/`、`runtime-diagnostics/` 与 `util/` 是兼容性预期较低的支持组。
 
 -----
 
@@ -93,7 +93,7 @@ harness 由 `packages/` 下的 npm 包组装而成，按能力系列分组：会
 
 依赖图由工具生成：[docs/module-graph.md](../docs/module-graph.zh.md)（`pnpm run gen-module-graph`，CI 中有新鲜度门禁）。
 
-**扩展插件依赖 Service Definition，绝不依赖具体提供方。** `dsh-agent-loop` 可替换；UI、钩子和工具插件使用 `dsh-agent`。包括 `dsh-agent-spine-demo` 在内的组合包可以依赖主干插件。能力在需要独立演进时分离 Service Definition / Service Provider / Consumer 角色；详见[能力 seam](../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md)。
+**扩展插件依赖 Service Definition，绝不依赖具体提供方。** `dsh-agent-loop` 可替换；UI、钩子和工具插件使用 `dsh-agent`。组合包可以依赖主干插件。能力在需要独立演进时分离 Service Definition / Service Provider / Consumer 角色；详见[能力 seam](../.agents/notes/implemented/architecture/2026-06-13-capability-seams.zh.md)。
 
 -----
 

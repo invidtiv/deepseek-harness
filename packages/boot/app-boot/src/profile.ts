@@ -147,6 +147,10 @@ export const PROFILE_TEMPLATES: Record<string, ProfileTemplate> = {
     bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-headless'],
     patchReload: 'startup',
   },
+  telegram: {
+    bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-telegram-bundle'],
+    patchReload: 'startup',
+  },
   sdk: {
     bundles: ['@deepseek-ai/dsh-base', '@deepseek-ai/dsh-sdk-app'],
     patchReload: 'startup',

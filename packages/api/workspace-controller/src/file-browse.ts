@@ -2,7 +2,7 @@
 
 import { open, opendir, stat } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import { TypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
+import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   FileContents, FileListing, FileListingEntry, FileListRequest, FileReadRequest,
 } from './types.ts'
@@ -57,18 +57,10 @@ export class WorkspaceFileBrowse {
     try {
       info = await stat(path)
     } catch {
-      throw new TypertRemoteFailure({
-        code: 'file-not-found',
-        message: `file "${path}" was not found`,
-        details: { path },
-      })
+      throw new RemoteError('file-not-found', `file "${path}" was not found`, { path })
     }
     if (info.isDirectory()) {
-      throw new TypertRemoteFailure({
-        code: 'file-unreadable',
-        message: `"${path}" is a directory`,
-        details: { path },
-      })
+      throw new RemoteError('file-unreadable', `"${path}" is a directory`, { path })
     }
     let handle: Awaited<ReturnType<typeof open>> | undefined
     try {
@@ -89,13 +81,9 @@ export class WorkspaceFileBrowse {
       }
     } catch (error: unknown) {
       if (signal.aborted) {
-        throw new TypertRemoteFailure({ code: 'cancelled', message: 'file read was aborted', details: { path } })
+        throw new RemoteError('cancelled', 'file read was aborted', { path })
       }
-      throw new TypertRemoteFailure({
-        code: 'file-unreadable',
-        message: `file "${path}" could not be read: ${error instanceof Error ? error.message : String(error)}`,
-        details: { path },
-      })
+      throw new RemoteError('file-unreadable', `file "${path}" could not be read: ${fsMessage(error)}`, { path })
     } finally {
       await handle?.close()
     }
@@ -120,11 +108,7 @@ export class WorkspaceFileBrowse {
     let closed = false
     try {
       if (!(await stat(target)).isDirectory()) {
-        throw new TypertRemoteFailure({
-          code: 'directory-unreadable',
-          message: `"${target}" is not a directory`,
-          details: { path: target },
-        })
+        throw new RemoteError('directory-unreadable', `"${target}" is not a directory`, { path: target })
       }
       const window: ListingCandidate[] = []
       let evicted = false
@@ -151,15 +135,11 @@ export class WorkspaceFileBrowse {
       }
       return { path: target, entries, truncated: evicted }
     } catch (error: unknown) {
-      if (error instanceof TypertRemoteFailure) throw error
+      if (remoteErrorOf(error) !== undefined) throw error
       if (signal.aborted) {
-        throw new TypertRemoteFailure({ code: 'cancelled', message: 'directory listing was aborted', details: {} })
+        throw new RemoteError('cancelled', 'directory listing was aborted', {})
       }
-      throw new TypertRemoteFailure({
-        code: 'directory-unreadable',
-        message: `cannot list "${target}": ${fsMessage(error)}`,
-        details: { path: target },
-      })
+      throw new RemoteError('directory-unreadable', `cannot list "${target}": ${fsMessage(error)}`, { path: target })
     } finally {
       // Normal releases are awaited in-place above; only a departed caller
       // drops its handle fire-and-forget here, so an abort never waits behind

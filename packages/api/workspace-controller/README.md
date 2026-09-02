@@ -22,7 +22,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-The Host controller serializes mutations whose correctness depends on current registry state and returns stable `WorkspaceError` values for expected failures. Its `follow()` stream synchronously attaches to durable Workspace changes, emits one complete baseline first, then emits ordered `upsert`, `remove`, `order`, and `archived` increments. A reconnect starts another generation with a replacement baseline, so consumers do not depend on receiving every increment while disconnected.
+The Host controller serializes mutations whose correctness depends on current registry state and throws `RemoteError` with a stable `workspace/*` or `directory-picker/*` code for expected failures. Its `follow()` stream synchronously attaches to durable Workspace changes, emits one complete baseline first, then emits ordered `upsert`, `remove`, `order`, and `archived` increments. A reconnect starts another generation with a replacement baseline, so consumers do not depend on receiving every increment while disconnected.
 
 The `readFile` and `listFiles` verbs are served by `WorkspaceFileBrowse` over the Host filesystem: reads are capped at 2 MiB with a truncation flag and refuse binary content through a NUL-byte check, listings stream once and keep the name-sorted head under a 1000-entry bound, and an absent listing path resolves to the Host's default project root. Expected failures carry stable codes (`file-not-found`, `file-unreadable`, `directory-unreadable`, `cancelled`).
 
@@ -56,3 +56,5 @@ No direct effect; Workspace mutations do not alter model requests.
 None.
 
 </details>
+
+**Runtime invariant:** No companion is published. Workspace Registry owns persistence; every stream generation is a full projection.

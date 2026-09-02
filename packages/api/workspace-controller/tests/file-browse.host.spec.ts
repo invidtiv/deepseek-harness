@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSyn
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { TypertRemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
+import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type { FileListing } from '../src/types.ts'
 import { WorkspaceFileBrowse } from '../src/file-browse.ts'
 
@@ -15,8 +15,9 @@ async function errorCode(promise: Promise<unknown>): Promise<{ code: string; det
   try {
     await promise
   } catch (error) {
-    expect(error).toBeInstanceOf(TypertRemoteFailure)
-    return (error as TypertRemoteFailure).failure
+    const failure = remoteErrorOf(error)
+    expect(failure).toBeDefined()
+    return failure as { code: string; details: unknown }
   }
   throw new Error('expected the call to fail')
 }
