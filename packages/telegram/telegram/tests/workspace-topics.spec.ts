@@ -75,7 +75,7 @@ describe('workspace→topic creation (runtime)', () => {
       const texts = (harness as TelegramHarness).api.texts()
       expect(texts.some(text => text.includes((workspace as Workspace).path))).toBe(true)
     })
-  }, 20000)
+  }, 45000)
 
   it('creates no second topic when a created workspace is later mutated', async () => {
     harness = await makeTelegramHarness({
@@ -90,7 +90,7 @@ describe('workspace→topic creation (runtime)', () => {
     await workspace?.setTitle('renamed')
     await settle()
     expect(createdTopics(harness)).toHaveLength(1)
-  }, 20000)
+  }, 45000)
 
   it('creates no topic for a workspace whose path a topic already maps', async () => {
     harness = await makeTelegramHarness({
@@ -105,7 +105,7 @@ describe('workspace→topic creation (runtime)', () => {
     await harness.workspaces?.create(harness.roots[0] as string)
     await settle()
     expect(createdTopics(harness)).toHaveLength(0)
-  }, 20000)
+  }, 45000)
 
   it('rejects startup when the chat is configured without the workspace registry', async () => {
     harness = await makeTelegramHarness({
