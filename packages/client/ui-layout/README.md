@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This package provides the shell layout of the Web GUI: a five-column AppFrame with resizable sidebar, explorer, details, and file-viewer panels, a concession chain that shrinks the file viewer first, then details, then auto-closes both — an open explorer concedes only after both right panels are gone — and the `ctx.layout` panel-geometry service other plugins call to open or close the right panels and toggle the explorer. It also seats the theme presenter, which projects the resolved color scheme, alias tokens, content font size, and `theme-color` metadata onto the document. Choose it for the standard window chrome; panel geometry is transient and resets on reload.
+This package provides the Web GUI's five-column frame: sidebar, main panel area, explorer, file viewer, and right panel. Columns drag and collapse, a concession chain protects the center as the window narrows, and `ctx.layout` lets other plugins select a main panel, toggle the sidebar or explorer, open the file viewer, and report the right panel's presentation. The theme presenter projects the resolved color scheme, tokens, and content font size onto the document. Choose it for the standard window chrome; panel geometry is transient and resets on reload.
 
 ## Table of Contents
 
@@ -25,7 +25,9 @@ This package provides the shell layout of the Web GUI: a five-column AppFrame wi
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this plugin at the root slot; it then renders the app frame around whatever occupies the sidebar, explorer, conversation, details, and file-viewer columns. Users resize the sidebar by dragging its invisible hit strip and the other panels by dragging their floating pills; when the window narrows, the file viewer shrinks first, then details, then both auto-close, and only afterwards does an open explorer shrink. A closed sidebar retains a 56px control rail, a closed explorer retains a 44px rail with its occupant still mounted, and the details and file-viewer panels close to zero width while staying mounted.
+Mount this plugin at the root slot; it then renders the app frame around whatever occupies the sidebar, main, explorer, file-viewer, and right columns. The sidebar spans 264–420px, defaults to 280px, and retains a 56px rail when collapsed; below 1024px it collapses automatically, and opening the right panel drops a manually expanded narrow sidebar. The right panel first opens at 45% of the viewport, then retains the user's pixel preference, capped at 70%. To protect the center, the frame first reduces the right panel's track toward its 300px minimum, then removes the track entirely so the occupant hangs over the centre from the frame edge, then shrinks the file viewer, auto-closes it, and only afterwards lets an open explorer concede. Dragging has no transition delay; the right handle is absent while closed or fullscreen.
+
+Global panels occupy the root-scoped `main` keyed slot; `conversation` is the reserved key for the Conversation. `ctx.layout.selectPanel(id)` selects a registered panel, and `null` selects the Conversation without changing the current Session. No global panel is registered by the shipped composition.
 
 ### Theme presentation
 
@@ -39,7 +41,9 @@ The presenter consumes resolved theme snapshots and projects them onto the docum
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-One `register()` call contributes `AppFrame` into the runtime's built-in `'root'` slot and, in the same breath, declares the six child slots (`sidebar`, `conversation`, `explorer`, `details`, `fileViewer`, `shell.overlay`), seats the layout store (panel geometry), and wires the `ctx.layout` panel-action service. The transient layout store starts the sidebar at its default width and every right column closed, and never reads or writes `localStorage`. AppFrame always mounts the conversation, explorer, and details columns, and the file-viewer drawer keeps its subtree mounted at zero width; a connected Session renders through `SessionProvider`. It projects the selected Session title over the build-configured product title or the localized `common.brand.localBuild` fallback, so locale revisions update document metadata with the root entry. The sidebar and explorer slots receive the frame's live column state (`collapsed` from the resolved rail, so solver auto-collapse renders rail UI too, plus `width`); the theme presenter is a second effect: pure DOM writes from resolved snapshots — initial state through the getter once, then event-driven only, with no React path. It applies palette, font-size, and token variables before measuring the rendered background as the single color authority.
+`selectPanel(id)` checks the live `main` registry before changing selection; an absent key throws and leaves the current panel intact. `beginNavigation()` returns an abort signal for an asynchronous UI navigation. A later call, a valid panel selection (including repeated selection), or layout disposal aborts that signal without cancelling underlying Session creation. Consumers check the signal before committing navigation or moving drafts.
+
+One `register()` call contributes `AppFrame` into the runtime's built-in `'root'` slot and, in the same breath, declares the six child slots (`sidebar`, `main`, `explorer`, `fileViewer`, `rightbar`, `shell.overlay`), seats the layout store (panel geometry), and wires the `ctx.layout` panel-action service. The transient layout store starts the sidebar at its default width and every right column closed, and never reads or writes `localStorage`. One root store separates `panelInfo` selection from `layoutInfo` measurements, width preferences, and presentation reports. `usePanelInfo` subscribes to the stable selection object; AppFrame subscribes to the stable layout object. AppFrame always mounts the main, explorer, file-viewer, and right columns, and the file-viewer drawer keeps its subtree mounted at zero width. The `rightbar` owner supplies actual `width`, `viewportWidth`, and normal-presentation eligibility `canShow`; insufficient room causes a deterministic close, never automatic reopening on widening. Fullscreen hides the width handle without releasing a track the occupant retains. The sidebar and explorer slots receive the frame's live column state (`collapsed` from the resolved rail, so solver auto-collapse renders rail UI too, plus `width`); the independent title component uses the selected Session title only while the Conversation is visible, with the build-configured product title or localized `common.brand.localBuild` as its fallback; locale revisions update that fallback. The theme presenter is a second effect: pure DOM writes from resolved snapshots — initial state through the getter once, then event-driven only, with no React path. It applies palette, font-size, and token variables before measuring the rendered background as the single color authority. Fullscreen presentation suppresses grid and handle transitions; its occupant reports the new columns only after covering the frame. Fullscreen exit keeps transitions suppressed while the frame installs its destination geometry: close removes the right track, and restore retains it. Subsequent normal geometry actions restore ordinary transitions.
 
 </details>
 
@@ -52,8 +56,9 @@ Read these pages when the layout surface is not enough. They move from the frame
 
 - [ui-sidebar](../ui-sidebar/README.md) — occupies the `sidebar` column and its seats.
 - [ui-file-explorer](../ui-file-explorer/README.md) — occupies the `explorer` column.
-- [ui-conversation](../ui-conversation/README.md) — occupies the `conversation` and `details` columns.
+- [ui-conversation](../ui-conversation/README.md) — occupies the `main` key `conversation`.
 - [ui-file-viewer](../ui-file-viewer/README.md) — occupies the `fileViewer` column.
+- [ui-sidebar-right](../ui-sidebar-right/README.md) — occupies the `rightbar` column with one docking surface per session.
 - [ui-theme](../ui-theme/README.md) — the theme seam whose resolved snapshots the presenter consumes.
 - [Web client architecture](../../../.agents/notes/implemented/architecture/2026-07-19-gui-web-client-architecture.md) — how browser plugin rows load and register slots.
 
@@ -75,8 +80,10 @@ None; this package neither assembles nor sends a provider request.
 
 These limits define the current layout behavior. They are current package constraints, not a general window-manager comparison or a task backlog.
 
-- **Panel geometry is transient** — reload restores the sidebar default and the right columns closed; switching between distinct Session ids also closes details and forgets its dragged width, while unselected surfaces render details at zero width without modifying geometry.
-- **Concession-chain auto-close derives a zero width without touching the preferred width** — the panel restores itself when the window widens; consumers must not read the stored details width as the rendered truth.
+- **Panel geometry is transient** — reload restores the sidebar default and the right columns closed; each dragged width is one frame-wide preference, not a per-Session fact.
+- **Extremely narrow windows** — after the right panel closes and the file viewer auto-closes, the center may still fall below its floor; the left 56px rail remains.
+- **Concession-chain auto-close derives a zero width without touching the preferred width** — the panel restores itself when the window widens; consumers must not read a stored width as the rendered truth.
+- **Track and panel travel on one shared curve** — the frame's track transition and the occupant's slide read the same duration and easing variables; an occupant that used its own would detach the panel's edge from the conversation's while squeezing.
 - **No scroll anchoring during squeeze reflow** — layout changes may move the reader's viewport.
 
 <a id="dev-note"></a>
@@ -89,4 +96,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The shell viewing-state store behind ctx.layout emits no cordis events; clamp/prune/concession-chain sequencing is asserted directly by this package's columns and service specs.
+**Runtime invariant:** No companion is published. The shell viewing-state store behind ctx.layout emits no cordis events; clamp, concession-chain, and track sequencing is asserted directly by this package's columns and service specs.

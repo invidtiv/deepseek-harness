@@ -9,9 +9,9 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Telegram forum topics as a native DeepSeek Harness frontend. One durable agent session per chat topic: the plugin long-polls the Bot API, routes every authorized message in a topic to that topic's session (creating, resuming, or refusing with precise errors), renders committed assistant output back into the topic, and answers approval requests and `ask_user_question` items through inline-keyboard buttons. The topic→session mapping is the plugin's own storage-domain unit; session durability, workspace confinement, input queueing, and cancellation stay with the harness.
+Telegram forum topics as a native DeepSeek Harness frontend. One durable agent session per chat topic: the plugin long-polls the Bot API, routes every authorized topic message to that topic's session (creating, resuming, or refusing with precise errors), renders committed assistant output back into the topic, and answers approval requests and `ask_user_question` items through inline-keyboard buttons. The topic→session mapping is the plugin's own storage-domain unit; session durability, workspace confinement, and queueing stay with the harness.
 
-This package is a transport adapter, not a capability seam or a UI integration. It exposes no editor, transcript, model picker, or terminal surface; the five topic commands are ordinary harness commands, discoverable by any other frontend.
+A transport adapter, it exposes no editor, transcript, model picker, or terminal surface; any frontend can discover its five topic commands.
 
 ## Table of Contents
 

@@ -219,6 +219,7 @@ describe('Topic commands against impossible mapping state', () => {
     current = await fixture()
     const brittle = {
       canonicalRoots: [],
+      // oxlint-disable-next-line typescript/prefer-promise-reject-errors -- a non-Error rejection reason is the scenario under test.
       select: () => Promise.reject('not a usable path'),
     } as unknown as WorkspaceGuard
     const adapter = new CommandAdapter(

@@ -1,19 +1,22 @@
 /**
  * Pure concession-chain column solver for the five-column AppFrame
- * (sidebar | center | explorer | details | fileViewer). Chain order is fixed
- * by contract: keep center >= CENTER_MIN by shrinking the file viewer toward
- * its minimum first (it is the outermost and typically widest right panel),
- * then details, then auto-closing the file viewer and finally details
- * (derived zero widths — preferred width preferences are never rewritten, so
- * widening the window restores them); only after both right panels are gone
- * does an open explorer concede toward its minimum and then auto-collapse.
- * The rails never concede: a closed sidebar and a closed explorer each render
- * at their fixed control-rail width, and center absorbs any remaining deficit
- * as the last resort. Inputs are the layout store's plain width preferences
- * (0 = closed); a closed right panel resolves to zero width while closed
- * side columns resolve to their rail. The SIDEBAR_AUTO_COLLAPSE breakpoint is
- * consumed by AppFrame, which decides the effective sidebar preference before
- * solving; the solver itself stays breakpoint-free.
+ * (sidebar | center | explorer | fileViewer | rightbar). Chain order is fixed
+ * by contract: keep center >= CENTER_MIN by shrinking the rightbar toward its
+ * minimum first (it is the outermost and its occupant keeps drawing even at a
+ * reduced track), then dropping the rightbar's track entirely (derived zero
+ * width — the occupant hangs over the centre from the frame edge), then
+ * shrinking the file viewer toward its minimum, then auto-closing it, then
+ * letting an open explorer concede toward its minimum and finally
+ * auto-collapse (derived zero and rail widths — preferred width preferences
+ * are never rewritten, so widening the window restores them). The rails never
+ * concede: a closed sidebar and a closed explorer each render at their fixed
+ * control-rail width, and center absorbs any remaining deficit as the last
+ * resort. Inputs are the layout store's plain width preferences (0 = closed;
+ * the rightbar input is its desired track width, 0 = the occupant asked for no
+ * track or is hidden). A closed right panel resolves to zero width while
+ * closed side columns resolve to their rail. The SIDEBAR_AUTO_COLLAPSE
+ * breakpoint is consumed by AppFrame, which decides the effective sidebar
+ * preference before solving; the solver itself stays breakpoint-free.
  */
 
 /** Resolved widths for one frame; center may drop below CENTER_MIN only at the final fallback. */
@@ -21,8 +24,8 @@ export interface Columns {
   sidebar: number
   center: number
   explorer: number
-  details: number
   fileViewer: number
+  rightbar: number
 }
 
 // Contract-frozen geometry: the concession chain's fixed points.
@@ -48,18 +51,18 @@ export const EXPLORER_MAX = 520
 export const EXPLORER_DEFAULT = 300
 /** Closed-explorer rail: one pinned expand tab on the frame's right edge. */
 export const EXPLORER_COLLAPSED = 44
-/** Details drag clamp floor. */
-export const DETAILS_MIN = 300
-/** Details drag clamp ceiling. */
-export const DETAILS_MAX = 520
-/** Details width before any user drag. */
-export const DETAILS_DEFAULT = 360
 /** File-viewer drag clamp floor. */
 export const FILE_VIEWER_MIN = 420
 /** File-viewer drag clamp ceiling. */
 export const FILE_VIEWER_MAX = 1600
 /** File-viewer width before any user drag (~45% of a 1600px window). */
 export const FILE_VIEWER_DEFAULT = 720
+/** Right panel (rightbar) drag clamp floor. */
+export const RIGHTBAR_MIN = 300
+/** Maximum right panel width as a fraction of the frame. */
+export const RIGHTBAR_MAX_RATIO = 0.7
+/** First-open right panel preference as a fraction of the frame. */
+export const RIGHTBAR_DEFAULT_RATIO = 0.45
 
 /**
  * Clamp a panel width into its contract range.
@@ -73,76 +76,75 @@ export function clampWidth(px: number, min: number, max: number): number {
 }
 
 /**
- * Fit the two right panels (details, fileViewer) into a `budget` of pixels,
- * conceding the file viewer toward its minimum first, then details, then
- * auto-closing the file viewer and finally details. Preferences are never
- * rewritten; the returned widths are the derived rendered values.
- * @param budget - pixels available for the two right panels after the left columns and center floor.
- * @param details - details width preference (0 = closed).
- * @param fileViewer - file-viewer width preference (0 = closed).
- * @returns the rendered details and fileViewer widths that fit the budget.
- */
-function fitRightPanels(budget: number, details: number, fileViewer: number): { details: number; fileViewer: number } {
-  let d = details
-  let f = fileViewer
-  if (d + f <= budget) return { details: d, fileViewer: f }
-  // Concede the file viewer first.
-  if (f > FILE_VIEWER_MIN) f = Math.max(f - (d + f - budget), FILE_VIEWER_MIN)
-  if (d + f <= budget) return { details: d, fileViewer: f }
-  // Then details.
-  if (d > DETAILS_MIN) d = Math.max(d - (d + f - budget), DETAILS_MIN)
-  if (d + f <= budget) return { details: d, fileViewer: f }
-  // Auto-close the file viewer, then details (derived zero widths).
-  f = 0
-  if (d <= budget) return { details: d, fileViewer: f }
-  d = 0
-  return { details: d, fileViewer: f }
-}
-
-/**
  * Solve the five column widths for one viewport frame. Pure: no hysteresis —
  * the output is a function of (viewport, preferences) only, so recovery on
  * re-widening is automatic. Preferences re-clamp here because they cross the
  * store boundary and callers may still supply stale ranges.
  * @param viewport - available frame width in px.
  * @param sidebar - sidebar width preference in px (0 = closed).
- * @param details - details width preference in px (0 = closed).
- * @param fileViewer - file-viewer width preference in px (0 = closed).
  * @param explorer - explorer width preference in px (0 = closed).
- * @returns resolved widths; a closed right panel is 0 (never unmounted), while a closed side column keeps its compact rail.
+ * @param fileViewer - file-viewer width preference in px (0 = closed).
+ * @param rightbar - right panel's desired track width in px (0 = no track).
+ * @returns resolved widths; a closed right panel is 0 (its column never
+ *   unmounts), while a closed side column keeps its compact rail. The rightbar
+ *   resolves to its desired track only while the chain can afford it; without
+ *   a track its occupant hangs over the center from the frame edge.
  */
-export function computeColumns(viewport: number, sidebar: number, details: number, fileViewer: number, explorer: number): Columns {
+export function computeColumns(viewport: number, sidebar: number, explorer: number, fileViewer: number, rightbar: number): Columns {
   // Side rails are fixed at the resolved preference (or the rail) — they never concede.
   const s = sidebar === 0 ? SIDEBAR_COLLAPSED : clampWidth(sidebar, SIDEBAR_MIN, SIDEBAR_MAX)
-  const r = EXPLORER_COLLAPSED
-  let e = explorer === 0 ? r : clampWidth(explorer, EXPLORER_MIN, EXPLORER_MAX)
-  const d0 = details === 0 ? 0 : clampWidth(details, DETAILS_MIN, DETAILS_MAX)
+  const rail = EXPLORER_COLLAPSED
+  const e0 = explorer === 0 ? rail : clampWidth(explorer, EXPLORER_MIN, EXPLORER_MAX)
   const f0 = fileViewer === 0 ? 0 : clampWidth(fileViewer, FILE_VIEWER_MIN, FILE_VIEWER_MAX)
+  const r0 = rightbar === 0 ? 0 : clampWidth(rightbar, RIGHTBAR_MIN, Math.max(RIGHTBAR_MIN, viewport * RIGHTBAR_MAX_RATIO))
 
   // Step 1: everything fits at preferred widths.
-  if (s + e + d0 + f0 + CENTER_MIN <= viewport) {
-    return { sidebar: s, center: viewport - s - e - d0 - f0, explorer: e, details: d0, fileViewer: f0 }
+  if (s + e0 + f0 + r0 + CENTER_MIN <= viewport) {
+    return { sidebar: s, center: viewport - s - e0 - f0 - r0, explorer: e0, fileViewer: f0, rightbar: r0 }
   }
 
-  // Step 2: shrink the right panels toward their minima (file viewer first),
-  // keeping center at or above CENTER_MIN; when even the minima cannot fit,
-  // auto-close them and let the overflow flow into step 3.
-  const budget = Math.max(0, viewport - s - e - CENTER_MIN)
-  const fit = fitRightPanels(budget, d0, f0)
-  const d = fit.details
-  const f = fit.fileViewer
+  // Step 2: shrink the rightbar's track toward its minimum — it concedes
+  // first because its occupant keeps drawing while the track narrows.
+  if (r0 > 0) {
+    const room = viewport - s - e0 - f0 - CENTER_MIN
+    if (room >= RIGHTBAR_MIN) {
+      const r = Math.min(r0, room)
+      return { sidebar: s, center: viewport - s - e0 - f0 - r, explorer: e0, fileViewer: f0, rightbar: r }
+    }
+  }
 
-  // Step 3: only an open explorer concedes next — shrink just far enough to
+  // Step 3: drop the rightbar's track — the occupant hangs over the center.
+  if (s + e0 + f0 + CENTER_MIN <= viewport) {
+    return { sidebar: s, center: viewport - s - e0 - f0, explorer: e0, fileViewer: f0, rightbar: 0 }
+  }
+
+  // Step 4: shrink the file viewer toward its minimum, keeping the center
+  // floor (the rightbar's track is already gone, so the panel rides over
+  // whatever the narrower columns leave).
+  let f = f0
+  const budget = viewport - s - e0 - CENTER_MIN
+  if (f > FILE_VIEWER_MIN && f > budget) f = Math.max(budget, FILE_VIEWER_MIN)
+  if (s + e0 + f + CENTER_MIN <= viewport) {
+    return { sidebar: s, center: viewport - s - e0 - f, explorer: e0, fileViewer: f, rightbar: 0 }
+  }
+
+  // Step 5: auto-close the file viewer (derived zero width).
+  f = 0
+  if (s + e0 + CENTER_MIN <= viewport) {
+    return { sidebar: s, center: viewport - s - e0, explorer: e0, fileViewer: f, rightbar: 0 }
+  }
+
+  // Step 6: only an open explorer concedes next — shrink just far enough to
   // restore the center floor (clamped into its contract range), then
   // auto-collapse to the rail — before center takes the last deficit (center
   // may drop below CENTER_MIN, but never below zero).
-  if (explorer !== 0 && s + e + d + f + CENTER_MIN > viewport) {
-    const restored = viewport - s - d - f - CENTER_MIN
+  let e = e0
+  if (explorer !== 0 && s + e + CENTER_MIN > viewport) {
+    const restored = viewport - s - CENTER_MIN
     if (e > EXPLORER_MIN && restored < e) {
       e = Math.max(EXPLORER_MIN, restored)
     }
-    if (s + e + d + f + CENTER_MIN > viewport) e = r
+    if (s + e + CENTER_MIN > viewport) e = rail
   }
-
-  return { sidebar: s, center: Math.max(0, viewport - s - e - d - f), explorer: e, details: d, fileViewer: f }
+  return { sidebar: s, center: Math.max(0, viewport - s - e), explorer: e, fileViewer: 0, rightbar: 0 }
 }

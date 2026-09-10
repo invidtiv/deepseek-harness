@@ -38,10 +38,9 @@ describe('WorkspaceGuard containment', () => {
     expect(fence.containsCanonical(join(canonicalRoot, '..'))).toBe(false)
   })
 
-  it('folds case only on Windows', async () => {
+  it('folds case only under the Windows path semantics', async () => {
     const fence = await guard()
     const shouted = (fence.canonicalRoots[0] as string).toUpperCase()
-    expect(fence.containsCanonical(shouted)).toBe(false)
     const platform = process.platform
     Object.defineProperty(process, 'platform', { value: 'win32', configurable: true })
     try {
@@ -49,6 +48,9 @@ describe('WorkspaceGuard containment', () => {
     } finally {
       Object.defineProperty(process, 'platform', { value: platform, configurable: true })
     }
+    // Windows path semantics compare case-insensitively on their own, so the
+    // unfolded outcome is observable only where the host path implementation is POSIX.
+    if (platform !== 'win32') expect(fence.containsCanonical(shouted)).toBe(false)
   })
 
   it('reports a canonicalization failure that carries no error code', async () => {

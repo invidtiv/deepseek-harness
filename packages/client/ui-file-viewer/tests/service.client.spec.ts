@@ -14,12 +14,14 @@ function fakeActions(): FileViewerActions {
 
 function fakeLayout(): ILayout {
   return {
+    selectPanel: vi.fn(),
+    beginNavigation: vi.fn(),
     toggleSidebar: vi.fn(),
-    openDetails: vi.fn(),
-    closeDetails: vi.fn(),
     openFileViewer: vi.fn(),
     closeFileViewer: vi.fn(),
     toggleExplorer: vi.fn(),
+    openRightbar: vi.fn(),
+    closeRightbar: vi.fn(),
   }
 }
 

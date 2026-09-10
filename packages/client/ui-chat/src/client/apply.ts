@@ -3,9 +3,12 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-api-remotes/client'
 import type { SessionBinding } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { BoundActions, ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
-import { resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-right/client'
+// The `file` entry of `SidebarRightResourceParamsMap`, which types `{ params: { line } }` below.
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar-documentpreview/client'
+import { fileAddressFor, resolveWorkspacePath } from '@deepseek-ai/dsh-util-workspace-path'
 // Type-only service and declaration merges used by the apply world.
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -17,7 +20,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-workspace/client'
 import type {
-  ChatNodeTurnDataInjected, ChatScrollPosition, ChatViewInjected, DetailsInjected,
+  ChatNodeTurnDataInjected, ChatScrollPosition, ChatViewInjected,
   TurnTailOwnerProps,
 } from './contract/slots.ts'
 import type { ChatSnapshot } from './contract/snapshot.ts'
@@ -25,9 +28,8 @@ import { EMPTY_CHAT_SNAPSHOT } from './contract/snapshot.ts'
 import { ApprovalCommand } from './chat/ApprovalCommand.tsx'
 import { ChatView } from './chat/ChatView.tsx'
 import { registerChatNodeRenderers } from './chat/register-node-renderers.ts'
-import { StatsLine } from './chat/StatsLine.tsx'
+import { StatsPills } from './chat/StatsPills.tsx'
 import { registerConversationNodes } from './conversation-nodes/register.ts'
-import { DetailsPanel } from './details/DetailsPanel.tsx'
 import { en, NS, zh } from './locale.ts'
 import { TranscriptViewRow, type TranscriptViewRowInjected } from './settings/TranscriptViewRow.tsx'
 import { createChatStore } from './stores.ts'
@@ -45,8 +47,8 @@ const CHAT_NODE_INJECT: ChatNodeTurnDataInjected = {
 
 /** Services required by the Chat target and its presentation registrations. */
 export const inject = [
-  'slots', 'sessions', 'uiSession', 'uiConversation', 'layout', 'locale',
-  'settingsScope', 'remote', 'remote.session',
+  'slots', 'sessions', 'uiSession', 'uiConversation', 'locale',
+  'settingsScope', 'remote', 'remote.session', 'sidebarRight',
 ]
 
 /**
@@ -105,7 +107,7 @@ export function apply(ctx: Context): void {
         'conversation.message.images': { kind: 'single', scope: 'session' },
       },
       store: chatStore,
-      inject: (sessionId: SessionId, actions: BoundActions<typeof chatStore>): ChatViewInjected => {
+      inject: (sessionId: SessionId): ChatViewInjected => {
         const binding = ctx.sessions.binding(sessionId)
         if (binding === undefined) throw new Error(`ui-chat: unknown session "${sessionId}"`)
         const session = binding.session
@@ -116,20 +118,39 @@ export function apply(ctx: Context): void {
             chatNode: key => chat.getSnapshot().nodes.source(key),
             chatNodeProcess: key => chat.getSnapshot().nodes.processSource(key),
           },
-          openDetails: (target) => {
-            actions.select(target)
-            ctx.layout.openDetails()
-          },
-          fileMentions: (owner: TurnTailOwnerProps) => ctx.get('chatFileMentions')?.forClosing(owner),
-          openFile: async (path) => {
+          fileMentions: (owner: TurnTailOwnerProps) => ctx.get('chatFileMentions')?.forClosing(owner, sessionId),
+          // Files stay in the product, beside the conversation that produced
+          // them. A file path opens in the in-app file viewer when that
+          // plugin is composed in; an absent viewer reveals the file as a
+          // right-panel document tab: a relative path, or an absolute one
+          // inside the session's workspace, is addressed under this session's
+          // scope, `dsh-resource://file/session/<id>/<path>`; an absolute path
+          // elsewhere keeps its absolute spelling in the same Session's
+          // address. Which tab type claims the address is the Sidebar's
+          // decision, not this call site's. A line travels as a navigation
+          // parameter, not as part of the address: the file is one piece of
+          // content whether it is opened at its top or at line 400, so the
+          // same tab is revealed and told where to land. A directory (the
+          // "Show in folder" gesture) and a composition with neither surface
+          // keep the Host's native opener.
+          openFile: async (path, options) => {
             const cwd = ctx.sessions.list.getSnapshot().byId[sessionId]?.cwd
             const resolved = resolveWorkspacePath(cwd, path)
-            // A file reference opens in the in-app viewer when that plugin is
-            // composed in; a directory (the "Show in folder" gesture) and an
-            // absent viewer keep the Host's native opener.
+            if (path === '.' || /[/\\]$/.test(path)) {
+              const result = await ctx.remote.session.openWorkspacePath({ path: resolved })
+              if (!result.ok) throw new Error(`path open failed: ${result.error.message}`)
+              return
+            }
             const fileViewer = ctx.get('fileViewer')
-            if (fileViewer !== undefined && path !== '.' && !/[/\\]$/.test(path)) {
+            if (fileViewer !== undefined) {
               fileViewer.open(resolved)
+              return
+            }
+            const sidebarRight = ctx.get('sidebarRight')
+            if (sidebarRight !== undefined) {
+              const url = fileAddressFor(sessionId, cwd, path)
+              if (options?.line === undefined) sidebarRight.openResource(url)
+              else sidebarRight.openResource(url, { params: { line: options.line } })
               return
             }
             const result = await ctx.remote.session.openWorkspacePath({ path: resolved })
@@ -164,16 +185,9 @@ export function apply(ctx: Context): void {
   ctx.slots.inject('conversation.composer.dock', () =>
     ctx.slots.register({
       name: 'conversation.composer.dock', id: 'stats', order: 0, locale: NS,
-    }, StatsLine))
+    }, StatsPills))
 
   ctx.slots.inject('conversation.approval.detail', () =>
     ctx.slots.register({ name: 'conversation.approval.detail' }, ApprovalCommand))
 
-  ctx.slots.inject('details', () => ctx.slots.register({
-    name: 'details',
-    locale: NS,
-    children: { 'conversation.details.tool': { kind: 'single', scope: 'session' } },
-    store: chatStore,
-    inject: (): DetailsInjected => ({ closeDetails: () => { ctx.layout.closeDetails() } }),
-  }, DetailsPanel))
 }

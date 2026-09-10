@@ -220,7 +220,7 @@ export class SessionManager {
   private async resumeOrRefuse(key: TopicKey, record: TopicRecord): Promise<TopicResolution> {
     const sessionId = record.sessionId as SessionId
     const headers = await this.persistence.list()
-    const header = headers.find(candidate => candidate.id === sessionId)
+    const header = headers.find(candidate => candidate.header.id === sessionId)?.header
     if (header === undefined) {
       return {
         ok: false,
@@ -296,7 +296,7 @@ export class SessionManager {
     workspace: string,
   ): Promise<{ agent: Agent; dispose: () => Promise<void> }> {
     const headers = await this.persistence.list()
-    if (headers.some(header => header.id === sessionId)) {
+    if (headers.some(header => header.header.id === sessionId)) {
       this.logger.info(`telegram: adopting persisted session ${sessionId}`)
       return await this.agents.resume({ resumeSessionId: sessionId, agentOptions: this.agentOptions() })
     }

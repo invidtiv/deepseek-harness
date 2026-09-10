@@ -142,7 +142,7 @@ describe('WorkspaceTopicBridge (unit)', () => {
 
   /** A `workspaces`-table put for one workspace id. */
   function putOf(key = 'ws-1'): DomainChanged {
-    return { domain: 'workspace', table: 'workspaces', key, operation: 'put', value: {} } as DomainChanged
+    return { domain: 'workspace', table: 'workspaces', key, operation: 'put', value: {} }
   }
 
   function makeBridge(overrides: Partial<WorkspaceTopicDeps> = {}) {
@@ -166,9 +166,9 @@ describe('WorkspaceTopicBridge (unit)', () => {
 
   it('ignores changes that are not workspace-table puts', async () => {
     const { bridge, workspaceById } = makeBridge()
-    await bridge.onDomainChanged({ domain: 'telegram_topics', table: 'topics', key: 'k', operation: 'put', value: {} } as DomainChanged)
-    await bridge.onDomainChanged({ domain: 'workspace', table: '', key: '', operation: 'put', value: {} } as DomainChanged)
-    await bridge.onDomainChanged({ domain: 'workspace', table: 'workspaces', key: 'ws-1', operation: 'deleted' } as DomainChanged)
+    await bridge.onDomainChanged({ domain: 'telegram_topics', table: 'topics', key: 'k', operation: 'put', value: {} })
+    await bridge.onDomainChanged({ domain: 'workspace', table: '', key: '', operation: 'put', value: {} })
+    await bridge.onDomainChanged({ domain: 'workspace', table: 'workspaces', key: 'ws-1', operation: 'deleted' })
     expect(workspaceById).not.toHaveBeenCalled()
   })
 

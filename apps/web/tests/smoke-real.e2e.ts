@@ -815,7 +815,7 @@ describe.skipIf(!process.env.DEEPSEEK_API_KEY || notReady.length > 0)('web smoke
     await screen(page, '08-bash-round')
     expect(await detailsTrack(page)).toBe(0)
     await toolRow.click()
-    // Tool rows do not drive layout.openDetails; the default column stays closed.
+    // Tool rows do not open the right panel; the default column stays closed.
     expect(await detailsTrack(page)).toBe(0)
     await screen(page, '09-details-closed')
   }, 150_000)

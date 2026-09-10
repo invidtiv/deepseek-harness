@@ -1,6 +1,7 @@
-/* The file-viewer drawer fills the rightmost column (a 40-50% frame track the
-   layout opens and resizes). Header and metadata are fixed chrome; the body
-   scrolls. Text selection is enabled throughout the code surface. */
+/* The file-viewer drawer fills its frame column (a 420–1600px track the
+   layout opens and resizes, inside the right panel's). Header and metadata
+   are fixed chrome; the body scrolls. Text selection is enabled throughout
+   the code surface. */
 
 .root {
   height: 100%;

@@ -16,6 +16,14 @@
   transition: none;
 }
 
+/* Fullscreen covers the frame while its underlying columns enter or exit. */
+.frame[data-rightbar-fullscreen],
+.frame[data-rightbar-fullscreen] .handle,
+.frame[data-rightbar-instant],
+.frame[data-rightbar-instant] .handle {
+  transition: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .frame {
     transition: none;
@@ -36,12 +44,6 @@
   overflow: hidden;
 }
 
-.detailsCol {
-  min-width: 0;
-  overflow: hidden;
-  border-left: 0.5px solid var(--dsw-alias-border-l3);
-}
-
 /* The explorer uses the sidebar's fill so the project navigator reads as a
    side column, not a floating panel; a closed explorer keeps its bordered
    compact rail (the rail renders content, unlike the zero-width panels). */
@@ -58,20 +60,32 @@
   border-left: 1px solid var(--dsw-alias-border-l2);
 }
 
-/* The details subtree stays mounted at zero width, so its border must not paint
-   a 1px seam. The collapsed sidebar instead retains a bordered compact rail. */
-.frame[data-details-collapsed] .detailsCol {
-  border-left: none;
-}
-
-/* Same zero-width seam rule for the file-viewer column. */
+/* The file-viewer subtree stays mounted at zero width, so its border must not
+   paint a 1px seam. The collapsed sidebar instead retains a bordered compact
+   rail. */
 .frame[data-file-viewer-collapsed] .fileViewerCol {
   border-left: none;
 }
 
+/*
+ * The right column never clips: its occupant anchors a fixed-width panel to the
+ * column's right edge (the frame's edge, which never moves) and lets the track
+ * decide whether the centre makes room. With no track the panel hangs over the
+ * centre from a zero-width column, and while the track animates the panel stays
+ * where it is. The occupant draws its own left border.
+ */
+.rightbarCol {
+  position: relative;
+  min-width: 0;
+  overflow: visible;
+}
+
 /* Drag handles are frame children (columns clip overflow): an 8px hit strip
-   centered on the column border via inline left, above column content. Details
-   adds a visible 12x32 pill at vertical center; sidebar keeps only the hit strip. */
+   centered on the column border via inline left, above column content. The
+   explorer and file-viewer handles draw a visible 12x32 pill at vertical
+   center; the sidebar keeps only the hit strip and the rightbar handle never
+   draws one. The rightbar handle sits above the right panel (which states
+   z-index 10) so it stays grabbable when the panel hangs over the centre. */
 .handle {
   position: absolute;
   top: 0;
@@ -79,7 +93,7 @@
   width: 8px;
   margin-left: -4px;
   cursor: col-resize;
-  z-index: 2;
+  z-index: 11;
   touch-action: none;
   /* Rides the same curve as the tracks so the pill stays on the moving
      border during collapse/expand; paused while dragging (frame rule). */
@@ -96,7 +110,6 @@
   }
 }
 
-.handle[data-side='details']::after,
 .handle[data-side='fileViewer']::after,
 .handle[data-side='explorer']::after {
   content: '';
@@ -110,7 +123,7 @@
   box-sizing: border-box;
   background: var(--dsw-alias-button-floating-fill);
   border: 0.5px solid var(--dsw-alias-border-l2-darkmode-thin);
-  /* Hover affordance: the details pill hides until the pointer is over its
+  /* Hover affordance: the pill hides until the pointer is over its
      column, the strip itself, or a drag. */
   opacity: 0;
   transition:
@@ -118,22 +131,17 @@
     background var(--ds-transition-duration-slow) var(--ds-ease-in-out);
 }
 
-.detailsCol:hover ~ .handle[data-side='details']::after,
 .fileViewerCol:hover ~ .handle[data-side='fileViewer']::after,
 .explorerCol:hover ~ .handle[data-side='explorer']::after,
-.handle[data-side='details']:hover::after,
 .handle[data-side='fileViewer']:hover::after,
 .handle[data-side='explorer']:hover::after,
-.handle[data-side='details'][data-dragging='true']::after,
 .handle[data-side='fileViewer'][data-dragging='true']::after,
 .handle[data-side='explorer'][data-dragging='true']::after {
   opacity: 1;
 }
 
-.handle[data-side='details']:hover::after,
 .handle[data-side='fileViewer']:hover::after,
 .handle[data-side='explorer']:hover::after,
-.handle[data-side='details'][data-dragging='true']::after,
 .handle[data-side='fileViewer'][data-dragging='true']::after,
 .handle[data-side='explorer'][data-dragging='true']::after {
   background: var(--dsw-alias-button-floating-hover);

@@ -545,7 +545,7 @@ export class TelegramRuntime {
     try {
       const record = this.registry.get(key)
       const hasWorkspace = record?.workspace !== undefined && record.workspace !== null
-        || record?.pendingWorkspace !== undefined && record?.pendingWorkspace !== null
+        || record?.pendingWorkspace !== undefined && record.pendingWorkspace !== null
       if (hasWorkspace || record?.sessionId !== null && record?.sessionId !== undefined) {
         return await this.sessions.resolve(key)
       }
