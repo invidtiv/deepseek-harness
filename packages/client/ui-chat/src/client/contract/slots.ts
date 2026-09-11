@@ -79,6 +79,8 @@ export interface ChatNodeTurnDataInjected {
 /** Stable owner currency delivered to a keyed Chat renderer. */
 export interface ChatNodeOwnerProps {
   cwd?: string | undefined
+  /** Open the current source file of a skill referenced by a sent message. */
+  openSkill: (name: string) => void
   openFile: (path: string, options?: OpenFileOptions) => void
   inspectCall: (callId: ToolCallId) => void
   forkAt: (seq: number) => void
@@ -148,6 +150,8 @@ export interface ChatViewInjected {
    * the Host hands the path off, rejects when it cannot (the chat view shows
    * that reason and a retry).
    */
+  /** Open the current source file of a skill referenced by a sent message. */
+  openSkill: (name: string) => void
   openFile: (path: string, options?: OpenFileOptions) => Promise<void>
   loadOlder: () => void
   /** Jump loader: page history back through seq; resolves when the window covers it. */

@@ -96,4 +96,4 @@ None.
 
 </details>
 
-**Runtime invariant:** No companion is published. The shell viewing-state store behind ctx.layout emits no cordis events; clamp, concession-chain, and track sequencing is asserted directly by this package's columns and service specs.
+**Runtime invariant:** No companion is published. The shell viewing-state store behind `ctx.layout` emits no Cordis events; clamp, concession-chain, and track sequencing is asserted directly by this package's columns and service specs.
