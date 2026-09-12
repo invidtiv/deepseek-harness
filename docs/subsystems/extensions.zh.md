@@ -20,9 +20,15 @@ Registry and cross-page router behind the two model-facing inspect tools.
 
 ```ts cordis-catalog
 /**
- * Register one Host provider.
+ * Register one Host provider, or take a reference to an identical one.
+ *
+ * Every per-session mount of the self-referential toolset registers the same
+ * provider ids into this process-global registry, and each registration is
+ * effect-scoped to its mount. Identical manifests therefore share one entry
+ * and each holder releases its own reference; the provider leaves with the
+ * last holder. Registering a different manifest under a held id fails loud.
  * @param registration - manifest and local query handler.
- * @returns idempotent disposer.
+ * @returns idempotent disposer releasing this holder's reference.
  */
 register(registration: HostCordisInspectProviderRegistration): () => void
 

@@ -34,6 +34,17 @@ interface PendingClientQuery {
   settle(resolution: CordisInspectQueryResolution): void
 }
 
+/**
+ * One registered provider plus the mounts that currently hold it. Providers
+ * describe the process-global harness, so every per-session mount of the
+ * self-referential toolset registers the same ids and shares one entry.
+ */
+interface HostInspectProviderEntry {
+  readonly manifest: CordisInspectProviderManifest
+  readonly registration: HostCordisInspectProviderRegistration
+  holders: number
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Host registry for Cordis inspect providers and Client manifest/query routing. */
@@ -43,7 +54,7 @@ declare module '@deepseek-ai/cordis' {
 
 /** Registry and cross-page router behind the two model-facing inspect tools. */
 export class CordisInspectRegistryService extends Service {
-  private readonly providers = new Map<string, HostCordisInspectProviderRegistration>()
+  private readonly providers = new Map<string, HostInspectProviderEntry>()
   private readonly pending = new Map<CordisInspectRequestId, PendingClientQuery>()
   private clientManifest: readonly CordisInspectProviderManifest[] | undefined
   private nextRequest = 1
@@ -54,17 +65,35 @@ export class CordisInspectRegistryService extends Service {
   }
 
   /**
-   * Register one Host provider.
+   * Register one Host provider, or take a reference to an identical one.
+   *
+   * Every per-session mount of the self-referential toolset registers the same
+   * provider ids into this process-global registry, and each registration is
+   * effect-scoped to its mount. Identical manifests therefore share one entry
+   * and each holder releases its own reference; the provider leaves with the
+   * last holder. Registering a different manifest under a held id fails loud.
    * @param registration - manifest and local query handler.
-   * @returns idempotent disposer.
+   * @returns idempotent disposer releasing this holder's reference.
    */
   register(registration: HostCordisInspectProviderRegistration): () => void {
     const manifest = validateManifest(registration.manifest)
-    if (this.providers.has(manifest.id)) throw new Error(`Host Cordis inspect provider "${manifest.id}" is already registered`)
-    const stored = { ...registration, manifest }
-    this.providers.set(manifest.id, stored)
+    const existing = this.providers.get(manifest.id)
+    if (existing !== undefined) {
+      if (JSON.stringify(existing.manifest) !== JSON.stringify(manifest)) {
+        throw new Error(`Host Cordis inspect provider "${manifest.id}" is already registered with a different manifest`)
+      }
+      existing.holders += 1
+    } else {
+      this.providers.set(manifest.id, { manifest, registration: { ...registration, manifest }, holders: 1 })
+    }
+    let released = false
     return () => {
-      if (this.providers.get(manifest.id) === stored) this.providers.delete(manifest.id)
+      if (released) return
+      released = true
+      const entry = this.providers.get(manifest.id)
+      if (entry === undefined) return
+      entry.holders -= 1
+      if (entry.holders <= 0) this.providers.delete(manifest.id)
     }
   }
 
@@ -113,12 +142,12 @@ export class CordisInspectRegistryService extends Service {
     signal: AbortSignal,
   ): Promise<JsonValue> {
     if (platform === 'host') {
-      const registration = this.providers.get(providerId)
-      if (registration === undefined) throw new Error(`Host Cordis inspect provider "${providerId}" is not registered`)
-      const method = findMethod(registration.manifest, methodName)
+      const entry = this.providers.get(providerId)
+      if (entry === undefined) throw new Error(`Host Cordis inspect provider "${providerId}" is not registered`)
+      const method = findMethod(entry.manifest, methodName)
       validateInput('Host', providerId, method, input)
       signal.throwIfAborted()
-      const data = await registration.query(methodName, input, { agent, signal })
+      const data = await entry.registration.query(methodName, input, { agent, signal })
       signal.throwIfAborted()
       return validateOutput('Host', providerId, method, data)
     }
