@@ -1,0 +1,10 @@
+# Manual-install patch snippet: append (or merge) into the target profile's
+# cordis.patch.yml — a top-level YAML array of loader patch entries. Applied
+# after every bundle layer; mounts at the next profile start.
+
+- insert:
+    # Native control of the LDPlayer Android harness: the ah-bridge host row
+    # registers the ah_* model tools (android-harness/1 RPC over ADB, no ahctl
+    # CLI) in every session of this profile. Source: packages/dsh-ah-bridge/.
+    - id: ah-bridge
+      name: dsh-ah-bridge

@@ -1,0 +1,8 @@
+{
+  "name": "dsh-ah-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native, CLI-free control of the LDPlayer Android harness: registers the ah_* model tools that speak the android-harness/1 RPC protocol over ADB (adb content call -> HarnessRpcProvider). Authored for this profile; mounted via cordis.patch.yml.",
+  "type": "module",
+  "exports": "./index.js"
+}
