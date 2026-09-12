@@ -66,9 +66,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'main': { kind: 'keyed'; scope: 'root' }
     /**
      * The explorer column between the center and the right panels, showing the
-     * project's file tree. OCCUPIED by ui-file-explorer's FileExplorerRoot;
-     * absent an occupant a closed column renders only its rail. Global scope:
-     * the tree is one frame-wide surface, not per-session.
+     * project file tree of the Session the user has selected. OCCUPIED by
+     * ui-file-explorer's FileExplorerRoot; absent an occupant a closed column
+     * renders only its rail. Global scope: the tree is one frame-wide surface
+     * rooted by its occupant at the selected Session's project, not a
+     * per-session instance.
      *
      * The occupant receives the frame's live column state (collapsed, width)
      * and is expected to render the compact rail while collapsed.

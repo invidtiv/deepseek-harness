@@ -3,20 +3,54 @@
  * FileExplorerRoot behavior: root load on first paint (loading -> rows,
  * directories before files), per-directory lazy fetch with cached re-expand,
  * error + retry at the root and inside a child level, truncation notes on
- * both levels, file click routing with selection highlight, and both pinned
- * tabs (rail expand, header collapse). `t` is a key-echoing stub so copy
- * assertions pin keys, not locales; the injected face arrives as plain vi.fn
- * callbacks exactly as the register inject factory produces them.
+ * both levels, file click routing with selection highlight, both pinned tabs
+ * (rail expand, header collapse), and the project root following the selected
+ * Session. `t` is a key-echoing stub so copy assertions pin keys, not locales;
+ * the injected face arrives as plain vi.fn callbacks exactly as the register
+ * inject factory produces them.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { FileExplorerRoot } from '../src/client/FileExplorerRoot.tsx'
 import type { FileExplorerProps } from '../src/client/FileExplorerRoot.tsx'
+import type { SessionListState } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { FileListing, FileListingEntry } from '@deepseek-ai/dsh-api-workspace-controller/client'
 
 afterEach(cleanup)
 
 const t = ((key: string) => key) as FileExplorerProps['t']
+
+/** The selected Session whose cwd the tree roots at. */
+const SESSION = 's-project'
+
+/**
+ * The global session kit, reduced to the one fact the tree reads: which
+ * Session is current and the cwd it records. `undefined` stands for the
+ * no-session page state.
+ * @param cwd - the current Session's working directory, or undefined with no current Session.
+ * @returns the `useSessions` seat over that snapshot.
+ */
+function sessionsHook(cwd: string | undefined): FileExplorerProps['useSessions'] {
+  const state = {
+    ids: cwd === undefined ? [] : [SESSION],
+    byId: cwd === undefined ? {} : {
+      [SESSION]: {
+        id: SESSION,
+        displayTitle: 'project',
+        running: false,
+        blank: false,
+        updatedAt: 0,
+        ...(cwd === undefined ? {} : { cwd }),
+      },
+    },
+    current: cwd === undefined ? undefined : SESSION,
+    phase: 'ready',
+    subagentsByParent: {},
+    jobsBySession: {},
+    currentAddress: undefined,
+  } as unknown as SessionListState
+  return ((select: (s: SessionListState) => unknown) => select(state)) as FileExplorerProps['useSessions']
+}
 
 const dir = (name: string, path: string, hidden = false): FileListingEntry => ({ name, path, kind: 'directory', hidden })
 const file = (name: string, path: string, hidden = false): FileListingEntry => ({ name, path, kind: 'file', hidden })
@@ -49,7 +83,8 @@ function mount(over: Partial<FileExplorerProps> = {}, listing: (path?: string) =
   const openFile = vi.fn()
   const toggle = vi.fn()
   const props: FileExplorerProps = {
-    collapsed: false, width: 300, ...over, listFiles, openFile, toggle, t,
+    collapsed: false, width: 300, useSessions: sessionsHook('/repo'),
+    ...over, listFiles, openFile, toggle, t,
   } as FileExplorerProps
   const utils = render(<FileExplorerRoot {...props} />)
   return { listFiles, openFile, toggle, container: utils.container }
@@ -61,17 +96,40 @@ async function waitForRow(name: string): Promise<void> {
 }
 
 describe('FileExplorerRoot — tree body', () => {
-  it('lists the project root once on mount: loading first, then rows sorted dirs-first by name', async () => {
+  it('lists the selected project root once on mount: loading first, then rows sorted dirs-first by name', async () => {
     let settle: ((value: FileListing) => void) | undefined
     const h = mount({}, () => new Promise<FileListing>((resolve) => { settle = resolve }))
     expect(screen.getByText('explorer.loading')).toBeTruthy()
-    expect(h.listFiles).toHaveBeenCalledWith(undefined)
+    expect(h.listFiles).toHaveBeenCalledWith('/repo')
     await waitFor(() => { expect(settle).toBeDefined() })
     // Resolve out of natural order so the client sort (not wire order) wins.
     settle!({ path: '/repo', entries: [...ROOT.entries], truncated: false })
     await waitForRow('README.md')
     expect(rowNames(h.container)).toEqual(['.github', 'src', 'package.json', 'README.md'])
     expect(h.listFiles).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks the Host for its default project root while no Session is current', async () => {
+    const h = mount({ useSessions: sessionsHook(undefined) })
+    await waitForRow('src')
+    expect(h.listFiles).toHaveBeenCalledWith(undefined)
+    expect(h.container.querySelector('[data-level-status="ready"]')).toBeTruthy()
+  })
+
+  it('re-roots on a selection in another project and drops the previous tree', async () => {
+    const listFiles = vi.fn(async (path?: string): Promise<FileListing> => (
+      path === '/work/app'
+        ? { path: '/work/app', entries: [file('app.ts', '/work/app/app.ts')], truncated: false }
+        : { path: '/other/repo', entries: [file('other.ts', '/other/repo/other.ts')], truncated: false }
+    ))
+    const shared = { collapsed: false, width: 300, listFiles, openFile: vi.fn(), toggle: vi.fn(), t } as FileExplorerProps
+    const view = render(<FileExplorerRoot {...shared} useSessions={sessionsHook('/work/app')} />)
+    await waitForRow('app.ts')
+    view.rerender(<FileExplorerRoot {...shared} useSessions={sessionsHook('/other/repo')} />)
+    await waitForRow('other.ts')
+    expect(screen.queryByText('app.ts')).toBeNull()
+    expect(listFiles).toHaveBeenNthCalledWith(1, '/work/app')
+    expect(listFiles).toHaveBeenNthCalledWith(2, '/other/repo')
   })
 
   it('expands a directory through one fetch and serves re-expansion from the cache', async () => {

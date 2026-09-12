@@ -1,16 +1,18 @@
 /**
  * FileExplorerRoot: the explorer column's content. Expanded, it renders a
- * header (title + collapse) and a lazy file tree rooted at the Host's default
- * project root: directory rows expand on click (one Host listing per level,
- * cached per path), file rows route to the injected opener (the file-viewer
- * drawer when composed in, the Host's default application otherwise).
- * Collapsed, it renders one pinned folder tab that requests the expand.
+ * header (title + collapse) and a lazy file tree rooted at the selected
+ * Session's project — the working directory that Session records: directory
+ * rows expand on click (one Host listing per level, cached per path), file
+ * rows route to the injected opener (the file-viewer drawer when composed in,
+ * the Host's default application otherwise). Collapsed, it renders one pinned
+ * folder tab that requests the expand.
  * Directory rows sort before files within a level (locale order); hidden rows
  * render like any other; a truncated level appends a truncation note. Plain
  * local state holds the tree caches: the column never unmounts (the frame
- * folds it to rail width), so nothing survives a fold that must not. One
- * fetch flies per path at most: a pending or ready cache short-circuits,
- * and only an error status retries in place.
+ * folds it to rail width), so nothing survives a fold that must not — while a
+ * selection that moves to another project remounts the tree, dropping the
+ * previous project's levels. One fetch flies per path at most: a pending or
+ * ready cache short-circuits, and only an error status retries in place.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -24,6 +26,9 @@ import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-cli
 // Type-only: pulls ui-layout's SlotMap merge (the 'explorer' entry) into this
 // program, so PropsRuntime<'explorer'> resolves its owner props.
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+// Type-only: pulls the global standard kit's `useSessions` seat, which roots
+// the tree at the selected Session's project.
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { NS } from './locales.ts'
 import css from './FileExplorerRoot.module.css'
 
@@ -81,16 +86,34 @@ function displayOrder(entries: readonly FileListingEntry[]): readonly FileListin
   })
 }
 
-export function FileExplorerRoot({
-  collapsed, toggle, openFile, listFiles, t,
-}: FileExplorerProps) {
-  // Levels are keyed by the exact strings the tree navigates with: '' is the
-  // sentinel root request (absent payload), everything else is a child
-  // entry's absolute path as returned by the previous level. A response's
-  // echoed path — not the request string — keys the record, so the root
-  // lands under its resolved absolute path while this render reads that
+export function FileExplorerRoot({ useSessions, ...rest }: FileExplorerProps) {
+  // The listed project is the selected Session's, never the Host process's:
+  // its recorded cwd roots every level. The key drops the previous project's
+  // cached levels the moment the selection moves, so a later return to it
+  // refetches instead of showing another project's tree. Before any Session is
+  // current the '' sentinel asks the Host for its default project root.
+  const cwd = useSessions(state =>
+    state.current === undefined ? undefined : state.byId[state.current]?.cwd)
+  const root = cwd ?? ''
+  return <ExplorerTree key={root} root={root} {...rest} />
+}
+
+/** Tree props: the explorer props minus the Session kit the wrapper consumed. */
+type ExplorerTreeProps = Omit<FileExplorerProps, 'useSessions'> & {
+  /** Absolute project root to list, or '' for the Host's default project root. */
+  root: string
+}
+
+function ExplorerTree({
+  collapsed, root, toggle, openFile, listFiles, t,
+}: ExplorerTreeProps) {
+  // Levels are keyed by the exact strings the tree navigates with: the root
+  // request ('' when the Host chooses the project root), everything else a
+  // child entry's absolute path as returned by the previous level. A
+  // response's echoed path — not the request string — keys the record, so the
+  // root lands under its resolved absolute path while this render reads that
   // same authoritative key back for the first subtree.
-  const [rootPath, setRootPath] = useState('')
+  const [rootPath, setRootPath] = useState(root)
   const [levels, setLevels] = useState<ReadonlyMap<string, Level>>(new Map())
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
   // Highlighted file row; purely visual follow-through for clicks.
@@ -114,7 +137,7 @@ export function FileExplorerRoot({
     setLevels(prev => new Map(prev).set(dirPath, { status: 'loading' }))
     void listFiles(dirPath === '' ? undefined : dirPath).then(
       (listing) => {
-        if (dirPath === '') setRootPath(listing.path)
+        if (dirPath === root) setRootPath(listing.path)
         setLevels(prev => new Map(prev).set(listing.path, {
           status: 'ready', entries: listing.entries, truncated: listing.truncated,
         }))
@@ -123,11 +146,11 @@ export function FileExplorerRoot({
         setLevels(prev => new Map(prev).set(dirPath, { status: 'error' }))
       },
     )
-  }, [listFiles])
+  }, [listFiles, root])
 
-  // First paint lists the project root once; plugin reloads start a new
-  // fiber with fresh component state, so no stale-request interleave remains.
-  useEffect(() => { load('') }, [load])
+  // First paint lists the project root once; the tree remounts on a selection
+  // that moves to another project, so no stale-request interleave remains.
+  useEffect(() => { load(root) }, [load, root])
 
   /** Expand one directory (fetching when uncached) or collapse it (cache kept for re-expand). */
   const toggleDir = useCallback((entry: FileListingEntry) => {
@@ -148,7 +171,7 @@ export function FileExplorerRoot({
     openFile(entry.path)
   }, [openFile])
 
-  const retryRoot = useCallback(() => { load('') }, [load])
+  const retryRoot = useCallback(() => { load(root) }, [load, root])
 
   /**
    * One subtree render pass: rows plus any expanded children below them.

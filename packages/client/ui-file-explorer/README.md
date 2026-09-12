@@ -34,7 +34,7 @@ Column geometry belongs to [ui-layout](../ui-layout/README.md): the plugin rende
 
 `FileExplorerRoot` sorts each level client-side with directories before files (locale order inside each partition, agreeing with the Host's name ordering), renders hidden entries like any other row, and appends a truncation note to any level the Host bounded (the 1000-entry listing cap). Failures are per-level: an unreadable child shows its own inline retry while the rest of the tree keeps working, and a root failure offers the wide retry.
 
-Mount warms the project root once even while collapsed, so first expansion serves cached rows instead of a loading flash.
+The tree roots at the current Session's recorded `cwd`, and lists the Host's default project root while no Session is selected. Mount warms that root once even while collapsed, so first expansion serves cached rows instead of a loading flash. A selection that moves to another project remounts the tree, so no level of the previous project survives it.
 
 -----
 

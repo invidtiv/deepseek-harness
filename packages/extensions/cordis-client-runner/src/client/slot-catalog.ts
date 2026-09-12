@@ -1360,8 +1360,8 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     key: 'explorer',
     kind: 'single',
     scope: 'root',
-    summary: 'The explorer column between the center and the right panels, showing the project\'s file tree.',
-    doc: 'The explorer column between the center and the right panels, showing the\nproject\'s file tree. OCCUPIED by ui-file-explorer\'s FileExplorerRoot;\nabsent an occupant a closed column renders only its rail. Global scope:\nthe tree is one frame-wide surface, not per-session.\n\nThe occupant receives the frame\'s live column state (collapsed, width)\nand is expected to render the compact rail while collapsed.',
+    summary: 'The explorer column between the center and the right panels, showing the project file tree of the Session the user has selected.',
+    doc: 'The explorer column between the center and the right panels, showing the\nproject file tree of the Session the user has selected. OCCUPIED by\nui-file-explorer\'s FileExplorerRoot; absent an occupant a closed column\nrenders only its rail. Global scope: the tree is one frame-wide surface\nrooted by its occupant at the selected Session\'s project, not a\nper-session instance.\n\nThe occupant receives the frame\'s live column state (collapsed, width)\nand is expected to render the compact rail while collapsed.',
     registerOptions: [],
     ownerProps: [
       '/** Explorer owner share: live column state from the frame\'s concession solve. */\nexport interface ExplorerOwnerProps {\n  /** True when the explorer is closed (the column renders the compact rail). */\n  collapsed: boolean\n  /** Rendered column width in px (EXPLORER_COLLAPSED when collapsed). */\n  width: number\n}',
@@ -1384,7 +1384,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'explorer\', () => ctx.slots.register(\n      { name: \'explorer\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:76',
+    source: 'packages/client/ui-layout/src/client/index.ts:78',
   },
   {
     key: 'fileViewer',
@@ -1414,7 +1414,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'fileViewer\', () => ctx.slots.register(\n      { name: \'fileViewer\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:88',
+    source: 'packages/client/ui-layout/src/client/index.ts:90',
   },
   {
     key: 'main',
@@ -1513,7 +1513,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     ],
     replaceRisk: 'shadows-shipped-ui',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'rightbar\', () => ctx.slots.register(\n      { name: \'rightbar\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:102',
+    source: 'packages/client/ui-layout/src/client/index.ts:104',
   },
   {
     key: 'rightbar.session',
@@ -2096,7 +2096,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [],
     replaceRisk: 'none',
     example: 'return {\n  inject: [\'slots\'],\n  apply(ctx) {\n    ctx.slots.inject(\'shell.overlay\', () => ctx.slots.register(\n      { name: \'shell.overlay\', id: \'my-entry\', order: 100, label: \'My entry\' },\n      () => React.createElement(\'div\', null, \'hello\'),\n    ))\n  },\n}',
-    source: 'packages/client/ui-layout/src/client/index.ts:113',
+    source: 'packages/client/ui-layout/src/client/index.ts:115',
   },
   {
     key: 'sidebar',

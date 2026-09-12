@@ -12,11 +12,11 @@ Web GUI 此前没有任何项目文件浏览手段：文件引用要么经查看
 
 两个动作，各管一个平面：
 
-**Host API。** `workspace.listFiles({path?})` 与 `workspace.readFile` 并列接入 Workspace Controller 的 Remote 命名空间：返回一层混合目录（`FileListingEntry {name, path, kind, hidden}`）、Host 端按名称排序、上限 1000 条并以 `truncated` 标记、符号链接类型在枚举时刻经 stat 探测解析。缺省路径列出进程 cwd——即默认项目根——因此客户端无需知道任何绝对起点。
+**Host API。** `workspace.listFiles({path?})` 与 `workspace.readFile` 并列接入 Workspace Controller 的 Remote 命名空间：返回一层混合目录（`FileListingEntry {name, path, kind, hidden}`）、Host 端按名称排序、上限 1000 条并以 `truncated` 标记、符号链接类型在枚举时刻经 stat 探测解析。缺省路径列出进程 cwd——即默认项目根——因此自身没有项目的调用方仍能拿到一份列表。
 
 **缝隙归类。** `listFiles` 是普通的 Workspace Remote 动词，与 `readFile` 并列——位于每个 `/api` 请求都要经过的浏览器信任围栏之后——刻意绕开 directoryPicker 能力缝。picker 在 Windows 部署上解析为 native 提供者；若把浏览门控在一条在此平台上会解析成 "native" 的能力缝后面，等于发布一个在本会话所跑系统上自己都打不开的导航器。
 
-**客户端组合。** ui-layout 在会话栏与详情栏之间长出第五个子列，附带自己的窄轨契约（关闭时 44px、占用组件保持挂载、owner props 取自求解轨道）；求解器第 3 步先等右侧两个面板全部消亡，才让展开的浏览器列向中心地板收缩——随后自动收为窄轨，最后万不得已才允许中心跌破地板。新包 ui-file-explorer 按该契约懒加载注册：每展开一层拉取一次、缓存按路径保存并以响应回显的绝对路径为键（'' 是根请求哨兵）、逐层错误加重试、打开路由与 ui-chat 共享“优先查看器”的回退。
+**客户端组合。** ui-layout 在会话栏与详情栏之间长出第五个子列，附带自己的窄轨契约（关闭时 44px、占用组件保持挂载、owner props 取自求解轨道）；求解器第 3 步先等右侧两个面板全部消亡，才让展开的浏览器列向中心地板收缩——随后自动收为窄轨，最后万不得已才允许中心跌破地板。新包 ui-file-explorer 按该契约懒加载注册：文件树以当前 Session 记录的 `cwd` 为根，并以该根为键，因此在其他项目中的选择会重新挂载文件树、丢弃上一个项目的层级；未选中任何 Session 时由 `''` 哨兵请求 Host 的默认项目根。各层每次展开拉取一次、缓存按路径保存并以响应回显的绝对路径为键、逐层错误加重试、打开路由与 ui-chat 共享“优先查看器”的回退。
 
 默认列状态为关闭（偏好 0 ⇄ 默认 300px），保持装配启动输出字节稳定，折叠作为可选项。
 
