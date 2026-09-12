@@ -62,6 +62,7 @@ const DeepSeekConfig = Schema.object({
     name: Schema.string(),
     description: Schema.string(),
     contextWindow: Schema.number().step(1).min(1),
+    inputModalities: Schema.array(Schema.union(['text', 'image'])).min(1).default(['text']),
   // The adapter declares its catalog as a schema default rather than a
   // composition entry, which is what the restore-defaults path has to read.
   })).default([
@@ -70,12 +71,14 @@ const DeepSeekConfig = Schema.object({
       name: 'DeepSeek-V4-Flash',
       description: '',
       contextWindow: 1_000_000,
+      inputModalities: ['text'],
     },
     {
       id: 'deepseek-v4-pro',
       name: 'DeepSeek-V4-Pro',
       description: '',
       contextWindow: 1_000_000,
+      inputModalities: ['text'],
     },
   ]),
 })
@@ -86,8 +89,14 @@ const DEFAULT_DEEPSEEK_MODELS = [
     name: 'DeepSeek-V4-Flash',
     description: 'Preserved hidden detail',
     contextWindow: 1_000_000,
+    inputModalities: ['text', 'image'],
   },
-  { id: 'deepseek-v4-pro', name: 'DeepSeek-V4-Pro', contextWindow: 1_000_000 },
+  {
+    id: 'deepseek-v4-pro',
+    name: 'DeepSeek-V4-Pro',
+    contextWindow: 1_000_000,
+    inputModalities: ['text'],
+  },
 ]
 
 function wireNamespaces(): SettingsNamespaceView[] {
@@ -677,6 +686,69 @@ describe('ModelsSection', () => {
     expect(mutate).not.toHaveBeenCalled()
   })
 
+  it('declares image input per catalog row from the inherited modalities', async () => {
+    const { mutate } = await mountDeepSeekCard({
+      mutate: vi.fn(() => Promise.resolve(remoteOk(wireNamespaces()[0]))),
+    })
+    fireEvent.click(screen.getByText(en.customized))
+    expandRow(1)
+    expandRow(2)
+    const flash = screen.getByLabelText<HTMLInputElement>(`${en.modelImageInput} 1`)
+    const pro = screen.getByLabelText<HTMLInputElement>(`${en.modelImageInput} 2`)
+    expect(flash.checked).toBe(true)
+    expect(pro.checked).toBe(false)
+
+    // Each row writes the adapter's own pair, so the image-capable row loses
+    // image input and the text-only row gains it.
+    fireEvent.click(flash)
+    fireEvent.click(pro)
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    expect(mutate.mock.calls[0]).toEqual([
+      'llm-deepseek',
+      [{
+        op: 'set',
+        path: ['models'],
+        value: [
+          { ...DEFAULT_DEEPSEEK_MODELS[0], inputModalities: ['text'] },
+          { ...DEFAULT_DEEPSEEK_MODELS[1], inputModalities: ['text', 'image'] },
+        ],
+      }],
+      0,
+    ])
+  })
+
+  it('adds a text-only row until image input is declared on it', async () => {
+    const { mutate } = await mountDeepSeekCard({
+      mutate: vi.fn(() => Promise.resolve(remoteOk(wireNamespaces()[0]))),
+    })
+    fireEvent.click(screen.getByText(en.customized))
+    fireEvent.click(screen.getByText(en.addModel))
+    const ids = screen.getAllByLabelText(new RegExp(en.modelId))
+    fireEvent.change(ids[2] as HTMLInputElement, { target: { value: 'private-preview' } })
+    expandRow(3)
+    const box = screen.getByLabelText<HTMLInputElement>(`${en.modelImageInput} 3`)
+    // A row this editor created carries no modalities until the box is set.
+    expect(box.checked).toBe(false)
+    fireEvent.click(box)
+    fireEvent.click(screen.getByText(en.apply))
+
+    await waitFor(() => { expect(mutate).toHaveBeenCalledTimes(1) })
+    expect(mutate.mock.calls[0]).toEqual([
+      'llm-deepseek',
+      [{
+        op: 'set',
+        path: ['models'],
+        value: [
+          ...DEFAULT_DEEPSEEK_MODELS,
+          { id: 'private-preview', inputModalities: ['text', 'image'] },
+        ],
+      }],
+      0,
+    ])
+  })
+
   it('validates every adapter-owned model catalog invariant', () => {
     expect(modelDrafts(undefined)).toEqual([])
     expect(modelDrafts([null, 'bad', { id: 'ok' }])).toEqual([{}, {}, { id: 'ok' }])
@@ -1006,7 +1078,11 @@ describe('ModelsSection', () => {
         op: 'set',
         path: ['models'],
         value: [
-          { id: 'deepseek-v4-flash', description: 'Preserved hidden detail' },
+          {
+            id: 'deepseek-v4-flash',
+            description: 'Preserved hidden detail',
+            inputModalities: ['text', 'image'],
+          },
           DEFAULT_DEEPSEEK_MODELS[1],
         ],
       }],

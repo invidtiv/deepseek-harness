@@ -508,6 +508,16 @@
   gap: 4px;
 }
 
+/* The advanced area's one boolean control: a browser checkbox left-aligned in
+   the same field column as the capacities, not a full-width text input. */
+.modelCheckbox {
+  align-self: flex-start;
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--dsw-alias-button-primary-fill);
+}
+
 .modelFieldLabel {
   color: var(--dsw-alias-label-tertiary);
   font-size: 12px;

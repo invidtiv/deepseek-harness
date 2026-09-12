@@ -17,7 +17,7 @@ import styles from './ModelsSection.module.css'
 export type DeepSeekModelDraft = Record<string, unknown>
 
 /** The catalog fields this editor writes. */
-type CatalogField = 'id' | 'name' | 'contextWindow' | 'maxTokens'
+type CatalogField = 'id' | 'name' | 'contextWindow' | 'maxTokens' | 'inputModalities'
 
 /** The two token counts edited as K/M-suffixed text behind a row's disclosure. */
 type CapacityField = 'contextWindow' | 'maxTokens'
@@ -26,6 +26,20 @@ type CapacityField = 'contextWindow' | 'maxTokens'
 function rowOf(key: string): number {
   return Number(key.slice(0, key.indexOf(':')))
 }
+
+/**
+ * Whether one draft row declares image input.
+ * @param model - one catalog draft row.
+ * @returns whether the row accepts images.
+ */
+function acceptsImages(model: DeepSeekModelDraft): boolean {
+  const modalities = model['inputModalities']
+  return Array.isArray(modalities) && modalities.includes('image')
+}
+
+/** The two modality sets this editor writes, in adapter order: text alone, and text with image input. */
+const BASE_MODALITIES = ['text'] as const
+const IMAGE_CAPABLE_MODALITIES = ['text', 'image'] as const
 
 /** Accepted capacity spellings: a decimal count with an optional K/M suffix. */
 const CAPACITY_PATTERN = /^(\d+(?:\.\d+)?)([km])?$/i
@@ -144,7 +158,7 @@ export interface DeepSeekModelsEditorProps {
 
 /**
  * Render the direct DeepSeek adapter's model catalog: id and display name on
- * each row, capacities behind the row's own disclosure.
+ * each row, capacities and image input behind the row's own disclosure.
  * @param props - effective rows plus the array-level override actions.
  * @returns the catalog editor.
  */
@@ -343,6 +357,25 @@ export function DeepSeekModelsEditor(props: DeepSeekModelsEditorProps): ReactNod
                     <div className={styles['modelAdvanced']}>
                       {capacityField(model, index, 'contextWindow', props.defaultContextWindow)}
                       {capacityField(model, index, 'maxTokens', props.defaultMaxTokens)}
+                      <label className={styles['modelField']}>
+                        <span className={styles['modelFieldLabel']}>{props.t('modelImageInput')}</span>
+                        <input
+                          className={styles['modelCheckbox']}
+                          type="checkbox"
+                          checked={acceptsImages(model)}
+                          aria-label={`${props.t('modelImageInput')} ${String(index + 1)}`}
+                          disabled={props.disabled}
+                          onChange={(event) => {
+                            update(
+                              index,
+                              'inputModalities',
+                              event.target.checked
+                                ? [...IMAGE_CAPABLE_MODALITIES]
+                                : [...BASE_MODALITIES],
+                            )
+                          }}
+                        />
+                      </label>
                     </div>
                   )
                   : null}
