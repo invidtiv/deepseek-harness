@@ -506,6 +506,15 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'The registry owns exact-Agent session identity and cleanup; backends own terminal mechanics, while tool-terminal exposes the owner-scoped model tools.',
   },
   {
+    key: 'peers',
+    pkg: 'peer',
+    title: 'Peer Harness transport registry',
+    mode: 'seam',
+    implementations: ['peer-remote'],
+    consumers: ['tool-peer'],
+    note: 'The registry owns peer selection and the peer operations; transports implement one protocol each, while tool-peer exposes the model-facing peer tools.',
+  },
+  {
     key: 'sandbox',
     pkg: 'sandbox',
     title: 'Process-sandbox seam',

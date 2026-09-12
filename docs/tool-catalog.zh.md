@@ -32,6 +32,7 @@
 | `@deepseek-ai/dsh-tool-fs` | `edit`、`read`、`read_image`、`write` | `ctx.tools`、`ctx.fs`、`ctx.systemPrompt`、`ctx.attachments (image-tool registration)`、`ctx.llm + an image-capable route (image-tool execution)` | `tool/call`、`fs/write-intent or fs/edit-intent for mutations`、`fs/observed after read presence/absence or successful file operation`、`durable attachment (read_image)`、`tool/result` | - | 先读后写／编辑策略由 `@deepseek-ai/dsh-fs-observation-policy` 添加；它是一个 `fs/*` 事件门禁插件，不会改变 schema。加载这些工具的部署按预期也应加载该插件。没有 `ctx.attachments` 时图片工具不会注册；其 schema 与路由无关，执行时除非确切路由的模型声明图片输入，否则拒绝。 |
 | `@deepseek-ai/dsh-tool-fs-search` | `glob`、`grep` | `ctx.tools`、`ctx.subprocess`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn 随包提供的 ripgrep 二进制文件（`@vscode/ripgrep`），并作为普通前台调用运行，绝不作为后台任务；无需在宿主机安装 `rg`，也不经过 shell 层。本目录使用 `sampleOverCapGlobResults: true`；部署必须显式选择该行为。结果超过上限时，会通过可选的 ctx.spillStore 后端保存完整的格式化列表；在共置部署中，如果后端公开本地路径，返回的定位信息可供后续读取／搜索。 |
 | `@deepseek-ai/dsh-tool-terminal` | `terminal_close`、`terminal_list`、`terminal_open`、`terminal_read`、`terminal_send`、`terminal_signal` | `ctx.tools`、`ctx.terminals`、`ctx.systemPrompt`、`ctx.jobs at call time for run_in_background` | `tool/call`、`tool/result` | - | 这 6 个终端工具需要选择启用，用于补充一次性 bash／文件系统工具。`terminal_send(run_in_background: true)` 会注册到 `ctx.jobs`；schema 不包含 TUI、具名按键序列、BEL、调整尺寸、自动启动和跨 agent 共享。 |
+| `@deepseek-ai/dsh-tool-peer` | `peer_ask`、`peer_sessions`、`peer_transcript` | `ctx.tools`、`ctx.peers` | `tool/call`、`tool/result` | - | 这 3 个 peer 工具需要选择启用，并要求至少挂载一个 peer 传输。调用会阻塞直到 peer 轮次结束；peer 输出是文本，因此 schema 不包含图片、附件和实时 peer 事件。 |
 | `@deepseek-ai/dsh-tool-goal` | `create_goal`、`get_goal`、`update_goal` | `ctx.tools`、`ctx.agents`、`ctx.goals`、`ctx.systemPrompt`、`a calling Agent in an authorized open turn` | `tool/call`、`goal/change for mutations`、`tool/result` | - | create、edit、pause 和 resume 要求直接来自人类的根权限；complete 和 blocked 也接受确切的当前 Goal Round。blocked 的默认下限是 3 个获准的 Round。 |
 | `@deepseek-ai/dsh-schedule` | `schedule_create`、`schedule_delete`、`schedule_list` | `ctx.tools`、`ctx.sessions`、Session 持久化、未来创建的 live 根 Agent | `tool/call`、`schedule/change create or delete`、`tool/result` | - | 仅在选择启用的 Schedule 插件加载后创建的 live 根 Agent scope 内注册。版本 1 接受 after_seconds、显式绝对 at 和有界固定速率 every_seconds，并披露 session-local 交付；管理读取与变更必须通过共享的 Session 持久化 barrier。 |
 | `@deepseek-ai/dsh-tool-lsp` | `lsp` | `ctx.tools`、`ctx.lsp`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | lsp 工具将提供方选择和语言服务器子进程置于 ctx.lsp 之后，因此其模型可见 schema 在更换提供方时保持稳定。运行时要求已注册提供方，例如 `@deepseek-ai/dsh-lsp-stdio`；如果没有提供方，查询会返回结构化 `LSP_UNAVAILABLE` 错误，而不会改变 schema。 |
@@ -1051,6 +1052,104 @@ glob 和 grep 是无条件可用的发现工具，通过 ctx.subprocess spawn �
 来源：[`packages/terminal/tool-terminal/src/index.ts`](../packages/terminal/tool-terminal/src/index.ts)
 
 这 6 个终端工具需要选择启用，用于补充一次性 bash／文件系统工具。`terminal_send(run_in_background: true)` 会注册到 `ctx.jobs`；schema 不包含 TUI、具名按键序列、BEL、调整尺寸、自动启动和跨 agent 共享。
+
+<a id="deepseek-aidsh-tool-peer"></a>
+
+## `@deepseek-ai/dsh-tool-peer`
+
+### `peer_ask`
+
+在 peer DeepSeek Harness 上运行一个任务并返回其最终答案。peer 在自己的 checkout 中工作，使用自己的模型与工具；本次对话中的任何内容都不会共享，它也无法看到本机器上的文件。除非 session_id 指明一个既有会话，否则会创建新的 peer 会话，并阻塞直到该轮次结束。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "prompt": {
+      "type": "string",
+      "description": "The complete, self-contained task for the peer. It does not see this conversation."
+    },
+    "peer": {
+      "type": "string",
+      "description": "Configured peer name. Omit when only one peer is configured."
+    },
+    "cwd": {
+      "type": "string",
+      "description": "Absolute working directory on the peer machine for a new session."
+    },
+    "session_id": {
+      "type": "string",
+      "description": "Continue an existing peer session instead of creating one."
+    },
+    "agent_preset": {
+      "type": "string",
+      "description": "Peer agent preset for a new session, for example standard."
+    },
+    "timeout_ms": {
+      "type": "integer",
+      "description": "How long to wait for the peer turn to end, in milliseconds."
+    }
+  },
+  "required": [
+    "prompt"
+  ]
+}
+```
+
+来源：[`packages/peer/tool-peer/src/index.ts`](../packages/peer/tool-peer/src/index.ts)
+
+### `peer_sessions`
+
+列出 peer DeepSeek Harness 上的最近会话：会话 id、标题、工作目录、是否有轮次正在运行，以及最近活动。用它为 peer_transcript 找到会话 id，或用 peer_ask 继续早先的 peer 工作。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "peer": {
+      "type": "string",
+      "description": "Configured peer name. Omit when only one peer is configured."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "How many sessions to return, most recently active first."
+    }
+  }
+}
+```
+
+来源：[`packages/peer/tool-peer/src/index.ts`](../packages/peer/tool-peer/src/index.ts)
+
+### `peer_transcript`
+
+读取 peer DeepSeek Harness 上一个会话最近的人类与 assistant 消息，最旧的在前。用它查看某个 peer 会话得出了什么结论，而无需重新运行该工作。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "session_id": {
+      "type": "string",
+      "description": "Peer session id, as returned by peer_sessions or peer_ask."
+    },
+    "peer": {
+      "type": "string",
+      "description": "Configured peer name. Omit when only one peer is configured."
+    },
+    "limit": {
+      "type": "integer",
+      "description": "How many trailing messages to return."
+    }
+  },
+  "required": [
+    "session_id"
+  ]
+}
+```
+
+来源：[`packages/peer/tool-peer/src/index.ts`](../packages/peer/tool-peer/src/index.ts)
+
+这 3 个 peer 工具需要选择启用，并要求至少挂载一个 peer 传输。调用会阻塞直到 peer 轮次结束；peer 输出是文本，因此 schema 不包含图片、附件和实时 peer 事件。
 
 <a id="deepseek-aidsh-tool-goal"></a>
 

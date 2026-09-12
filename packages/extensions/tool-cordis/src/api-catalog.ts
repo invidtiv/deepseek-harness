@@ -1342,6 +1342,43 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'peers',
+    summary: 'Registry of named peer Harness transports for one Host composition.',
+    description: 'Registry of named peer Harness transports for one Host composition.',
+    methods: [
+      {
+        signature: 'register(transport: PeerTransport): () => void',
+        description: 'Register one peer transport for this effect scope.',
+        parameters: [{ name: 'transport', description: 'transport with a non-empty unique peer name.' }],
+        returns: 'disposer that removes exactly this contribution.',
+      },
+      {
+        signature: 'list(): string[]',
+        description: 'List registered peer names in registration order.',
+        parameters: [],
+        returns: 'fresh peer names.',
+      },
+      {
+        signature: 'listSessions(peer: string | undefined, signal?: AbortSignal): Promise<readonly PeerSessionSummary[]>',
+        description: 'Read one peer\'s visible session rows.',
+        parameters: [{ name: 'peer', description: 'registered peer name; omission requires exactly one peer.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'peer session summaries ordered by the peer\'s own activity order.',
+      },
+      {
+        signature: 'ask(peer: string | undefined, request: PeerAskRequest, signal?: AbortSignal): Promise<PeerAskResult>',
+        description: 'Run one task on a peer and wait for its turn to end.',
+        parameters: [{ name: 'peer', description: 'registered peer name; omission requires exactly one peer.' }, { name: 'request', description: 'task text plus optional session, directory, preset, and bound.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'the peer\'s terminal outcome for that turn.',
+      },
+      {
+        signature: 'transcript(peer: string | undefined, request: PeerTranscriptRequest, signal?: AbortSignal): Promise<readonly PeerMessage[]>',
+        description: 'Read one bounded transcript tail from a peer session.',
+        parameters: [{ name: 'peer', description: 'registered peer name; omission requires exactly one peer.' }, { name: 'request', description: 'target session and tail bounds.' }, { name: 'signal', description: 'caller cancellation.' }],
+        returns: 'peer messages oldest first within the requested tail.',
+      },
+    ],
+  },
+  {
     key: 'permissionPresets',
     summary: 'Owns the deployment\'s permission presets and their write path.',
     description: 'Owns the deployment\'s permission presets and their write path. Requires a confining `ctx.shell` executor and `ctx.approval`; unmatched knob values are reported as CUSTOM_PRESET, not an error.',
@@ -4781,6 +4818,34 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'OptionalSessionSeq',
     declaration: 'export type OptionalSessionSeq = SessionSeq | null;',
+  },
+  {
+    name: 'PeerAskRequest',
+    declaration: 'export interface PeerAskRequest {\n    readonly prompt: string;\n    readonly cwd?: string;\n    readonly sessionId?: string;\n    readonly agentPreset?: string;\n    readonly mode?: \'queue\' | \'steer\';\n    readonly timeoutMs?: number;\n}',
+  },
+  {
+    name: 'PeerAskResult',
+    declaration: 'export interface PeerAskResult {\n    readonly sessionId: string;\n    readonly answer: string | undefined;\n    readonly stopReason: string;\n    readonly elapsedMs: number;\n    readonly usage: PeerUsage | undefined;\n}',
+  },
+  {
+    name: 'PeerMessage',
+    declaration: 'export interface PeerMessage {\n    readonly role: \'user\' | \'assistant\';\n    readonly text: string;\n}',
+  },
+  {
+    name: 'PeerSessionSummary',
+    declaration: 'export interface PeerSessionSummary {\n    readonly sessionId: string;\n    readonly title: string | undefined;\n    readonly cwd: string | undefined;\n    readonly running: boolean;\n    readonly updatedAt: number | undefined;\n}',
+  },
+  {
+    name: 'PeerTranscriptRequest',
+    declaration: 'export interface PeerTranscriptRequest {\n    readonly sessionId: string;\n    readonly limit?: number;\n    readonly maxChars?: number;\n}',
+  },
+  {
+    name: 'PeerTransport',
+    declaration: 'export interface PeerTransport {\n    readonly id: string;\n    listSessions(signal?: AbortSignal): Promise<readonly PeerSessionSummary[]>;\n    ask(request: PeerAskRequest, signal?: AbortSignal): Promise<PeerAskResult>;\n    transcript(request: PeerTranscriptRequest, signal?: AbortSignal): Promise<readonly PeerMessage[]>;\n}',
+  },
+  {
+    name: 'PeerUsage',
+    declaration: 'export interface PeerUsage {\n    readonly inputTokens: number | undefined;\n    readonly outputTokens: number | undefined;\n    readonly cacheReadTokens: number | undefined;\n}',
   },
   {
     name: 'PermissionSelect',

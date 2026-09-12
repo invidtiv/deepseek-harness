@@ -51,6 +51,8 @@ import * as ToolFs from '@deepseek-ai/dsh-tool-fs'
 import * as ToolFsSearch from '@deepseek-ai/dsh-tool-fs-search'
 import * as ToolStrReplaceEditor from '@deepseek-ai/dsh-tool-str-replace-editor'
 import TerminalSessionService from '@deepseek-ai/dsh-terminal'
+import PeerService from '@deepseek-ai/dsh-peer'
+import * as ToolPeer from '@deepseek-ai/dsh-tool-peer'
 import * as ToolPty from '@deepseek-ai/dsh-tool-terminal'
 import * as ToolGoal from '@deepseek-ai/dsh-tool-goal'
 import * as ToolSchedule from '@deepseek-ai/dsh-schedule'
@@ -371,6 +373,19 @@ const TOOL_PACKAGES: ToolPackage[] = [
     },
     note:
       'The six terminal tools are opt-in and complement one-shot shell/filesystem tools. `terminal_send(run_in_background: true)` registers with `ctx.jobs`; TUI, named key sequences, BEL, resize, auto-start, and cross-agent sharing are absent from the schema.',
+  },
+  {
+    pkg: '@deepseek-ai/dsh-tool-peer',
+    dir: 'tool-peer',
+    source: 'packages/peer/tool-peer/src/index.ts',
+    requires: ['ctx.tools', 'ctx.peers'],
+    writes: ['tool/call', 'tool/result'],
+    async mount(ctx) {
+      await ctx.plugin(PeerService)
+      await ctx.plugin(ToolPeer)
+    },
+    note:
+      'The three peer tools are opt-in and require at least one mounted peer transport. A call blocks until the peer turn ends; peer output is text, so images, attachments, and live peer events are absent from the schema.',
   },
   {
     pkg: '@deepseek-ai/dsh-tool-goal',

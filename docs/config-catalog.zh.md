@@ -1596,6 +1596,36 @@ export interface Config {
 
 来源：[`packages/feedback/message-feedback/src/index.ts:40`](../packages/feedback/message-feedback/src/index.ts)
 
+<a id="deepseek-aidsh-peer-remote"></a>
+
+## `@deepseek-ai/dsh-peer-remote`
+
+需要：`peers`
+
+```ts config-catalog
+/** Configuration for one peer Harness transport. */
+export interface Config {
+  /** Peer name used by every consumer and by tool arguments. */
+  peerId: string
+  /** Peer web origin, for example `https://host.tailnet.ts.net:8443`. */
+  baseUrl: string
+  /** Credential reference holding this peer's browser-session cookie. */
+  cookieEnv?: string
+  /** Peer working directory used when a request names none. */
+  defaultCwd?: string
+  /** Peer agent preset used when a request names none. */
+  defaultAgentPreset?: string
+  /** Bound (ms) on one unary Remote call. */
+  requestTimeoutMs?: number
+  /** Bound (ms) on waiting for one peer turn to end. */
+  askTimeoutMs?: number
+  /** Delay (ms) between turns of the peer completion poll. */
+  pollIntervalMs?: number
+}
+```
+
+来源：[`packages/peer/peer-remote/src/index.ts:34`](../packages/peer/peer-remote/src/index.ts)
+
 <a id="deepseek-aidsh-permission-presets"></a>
 
 ## `@deepseek-ai/dsh-permission-presets`
@@ -3158,6 +3188,22 @@ export interface Config {
 
 来源：[`packages/lsp/tool-lsp/src/index.ts:57`](../packages/lsp/tool-lsp/src/index.ts)
 
+<a id="deepseek-aidsh-tool-peer"></a>
+
+## `@deepseek-ai/dsh-tool-peer`
+
+需要：`peers` · `tools`
+
+```ts config-catalog
+/** Model-facing peer tool configuration. */
+export interface Config {
+  /** Maximum UTF-8 bytes in one complete peer result. */
+  maxResultBytes?: number
+}
+```
+
+来源：[`packages/peer/tool-peer/src/index.ts:27`](../packages/peer/tool-peer/src/index.ts)
+
 <a id="deepseek-aidsh-tool-present"></a>
 
 ## `@deepseek-ai/dsh-tool-present`
@@ -3796,6 +3842,7 @@ export interface Config {
 - `@deepseek-ai/dsh-host-plugin-inventory` — 需要 `loader`（[`packages/host/plugin-inventory/src/index.ts`](../packages/host/plugin-inventory/src/index.ts)）
 - `@deepseek-ai/dsh-llm`（[`packages/llm/llm/src/index.ts`](../packages/llm/llm/src/index.ts)）
 - `@deepseek-ai/dsh-lsp`（[`packages/lsp/lsp/src/index.ts`](../packages/lsp/lsp/src/index.ts)）
+- `@deepseek-ai/dsh-peer`（[`packages/peer/peer/src/index.ts`](../packages/peer/peer/src/index.ts)）
 - `@deepseek-ai/dsh-schedule` — 需要 `agents` · `sessions` · `tools` · `sessionPersistence`（[`packages/schedule/schedule/src/index.ts`](../packages/schedule/schedule/src/index.ts)）
 - `@deepseek-ai/dsh-session`（[`packages/core/session/src/index.ts`](../packages/core/session/src/index.ts)）
 - `@deepseek-ai/dsh-session-checkpoint-policy` — 需要 `llm` · `sessionPersistence` · `sessions` · `tools`（[`packages/session/session-checkpoint-policy/src/index.ts`](../packages/session/session-checkpoint-policy/src/index.ts)）

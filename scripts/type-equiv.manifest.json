@@ -1072,6 +1072,46 @@
       "source": "packages/jobs/jobs/src/types.ts"
     },
     {
+      "doc": "docs/subsystems/peer.md",
+      "symbol": "PeerTransport",
+      "source": "packages/peer/peer/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/peer.md",
+      "symbol": "PeerAskRequest",
+      "source": "packages/peer/peer/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/peer.md",
+      "symbol": "PeerUsage",
+      "source": "packages/peer/peer/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/peer.md",
+      "symbol": "PeerAskResult",
+      "source": "packages/peer/peer/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/peer.md",
+      "symbol": "PeerSessionSummary",
+      "source": "packages/peer/peer/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/peer.md",
+      "symbol": "PeerTranscriptRequest",
+      "source": "packages/peer/peer/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/peer.md",
+      "symbol": "PeerMessage",
+      "source": "packages/peer/peer/src/types.ts"
+    },
+    {
+      "doc": "docs/subsystems/peer.md",
+      "symbol": "PeerErrorCode",
+      "source": "packages/peer/peer/src/index.ts"
+    },
+    {
       "doc": "docs/subsystems/terminal.md",
       "symbol": "TerminalWaitReason",
       "source": "packages/terminal/terminal/src/types.ts"

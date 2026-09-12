@@ -48,6 +48,8 @@ const SENTENCE_MODEL_EXPERIENCE: Readonly<Record<string, SentenceContract>> = {
   'packages/attachment/attachment-local': { kind: 'indirect', reason: 'The local backend delegates model request rendering to provider adapters.' },
   'packages/shell/shell': { kind: 'indirect', reason: 'The service interface delegates all model rendering to dsh-tool-bash.' },
   'packages/shell/shell-env': { kind: 'indirect', reason: 'The env service exposes managed DSH_* facts through the shell tools (dsh-tool-bash/dsh-tool-pwsh); it registers no prompt or schema of its own.' },
+  'packages/peer/peer': { kind: 'indirect', reason: 'The service interface delegates all model rendering to dsh-tool-peer.' },
+  'packages/peer/peer-remote': { kind: 'indirect', reason: 'The transport delegates all model rendering to dsh-tool-peer.' },
   'packages/shell/bash-local': { kind: 'indirect', reason: 'The executor backend delegates model rendering to dsh-tool-bash.' },
   'packages/shell/pwsh-local': { kind: 'indirect', reason: 'The executor backend delegates model rendering to dsh-tool-pwsh.' },
   'packages/code-runtime/code-runtime': { kind: 'indirect', reason: 'The service interface delegates model rendering to PTC mode in dsh-tools.' },
