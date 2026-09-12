@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-file-explorer",
   "description": "Collapsible right-hand file explorer column: a lazy project file tree whose rows open into the file viewer",
-  "version": "0.1.5-alpha.2",
+  "version": "0.1.5-rc.2",
   "publishConfig": {
     "access": "public"
   },

@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-client-ui-file-viewer",
   "description": "Right-side file viewer drawer: clickable file references open a syntax-highlighted, line-numbered source panel",
-  "version": "0.1.5-alpha.2",
+  "version": "0.1.5-rc.2",
   "publishConfig": {
     "access": "public"
   },
