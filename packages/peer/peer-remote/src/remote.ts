@@ -256,7 +256,7 @@ export class RemotePeerTransport implements PeerTransport {
     if (!response.ok) {
       throw new RemotePeerError(`peer "${this.peerId}" answered HTTP ${response.status} on ${endpoint}`)
     }
-    const body = await response.json()
+    const body: unknown = await response.json()
     if (!isRecord(body) || body.type !== 'server-response' || body.rpcId !== rpcId) {
       throw new RemotePeerError(`peer "${this.peerId}" answered ${endpoint} outside the Remote envelope`)
     }

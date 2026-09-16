@@ -108,7 +108,7 @@ startup log contains `ah-bridge: registered 44 Android-harness tools`.
 - `@deepseek-ai/dsh-tools` unresolvable — the plugin imports it as a peer; any
   DSH deployment ships it in the shared `profiles/node_modules` fallback tree.
 
-## Provenance
+## Verification environment
 
 Developed and verified against the deployment at `~/.dsh/profiles/web`
 (DSH `android-harness/1` RPC; device app version 0.1.3). The plugin logic ran

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write dsh-ah-bridge-bundle/README.md
-README.md: 91e6c0c73d5ed8940333b8be21814989e63d6c10
-README.zh.md: cba969eb62bd79ec53d11139f4c2b09ad088cf06
+README.md: 3c2f4e2dd4839d43c93492c0df301e82acc2d056
+README.zh.md: 5ba3e79e9d455b1b5d59c2ac9b86beaa2466d5ac

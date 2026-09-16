@@ -27,8 +27,13 @@ import {
   type TelegramHarness,
 } from './harness.ts'
 
+/**
+ * Await an eventual assertion. The ceiling leaves room for a poll round to
+ * settle under parallel transform load while keeping the three sequential
+ * waits of the longest case inside that case's 45-second test cap.
+ */
 function waitFor(assertion: () => void): Promise<void> {
-  return vi.waitFor(assertion, { timeout: 8000, interval: 25 })
+  return vi.waitFor(assertion, { timeout: 12_000, interval: 25 })
 }
 
 /** Drain the event dispatch and its queued microtasks so a negative assertion is meaningful. */

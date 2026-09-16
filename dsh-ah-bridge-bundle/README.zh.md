@@ -79,6 +79,6 @@
 - 组合检查失败：确认 `cordis.patch.yml` 是顶层 YAML 数组；缺少目标的条目会在启动时记录一条逐条目 Loader 警告。
 - `@deepseek-ai/dsh-tools` 无法解析：插件以对等依赖（peer dependency）方式导入它；任何 DSH 部署都会把它随附在共享的 `profiles/node_modules` 回退树中。
 
-## 来源
+## 验证环境
 
 本插件针对 `~/.dsh/profiles/web` 处的部署开发并验证（DSH `android-harness/1` RPC；设备应用版本 0.1.3）。该插件逻辑最初作为动态 Cordis 插件运行（44 个工具，端到端传输冒烟测试），随后作为这一静态宿主行运行，工具集相同。
