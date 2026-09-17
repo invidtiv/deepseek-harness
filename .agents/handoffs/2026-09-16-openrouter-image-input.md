@@ -1,6 +1,16 @@
 # Handoff: let OpenRouter models accept image input
 
-Status: open
+Status: done
+
+## Delivered
+
+Upstream's settings-model rework shipped both parts of this change; the deferral under "Decide explicitly" stays deferred.
+
+- **Part A** — discovery returns `inputModalities` per model. `llm-pi-ai` reads pi-ai's own resolved `Model['input']` (`packages/llm/llm-pi-ai/src/discovery.ts`), `LlmModelInfo.inputModalities` carries it (`packages/llm/llm/src/index.ts`), and `packages/llm/llm-pi-ai/tests/discovery.spec.ts` pins the mapping. pi-ai already resolves OpenRouter's `architecture` into `Model['input']`, so no adapter-side parsing of `input_modalities` or `modality` was needed and the closed `ModelModalityMap` vocabulary stays closed.
+- **Part B** — both adapter editors now share `ModelRow` and the `ModelInputTypes` control (`packages/client/ui-settings-models/src/client/ModelRow.tsx`, `ModelInputTypes.tsx`). `ModelListEditor` passes `inputField="input"` for pi-ai and `DeepSeekModelsEditor` passes `inputModalities`, so each adapter writes its own field, a row without a declaration displays the inherited types before any override exists, at least one type is always selected, and unchecking Image on DeepSeek also drops `imagePixelBudget` and `imageMaxBytes`.
+- **Still deferred** — no route-level `defaultInput` control exists. `ProviderEditor` only reads the route fallback to seed a row's displayed inheritance (`ProviderEditor.tsx`, `ModelListEditor.tsx`), so a route whose every model is vision-capable is still declared in `settings.yaml`. Adding that control remains an unapproved change, as this handoff required.
+
+The locale keys this handoff proposed to reuse are gone: `modelImageInput` was replaced by `modelInputTypes`, `modelInputText`, and `modelInputImage`, and `modelAdvanced` now reads "Model options". The proposal below predates that rework and its file and line citations are historical.
 
 ## Objective
 
@@ -44,7 +54,7 @@ OpenRouter's catalog entries and hand-declared entries therefore end at `['text'
 
 - In `ModelListEditor`, add an Image input control inside the row's existing **Advanced** disclosure, beside the two capacity fields.
 - Write the adapter's own two sets only — `input: ['text']` unchecked, `input: ['text', 'image']` checked — exactly as `DeepSeekModelsEditor.tsx:361-373` writes `inputModalities` via `IMAGE_CAPABLE_MODALITIES`. Do not author arbitrary sets: `['image']` is a route nobody asks for.
-- Reuse the existing locale keys `modelImageInput` and `modelAdvanced` (`packages/client/ui-settings-models/src/client/locales.ts:53-54`; Chinese already at `:164-165`). The disclosure is already labelled Advanced in this editor.
+- Locale keys: shipped instead as `modelInputTypes`, `modelInputText`, and `modelInputImage`, under a disclosure now labelled **Model options** (`packages/client/ui-settings-models/src/client/locales.ts`). The `modelImageInput` key this part proposed to reuse no longer exists.
 - Preserve fields the editor does not show, as it does today, so a checkbox edit never drops a hand-set `reasoningEfforts`, `compat`, or `modelOverrides` entry.
 - When `fetchModels` adopts a discovered row (`ModelListEditor.tsx:229-257`), seed the new entry's `input` from the discovered modalities instead of leaving it unset.
 

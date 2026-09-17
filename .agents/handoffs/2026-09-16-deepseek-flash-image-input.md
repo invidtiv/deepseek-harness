@@ -36,23 +36,23 @@ llm-deepseek:
 
 `1000000` is `DEFAULT_CONTEXT_WINDOW` and `in-history` mirrors the shipped row; both may already be present. Only `inputModalities` changes behavior.
 
-The equivalent GUI path writes the same value: Models settings page → DeepSeek provider → the row → **Advanced** → **Image input** (`packages/client/ui-settings-models/src/client/DeepSeekModelsEditor.tsx:361-377`; it writes exactly `['text']` or `['text', 'image']`, so it cannot author a value the config rejects).
+The equivalent GUI path writes the same value: Models settings page → DeepSeek provider → the row's **Model options** disclosure → **Input types** → **Image** (`packages/client/ui-settings-models/src/client/ModelRow.tsx` renders the shared `ModelInputTypes` control, and the DeepSeek editor passes `inputField="inputModalities"`; it writes exactly `['text']` or `['text', 'image']`, so it cannot author a value the config rejects).
 
 Confirm the target's catalog is not missing the row for a different reason — the shipped catalog is asymmetric, and a hand-written list must reproduce it:
 
 | id | shipped `inputModalities` |
 |---|---|
 | `deepseek-flash` | `['text', 'image']` |
-| `deepseek-v4-flash` | absent → `['text']` |
 | `deepseek-v4-pro` | absent → `['text']` |
-| `deepseek-v4-flash-vision-exp` | `['text', 'image']` |
+
+`deepseek-v4-flash` and `deepseek-v4-flash-vision-exp` are no longer shipped rows; a target whose `settings.yaml` still lists them is carrying a stale copy of a catalog that used to include them.
 
 ## Prerequisites
 
 Three, all usually already satisfied:
 
 1. **Credential** — `DEEPSEEK_API_KEY` in the target's credential store (env, `.env`, or `.credentials.yaml`). It is the default `apiKeyEnv` (`config.ts:13,82`).
-2. **An attachment provider mounted** — `attachment-local` or any `ctx.attachments` provider. It ships in the `base` bundle (`packages/bundle/base/cordis.patch.yml:118`), so any profile built on `base` has it. The adapter reads it lazily at `packages/llm/llm-deepseek/src/index.ts:116`.
+2. **An attachment provider mounted** — `attachment-local` or any `ctx.attachments` provider. It ships in the `base` bundle (`packages/bundle/base/cordis.patch.yml:125`), so any profile built on `base` has it. The adapter reads it lazily at `packages/llm/llm-deepseek/src/index.ts:116`.
 3. **The session's selected model is the row you edited.** `agent-default-model` seeds only *new* sessions; an existing session keeps its own selection. This is the most common reason a correct config still fails.
 
 ## Why one field is sufficient
