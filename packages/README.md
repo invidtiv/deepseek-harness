@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-The harness is assembled from npm packages under `packages/`, grouped by capability family: sessions and the agent loop, model-facing tools, shell and filesystem execution, web access, subagents, and the rest. Use this page as the top-level map: find the owning group, then open its README for the package list. Every package is scoped `@deepseek-ai/dsh-*` and lives in exactly one group; each group README is the authoritative package map for its family.
+The harness is assembled from npm packages under `packages/`, grouped by capability family: sessions and the agent loop, model-facing tools, shell and filesystem execution, web access, subagents, and the rest. Use this page as the top-level map: find the owning group, then open its README for the package list. Every package is scoped `@deepseek-ai/dsh-*`; each group README is the authoritative package map for its family.
 
 ## Table of Contents
 
@@ -44,19 +44,21 @@ Every package lives in exactly one group; new packages join existing groups, and
 | [`computer-use/`](computer-use/README.md) | Exclusive named desktop-provider registration |
 | [`browser-use/`](browser-use/README.md) | Exclusive named browser-provider registration |
 | [`sandbox/`](sandbox/README.md) | Process-confinement seam; bwrap/Landlock/Seatbelt backends |
+| [`deliverables/`](deliverables/README.md) | Turn deliverables: explicit file delivery and recorded workspace changes |
 | [`fs/`](fs/README.md) | Filesystem capability family: seam, local impl, model-facing file tools, discovery tools |
 | [`lsp/`](lsp/README.md) | LSP capability family: seam, generic stdio provider, and the `lsp` tool |
 | [`skill/`](skill/README.md) | Skill capability family: provider registry, local provider, model-facing catalog/loader |
 | [`compaction/`](compaction/README.md) | Compaction capability family: Service Definition + basic provider + command Consumer |
 | [`context/`](context/README.md) | Model-visible request context: workspace instructions, time context, references |
 | [`subagent/`](subagent/README.md) | Subagent capability family: provider-registry contract and model-facing delegation tools |
-| [`peer/`](peer/README.md) | Peer Harness capability family: transport registry, HTTP Remote-API transport, and model-facing peer tools |
+| [`peer/`](peer/README.md) | Peer Harness family: transport registry, HTTP Remote-API transport, and model-facing peer tools |
 | [`jobs/`](jobs/README.md) | Generic background-job runtime and model-facing job control tools |
 | [`experimental/`](experimental/README.md) | Pre-stable prototypes with explicit private exceptions |
 | [`workflow/`](workflow/README.md) | Workflow seam, PTC process engine, and model-facing `workflow`/`ralph` tools |
 | [`webhook/`](webhook/README.md) | Verified external events, trusted rules, and fire-and-forget Workspace Sessions |
-| [`telegram/`](telegram/README.md) | Telegram forum-topic frontend driving one durable agent session per chat topic |
+| [`telegram/`](telegram/README.md) | Telegram forum-topic frontend: one durable agent session per chat topic |
 | [`web/`](web/README.md) | Web capability family: seam, search/fetch providers, model-facing web tools |
+| [`document/`](document/README.md) | Shared Host Office-to-PDF conversion |
 | [`attachment/`](attachment/README.md) | Durable attachment identity, validation, local content-addressed storage |
 | [`spill/`](spill/README.md) | Spill capability family: storage seam, local impl, tool-result spill policy |
 | [`todo/`](todo/README.md) | The model-facing `todo_write` tool |
@@ -81,7 +83,7 @@ Every package lives in exactly one group; new packages join existing groups, and
 | [`client/`](client/README.md) | Web-GUI browser half: shell, wire, object services, slots, `ui-*` plugins |
 | [`test-support/`](test-support/README.md) | Test infrastructure (testkits, replay, Loader smokes) |
 | [`runtime-diagnostics/`](runtime-diagnostics/README.md) | Runtime diagnostics: package-owned invariant checks and reports |
-| [`util/`](util/README.md) | Low-level zero-dependency utilities shared across groups (`Branded<B>`, home/path helpers, timeout, retention) |
+| [`util/`](util/README.md) | Low-level zero-dependency utilities (`Branded<B>`, home/path helpers, timeout, retention) |
 
 -----
 

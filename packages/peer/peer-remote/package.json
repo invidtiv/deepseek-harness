@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-peer-remote",
   "description": "HTTP Remote-API transport for the DeepSeek Harness peer seam — one registered peer Harness per plugin row",
-  "version": "0.1.5-rc.2",
+  "version": "0.1.6-alpha.2",
   "publishConfig": {
     "access": "public"
   },

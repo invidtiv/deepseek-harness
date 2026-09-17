@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-telegram",
   "description": "Telegram forum-topic frontend for DeepSeek Harness: one durable agent session per topic over the Bot API",
-  "version": "0.1.5-rc.2",
+  "version": "0.1.6-alpha.2",
   "publishConfig": {
     "access": "public"
   },

@@ -1,35 +1,34 @@
 /**
- * The Telegram bot's card: which chats and users it routes to, which
- * workspaces it may open, and the pacing of its polling, queue, edits, and
- * approvals.
+ * The Telegram bot's configuration page: which chats and users it routes to,
+ * which workspaces it may open, and the pacing of its polling, queue, edits,
+ * and approvals.
  */
 
+import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import { ValueField } from './fields.tsx'
-import { PluginCard } from './PluginCard.tsx'
+import { PluginConfigForm } from './PluginConfigForm.tsx'
 import type { TelegramCardFace } from './telegram-card-controller.ts'
-import type {} from './slot-contract.ts'
 
-/** Props the renderer binds for the Telegram card. */
+/** Props the renderer binds for the Telegram page. */
 export type TelegramCardProps =
-  PropsRuntime<'settings.plugin.item'>
+  PropsRuntime<'plugins.item'>
   & PropsLocale<'settings.plugins'>
   & InjectFace<TelegramCardFace>
 
 /**
- * Render the Telegram card.
- * @param props - locale copy, the card snapshot, and its form actions.
- * @returns the card.
+ * Render the Telegram bot's one-liner or its configuration form, as the Plugins page asks.
+ * @param props - the view asked for, locale copy, the form snapshot, and its actions.
+ * @returns the one-liner, or the form.
  */
 export function TelegramCard(props: TelegramCardProps) {
   const { t } = props
   const state = props.useTelegramCard(snapshot => snapshot)
+  if (props.view === 'summary') return t('telegramDescription')
   const disabled = !state.writable
   return (
-    <PluginCard
+    <PluginConfigForm
       t={t}
-      titleKey="telegramTitle"
-      descriptionKey="telegramDescription"
       state={state}
       onSave={props.save}
       onDiscard={props.discard}
@@ -158,6 +157,6 @@ export function TelegramCard(props: TelegramCardProps) {
         onEdit={(text) => { props.edit('workspaceRoots', text) }}
         onReset={() => { props.resetField('workspaceRoots') }}
       />
-    </PluginCard>
+    </PluginConfigForm>
   )
 }

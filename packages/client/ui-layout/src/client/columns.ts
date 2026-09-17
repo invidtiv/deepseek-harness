@@ -9,9 +9,10 @@
  * letting an open explorer concede toward its minimum and finally
  * auto-collapse (derived zero and rail widths — preferred width preferences
  * are never rewritten, so widening the window restores them). The rails never
- * concede: a closed sidebar and a closed explorer each render at their fixed
- * control-rail width, and center absorbs any remaining deficit as the last
- * resort. Inputs are the layout store's plain width preferences (0 = closed;
+ * concede: a closed explorer renders at its fixed control-rail width and a
+ * closed sidebar at the caller-supplied collapsed track, and center absorbs any
+ * remaining deficit as the last resort. Inputs are the layout store's plain
+ * width preferences (0 = closed;
  * the rightbar input is its desired track width, 0 = the occupant asked for no
  * track or is hidden). A closed right panel resolves to zero width while
  * closed side columns resolve to their rail. The SIDEBAR_AUTO_COLLAPSE
@@ -85,14 +86,24 @@ export function clampWidth(px: number, min: number, max: number): number {
  * @param explorer - explorer width preference in px (0 = closed).
  * @param fileViewer - file-viewer width preference in px (0 = closed).
  * @param rightbar - right panel's desired track width in px (0 = no track).
+ * @param collapsedWidth - track width of the closed sidebar; the default keeps
+ *   the icon rail, 0 hides the column entirely (macOS desktop and the Windows
+ *   caption row).
  * @returns resolved widths; a closed right panel is 0 (its column never
  *   unmounts), while a closed side column keeps its compact rail. The rightbar
  *   resolves to its desired track only while the chain can afford it; without
  *   a track its occupant hangs over the center from the frame edge.
  */
-export function computeColumns(viewport: number, sidebar: number, explorer: number, fileViewer: number, rightbar: number): Columns {
+export function computeColumns(
+  viewport: number,
+  sidebar: number,
+  explorer: number,
+  fileViewer: number,
+  rightbar: number,
+  collapsedWidth = SIDEBAR_COLLAPSED,
+): Columns {
   // Side rails are fixed at the resolved preference (or the rail) — they never concede.
-  const s = sidebar === 0 ? SIDEBAR_COLLAPSED : clampWidth(sidebar, SIDEBAR_MIN, SIDEBAR_MAX)
+  const s = sidebar === 0 ? collapsedWidth : clampWidth(sidebar, SIDEBAR_MIN, SIDEBAR_MAX)
   const rail = EXPLORER_COLLAPSED
   const e0 = explorer === 0 ? rail : clampWidth(explorer, EXPLORER_MIN, EXPLORER_MAX)
   const f0 = fileViewer === 0 ? 0 : clampWidth(fileViewer, FILE_VIEWER_MIN, FILE_VIEWER_MAX)

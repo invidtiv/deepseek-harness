@@ -88,12 +88,17 @@ function displayOrder(entries: readonly FileListingEntry[]): readonly FileListin
 
 export function FileExplorerRoot({ useSessions, ...rest }: FileExplorerProps) {
   // The listed project is the selected Session's, never the Host process's:
-  // its recorded cwd roots every level. The key drops the previous project's
-  // cached levels the moment the selection moves, so a later return to it
-  // refetches instead of showing another project's tree. Before any Session is
-  // current the '' sentinel asks the Host for its default project root.
-  const cwd = useSessions(state =>
-    state.current === undefined ? undefined : state.byId[state.current]?.cwd)
+  // its recorded cwd roots every level. The selection is the Session the main
+  // view retains — the same fact the browser title projects. The key drops the
+  // previous project's cached levels the moment the selection moves, so a
+  // later return to it refetches instead of showing another project's tree.
+  // Before any Session is current the '' sentinel asks the Host for its
+  // default project root.
+  const cwd = useSessions((state) => {
+    const current = Object.values(state.byId)
+      .find(session => (session.retainedBy.mainView ?? 0) > 0)?.id
+    return current === undefined ? undefined : state.byId[current]?.cwd
+  })
   const root = cwd ?? ''
   return <ExplorerTree key={root} root={root} {...rest} />
 }

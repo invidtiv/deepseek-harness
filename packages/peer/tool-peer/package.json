@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-tool-peer",
   "description": "Model-facing tools for the DeepSeek Harness peer seam — ask a peer Harness, list its sessions, and read a peer transcript",
-  "version": "0.1.5-rc.2",
+  "version": "0.1.6-alpha.2",
   "publishConfig": {
     "access": "public"
   },

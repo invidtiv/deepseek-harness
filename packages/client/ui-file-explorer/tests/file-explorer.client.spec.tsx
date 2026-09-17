@@ -25,9 +25,9 @@ const SESSION = 's-project'
 
 /**
  * The global session kit, reduced to the one fact the tree reads: which
- * Session is current and the cwd it records. `undefined` stands for the
- * no-session page state.
- * @param cwd - the current Session's working directory, or undefined with no current Session.
+ * Session the main view retains and the cwd it records. `undefined` stands for
+ * the no-session page state.
+ * @param cwd - the selected Session's working directory, or undefined with no selected Session.
  * @returns the `useSessions` seat over that snapshot.
  */
 function sessionsHook(cwd: string | undefined): FileExplorerProps['useSessions'] {
@@ -38,12 +38,12 @@ function sessionsHook(cwd: string | undefined): FileExplorerProps['useSessions']
         id: SESSION,
         displayTitle: 'project',
         running: false,
+        retainedBy: { mainView: 1 },
         blank: false,
         updatedAt: 0,
         ...(cwd === undefined ? {} : { cwd }),
       },
     },
-    current: cwd === undefined ? undefined : SESSION,
     phase: 'ready',
     subagentsByParent: {},
     jobsBySession: {},
@@ -109,7 +109,7 @@ describe('FileExplorerRoot — tree body', () => {
     expect(h.listFiles).toHaveBeenCalledTimes(1)
   })
 
-  it('asks the Host for its default project root while no Session is current', async () => {
+  it('asks the Host for its default project root while no Session is selected', async () => {
     const h = mount({ useSessions: sessionsHook(undefined) })
     await waitForRow('src')
     expect(h.listFiles).toHaveBeenCalledWith(undefined)

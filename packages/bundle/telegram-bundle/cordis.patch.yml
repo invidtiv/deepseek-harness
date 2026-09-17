@@ -13,8 +13,9 @@
     personaPrefix: >-
       You are a coding agent powered by the {{model}} model. Your working directory is {{cwd}}.
 
-# The shared module-reload HMR row stays off; a long-running bot reloads its
-# composition through the launcher's watch-only fallback instead.
+# The shared module-reload HMR row stays off: a bot holds live provider
+# connections and a topic→session mapping, so a composition edit takes effect
+# on the next start rather than mid-conversation.
 - id: hmr
   disabled: true
 

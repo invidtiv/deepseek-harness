@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 /**
- * The Telegram card: how its controller projects and converts the ten fields
- * it edits, and how the card renders them — or nothing while the namespace is
- * unavailable.
+ * The Telegram page: how its controller projects and converts the ten fields
+ * it edits, and how the form renders them — or the unavailable line while the
+ * namespace is not served.
  */
 
 import { cleanup, fireEvent, render, screen } from '@testing-library/react'
@@ -203,8 +203,14 @@ function field(text: string, rest: Partial<CardFieldState> = {}): CardFieldState
   return { text, overridden: false, invalid: false, ...rest }
 }
 
-function renderTelegram(state: Partial<TelegramCardState> = {}) {
-  const store = createSnapshotStore<TelegramCardState>({
+/** The form actions every page's slot entry injects. */
+function cardActions() {
+  return { edit: vi.fn(), resetField: vi.fn(), save: vi.fn(), discard: vi.fn() }
+}
+
+/** A settled Telegram form state with every field inherited and empty. */
+function telegramState(state: Partial<TelegramCardState> = {}): TelegramCardState {
+  return {
     ...settled,
     tokenRef: field(''),
     apiBase: field(''),
@@ -217,25 +223,38 @@ function renderTelegram(state: Partial<TelegramCardState> = {}) {
     allowedUserIds: field(''),
     workspaceRoots: field(''),
     ...state,
-  })
-  const actions = { edit: vi.fn(), resetField: vi.fn(), save: vi.fn(), discard: vi.fn() }
-  const props = { ...actions, t, useTelegramCard: bindSnapshotSelector(store) } as unknown as TelegramCardProps
+  }
+}
+
+function renderTelegram(state: Partial<TelegramCardState> = {}) {
+  const store = createSnapshotStore<TelegramCardState>(telegramState(state))
+  const actions = cardActions()
+  const props = { ...actions, view: 'page', t, useTelegramCard: bindSnapshotSelector(store) } as unknown as TelegramCardProps
   render(<TelegramCard {...props} />)
   return actions
 }
 
 describe('TelegramCard', () => {
-  it('renders nothing while its namespace is unavailable', () => {
-    const { container } = render(<div />)
-    renderTelegram({ available: false })
+  it('renders its one-liner alone in the summary view', () => {
+    const store = createSnapshotStore<TelegramCardState>(telegramState())
+    const props = {
+      ...cardActions(), view: 'summary', t, useTelegramCard: bindSnapshotSelector(store),
+    } as unknown as TelegramCardProps
+    render(<TelegramCard {...props} />)
 
-    expect(container.textContent).toBe('')
-    expect(screen.queryByText(en.telegramTitle)).toBeNull()
+    expect(document.body.textContent).toBe(en.telegramDescription)
+    expect(screen.queryByLabelText(en.telegramTokenRef)).toBeNull()
   })
 
-  it('reveals all ten fields once expanded', () => {
+  it('says the namespace is unserved in place of its controls', () => {
+    renderTelegram({ available: false })
+
+    expect(screen.getByRole('status').textContent).toBe(en.unavailable)
+    expect(screen.queryByLabelText(en.telegramTokenRef)).toBeNull()
+  })
+
+  it('renders all ten fields on its page', () => {
     renderTelegram()
-    fireEvent.click(screen.getByText(en.telegramTitle))
 
     expect(screen.getByLabelText(en.telegramTokenRef)).toBeTruthy()
     expect(screen.getByLabelText(en.telegramApiBase)).toBeTruthy()
@@ -252,7 +271,6 @@ describe('TelegramCard', () => {
   it('addresses each field with its own edit and reset', () => {
     const overridden = Object.fromEntries(fields.map(name => [name, field(name, { overridden: true })]))
     const actions = renderTelegram(overridden)
-    fireEvent.click(screen.getByText(en.telegramTitle))
 
     fireEvent.change(screen.getByLabelText(en.telegramTokenRef), { target: { value: 'NEW' } })
     fireEvent.change(screen.getByLabelText(en.telegramApiBase), { target: { value: 'https://x' } })
@@ -282,5 +300,16 @@ describe('TelegramCard', () => {
       ['workspaceRoots', '/r'],
     ])
     expect(actions.resetField.mock.calls).toEqual(fields.map(name => [name]))
+  })
+
+  it('saves only while an edit is staged and valid', () => {
+    renderTelegram()
+    expect(screen.getByRole<HTMLButtonElement>('button', { name: en.save }).disabled).toBe(true)
+
+    cleanup()
+
+    const staged = renderTelegram({ dirty: true })
+    fireEvent.click(screen.getByRole('button', { name: en.save }))
+    expect(staged.save).toHaveBeenCalledOnce()
   })
 })
