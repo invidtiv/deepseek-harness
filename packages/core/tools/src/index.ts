@@ -458,9 +458,13 @@ export interface ToolRuntimeScheduler {
 
 /**
  * Scheduler entry point omitted from the generated named service API.
+ * `Symbol.for`, not a per-module `Symbol`: the key must stay identical when a
+ * process loads this package twice (source-launch tsconfig paths resolving to
+ * `src/` beside a loader-resolved built `lib/`), or the staged scheduler read
+ * returns `undefined` and scheduling fails with a raw TypeError.
  * @internal
  */
-export const TOOL_RUNTIME_SCHEDULER: unique symbol = Symbol('@deepseek-ai/dsh-tools.scheduler')
+export const TOOL_RUNTIME_SCHEDULER: unique symbol = Symbol.for('@deepseek-ai/dsh-tools.scheduler')
 
 /** Canonical error code for cancellation after a tool body was invoked. */
 export const TOOL_ABORTED = 'ABORTED'
