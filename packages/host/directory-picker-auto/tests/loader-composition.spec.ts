@@ -17,6 +17,7 @@ import { Context } from '@deepseek-ai/cordis'
 import Loader from '@deepseek-ai/cordis-plugin-loader'
 import Include from '@deepseek-ai/cordis-plugin-include'
 import HttpServer from '@deepseek-ai/dsh-host-webserver'
+import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import type { DirectoryPicker } from '@deepseek-ai/dsh-host-directory-picker'
 import BrowseDirectoryPicker from '@deepseek-ai/dsh-host-directory-picker-browse'
 import NativeDirectoryPicker from '@deepseek-ai/dsh-host-directory-picker-native'
@@ -48,6 +49,9 @@ vi.mock('node:fs/promises', async (importOriginal) => {
   }
 })
 
+const LOCAL_FS = '@deepseek-ai/dsh-fs-local'
+/** Specifier for the non-host backend stand-in the composition boots in place of the local one. */
+const REMOTE_FS = '@deepseek-ai/dsh-fs-remote-stand-in'
 const AUTO = '@deepseek-ai/dsh-host-directory-picker-auto'
 const NATIVE = '@deepseek-ai/dsh-host-directory-picker-native'
 const BROWSE = '@deepseek-ai/dsh-host-directory-picker-browse'
@@ -67,6 +71,16 @@ const BROWSE_SURFACE = '@deepseek-ai/dsh-client-ui-directory-picker-browse'
  */
 function surfaceModule(name: string): unknown {
   return { name, apply: () => undefined }
+}
+
+/**
+ * Stand-in for a composed backend whose execution world is not the harness
+ * host — `@deepseek-ai/dsh-fs-ssh` is the shipped one. It keeps the local
+ * mechanics so the composition boots and declares the one capability fact the
+ * chooser samples.
+ */
+class RemoteWorldFileSystem extends LocalFileSystem {
+  override get addressesHostFilesystem(): boolean { return false }
 }
 
 let root: string | undefined
@@ -90,14 +104,16 @@ afterEach(async () => {
   renameControl.remainingFailures = 0
 })
 
-/** Write a two-row cordis.yml (webserver + chooser), then boot it through the real Loader. */
+/** Write a three-row cordis.yml (filesystem + webserver + chooser), then boot it through the real Loader. */
 async function loadComposition(
   bindHost: '127.0.0.1' | '0.0.0.0',
-  options: { failSurface?: boolean; launchEnvironment?: LaunchEnvironmentSnapshot } = {},
+  options: { failSurface?: boolean; launchEnvironment?: LaunchEnvironmentSnapshot; remoteFilesystem?: boolean } = {},
 ): Promise<{ ctx: Context; configPath: string }> {
   root = await mkdtemp(join(tmpdir(), 'dsh-directory-picker-auto-'))
   const configPath = join(root, 'cordis.yml')
+  const fileSystem = options.remoteFilesystem === true ? REMOTE_FS : LOCAL_FS
   await writeFile(configPath, [
+    '- name: ' + JSON.stringify(fileSystem),
     "- name: '@deepseek-ai/dsh-host-webserver'",
     '  config:',
     `    host: '${bindHost}'`,
@@ -112,6 +128,8 @@ async function loadComposition(
   await context.plugin(Loader)
   context.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
+    [LOCAL_FS, LocalFileSystem],
+    [REMOTE_FS, RemoteWorldFileSystem],
     ['@deepseek-ai/dsh-host-webserver', HttpServer],
     [AUTO, DirectoryPickerAuto],
     [NATIVE, NativeDirectoryPicker],
@@ -238,6 +256,18 @@ describe('real Loader composition', () => {
     stubAttendedHost()
     vi.stubEnv('SSH_CONNECTION', '10.0.0.2 55 10.0.0.9 22')
     const { ctx } = await loadComposition('127.0.0.1')
+
+    expect(entryNames(ctx)).toContain(BROWSE)
+    expect(entryNames(ctx)).toContain(BROWSE_SURFACE)
+    expect(entryNames(ctx)).not.toContain(NATIVE)
+    expect(entryNames(ctx)).not.toContain(NATIVE_SURFACE)
+    const picker = ctx.get('directoryPicker') as DirectoryPicker
+    expect(picker.capability().kind).toBe('browse')
+  })
+
+  it('mounts the browse backend when the composed filesystem is not the host filesystem', { timeout: 60_000 }, async () => {
+    stubAttendedHost()
+    const { ctx } = await loadComposition('127.0.0.1', { remoteFilesystem: true })
 
     expect(entryNames(ctx)).toContain(BROWSE)
     expect(entryNames(ctx)).toContain(BROWSE_SURFACE)

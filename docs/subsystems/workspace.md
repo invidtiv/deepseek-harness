@@ -16,7 +16,7 @@ Source: [`packages/workspace/workspace/src/types.ts`](../../packages/workspace/w
 type WorkspaceId = Branded<'WorkspaceId'>
 ```
 
-`WorkspaceId` is a [branded id](core.md#branded-ids). Path identity is separate: `realpathNormalize` (`fs.realpath`; trailing slashes, `..`, and symlinks resolved) is the one uniqueness canon — workspace paths are stored canonicalized, uniqueness is string equality of canonical paths (a symlink to an owned directory collides), and attach-time session cwd checks go through the same canon.
+`WorkspaceId` is a [branded id](core.md#branded-ids). Path identity is separate: the registry canonicalizes a fully qualified path through `ctx.fs` in the workspace's execution world (trailing slashes, `..`, and symlinks resolved there) — workspace paths are stored canonicalized, uniqueness is string equality of canonical paths (a symlink to an owned directory collides), and attach-time session cwd checks go through the same canon.
 
 ## The workspace entity
 
@@ -33,10 +33,18 @@ interface Workspace {
   /** Stable record id (generated uuid). */
   readonly id: WorkspaceId
 
+  /** Transport that reaches {@link path}: the harness host's filesystem, or a named SSH environment's. */
+  readonly transport: WorkspaceTransport
+
+  /** Named SSH environment when {@link transport} is `ssh`; absent for a local workspace. */
+  readonly environmentId?: string | undefined
+
   /**
-   * Canonical directory path: the `fs.realpath` of the path given at create
-   * time (trailing slashes, `..`, and symlinks all resolved). Never rewritten
-   * afterwards, even when the directory disappears (see {@link status}).
+   * Canonical directory path in the workspace's execution world: the
+   * `ctx.fs.processPath` of the resolved target at create time (trailing
+   * slashes, `..`, and symlinks are resolved by that world's filesystem).
+   * Never rewritten afterwards, even when the directory disappears (see
+   * {@link status}).
    */
   readonly path: string
 
@@ -117,7 +125,7 @@ Ownership truth is the record's ordered `sessionIds`, never derived from session
 
 ## The registry: `ctx.workspaceRegistry`
 
-`WorkspaceRegistry` ([signatures](#ctxworkspaceregistry--workspaceregistry)) owns registration and resolution. `create(path, title?)` requires a fully qualified path, canonicalizes it, rejects a nonexistent path (the original `ENOENT`) or a non-directory, returns the existing entity unchanged when the canonical path is already owned, and otherwise creates a record with `title ?? defaultWorkspaceTitle(path)` prepended to the durable registry order (different canonical paths may share a display title, and a path with no final segment uses its root spelling). `get(id)` and the ordered `list()` are synchronous cache reads; `resolveByPath(path)` applies the same fully qualified realpath canon without creating. `delete(id)` removes only the registration, order entry, and session account — the directory, user files, live sessions, and persisted logs are never touched, so those sessions become Ungrouped ([decision](../../.agents/notes/implemented/feature/2026-07-27-workspace-registration-deletion.md)); unknown ids return `false`. Create and delete persist a pending-mutation marker before their two writes (record + order) can diverge; startup resolves exactly the marked mutation — by deleting the marked table row, which completes an interrupted delete and rolls back an interrupted create (the registration is re-creatable, so rollback is the safe direction) — and an unmarked order/table mismatch fails loud as corruption.
+`WorkspaceRegistry` ([signatures](#ctxworkspaceregistry--workspaceregistry)) owns registration and resolution. `create(path, options?)` requires a fully qualified path, canonicalizes it through `ctx.fs`, rejects a nonexistent path (`FS_NOT_FOUND`) or a non-directory, returns the existing entity unchanged when the canonical path is already owned, and otherwise creates a record with `title ?? defaultWorkspaceTitle(path)` prepended to the durable registry order (different canonical paths may share a display title, and a path with no final segment uses its root spelling). `get(id)` and the ordered `list()` are synchronous cache reads; `resolveByPath(path)` applies the same fully qualified `ctx.fs` canon without creating. `delete(id)` removes only the registration, order entry, and session account — the directory, user files, live sessions, and persisted logs are never touched, so those sessions become Ungrouped ([decision](../../.agents/notes/implemented/feature/2026-07-27-workspace-registration-deletion.md)); unknown ids return `false`. Create and delete persist a pending-mutation marker before their two writes (record + order) can diverge; startup resolves exactly the marked mutation — by deleting the marked table row, which completes an interrupted delete and rolls back an interrupted create (the registration is re-creatable, so rollback is the safe direction) — and an unmarked order/table mismatch fails loud as corruption.
 
 Sessions get their cwd at create time from whoever creates them, not from this registry — the API gateway resolves a new session's cwd from the chosen workspace's `path` (falling back to an explicit or default cwd), creates the session so the cwd lands in its immutable [`SessionHeader`](persistence.md#sessionheader--metadata-beside-the-log), then calls `attachSession`, which re-validates that stored header cwd against the workspace path. On the first successful start, the registry bootstraps history from persisted headers alone (`id`, `cwd`, `createdAt` — never event bodies), grouping sessions with a valid canonical cwd into per-directory workspaces, newest first; the initialized marker is written last so an interrupted bootstrap resumes safely. The bootstrap is one-time: cwd-less legacy sessions stay Ungrouped, and sessions created afterwards join a workspace only through `attachSession`.
 
@@ -298,6 +306,12 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 @Remote('create') create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue>
 
 /**
+ * List the deployment's named SSH environments for the workspace picker.
+ * @returns each configured environment, or an empty list when no registry is composed.
+ */
+@Remote('environments') environments(): WorkspaceEnvironmentView[]
+
+/**
  * Rename one Workspace to a unique non-blank title.
  * @param request - Workspace identity and proposed title.
  * @returns the updated Workspace projection.
@@ -353,12 +367,12 @@ Host service backing the generated `ctx.remote.workspace` namespace.
 
 /**
  * List one mixed directory level (child directories and files) for the
- * file explorer, bounded: dirents stream once, symlink targets probe per
- * row, and the answer keeps the name-sorted head plus the `truncated`
- * flag. An unreadable or missing level — including a non-directory
- * target — fails with the shared listing code.
- * @param request - the listing request; an absent path lists the Host's
- *   default project root.
+ * file explorer, bounded: the composed filesystem resolves symlinks, and
+ * the answer keeps the name-sorted head plus the `truncated` flag. An
+ * unreadable or missing level — including a non-directory target — fails
+ * with the shared listing code.
+ * @param request - the listing request; an absent path lists the
+ *   configured default project root.
  * @param signal - caller/connection lifetime.
  * @returns the mixed listing.
  */
@@ -462,16 +476,16 @@ Durable workspace registry. Startup waits for `sessionPersistence`, builds one c
 ```ts cordis-catalog
 /**
  * Create or reuse a workspace for an existing directory. The fully qualified
- * path is canonicalized through `fs.realpath`; a relative, nonexistent, or
- * non-directory path rejects. Repeated calls for the same canonical path
+ * path is canonicalized through `ctx.fs` in the workspace's execution world;
+ * a relative, nonexistent, or non-directory path rejects. Repeated calls for the same canonical path
  * return the existing entity without changing its title.
  * A newly created workspace is prepended to the durable registry order.
  * Different canonical paths may share a display title.
  * @param path - Existing directory to own, in a fully qualified path spelling.
- * @param title - Display title used only when a new record is created.
+ * @param options - display title and the transport that reaches the directory.
  * @returns the existing or newly durable workspace.
  */
-async create(path: string, title?: string): Promise<Workspace>
+async create(path: string, options?: WorkspaceCreateOptions): Promise<Workspace>
 
 /**
  * Look up a workspace by id.

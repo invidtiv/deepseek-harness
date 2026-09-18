@@ -29,13 +29,14 @@ Compose this service with [`fs-ssh`](../fs-ssh/README.md), [`subprocess-ssh`](..
 
 ### Deployment prerequisites
 
-Both endpoints require Linux or macOS. The local `ssh` command must support connection multiplexing and Unix-socket forwarding; the server must permit that forwarding. Configure the alias, credentials and known-host entry before startup: the service enables `BatchMode`, requires strict host-key checking, disables agent forwarding and adds no interactive authentication flow.
+Both endpoints require Linux or macOS. The local `ssh` command must support connection multiplexing and Unix-socket forwarding; the server must permit that forwarding. Configure the alias, credentials and known-host entry before startup: the service enables `BatchMode`, checks host keys (strictly by default), disables agent forwarding and adds no interactive authentication flow.
 
 Install the built helper and its matching runtime dependencies on the remote host. Keep Node, helper, bootstrap and their dependencies outside the workspace and writable temporary roots. They must also remain outside a backend’s replaced temporary tree, such as bwrap’s private `/tmp`; the workspace may still be under `/tmp`. Digest verification detects an unexpected installed artifact after helper startup; it does not make writable deployment files safe to execute or authenticate a malicious SSH host.
 
 | Field | Default | Meaning |
 |---|---|---|
-| `host` | required | Existing OpenSSH host alias |
+| `host` | one of `host`/`environment` | OpenSSH destination: a config-file alias, a host name, or an address |
+| `environment` | one of `host`/`environment` | Named environment resolved through the `ssh-environments` settings registry |
 | `node`, `helper`, `workspace` | required | Absolute remote Node executable, bundled helper entry and default workspace |
 | `helperHash` | required | Lowercase SHA-256 of the installed helper entry |
 | `bootstrapPath`, `bootstrapHash` | omitted | Paired remote PTC entry and its lowercase SHA-256 |
@@ -43,6 +44,18 @@ Install the built helper and its matching runtime dependencies on the remote hos
 | `maxFrameBytes` | `67108864` | Per-message JSON payload ceiling, at most 64 MiB |
 | `maxPending` | `128` | Ordinary outstanding requests; heartbeat and bounded cleanup requests have reserved capacity |
 | `leaseMs` | `30000` | Helper heartbeat lease, from 3000 to 600000 ms |
+| `port` | omitted | Explicit OpenSSH TCP port; omitted keeps the config file's value |
+| `user` | omitted | Explicit login user; omitted keeps the config file's value |
+| `identityFile` | omitted | Private-key path passed as `-i`; `~` is accepted |
+| `identityAgent` | omitted | Agent socket passed as `IdentityAgent`; omitted uses `SSH_AUTH_SOCK` |
+| `proxyJump` | omitted | `ProxyJump` destination for a bastion chain |
+| `configFile` | omitted | Alternate OpenSSH config file passed as `-F` |
+| `hostKeyChecking` | `yes` | `yes` refuses an unknown or changed key; `accept-new` trusts an unknown key once; `no` accepts either |
+| `connectTimeoutMs` | omitted | `ConnectTimeout` in milliseconds; omitted keeps the OpenSSH default |
+| `serverAliveIntervalMs` | `10000` | `ServerAliveInterval` in milliseconds |
+| `serverAliveCountMax` | `3` | `ServerAliveCountMax` probe count |
+
+Provide exactly one of `host` and `environment`: `environment` names an entry in the `ssh-environments` settings registry. A named environment is resolved while the connection is constructed, so the settings provider and the `dsh-ssh-environments` row must already be composed; an unavailable registry fails the connection instead of falling back to another destination.
 
 For PTC, configure both bootstrap fields and pass the verified `ctx.ssh.nodeExecutable` and `ctx.ssh.bootstrapPath` to [`NodePtcRuntime`](../../ptc-runtime/ptc-runtime-node/README.md). Basic filesystem and Bash use may omit the pair. The `bootstrapPath` getter refuses an unconfigured PTC deployment.
 
@@ -92,7 +105,8 @@ This provider contributes no request-prefix content. Its consumers own model-vis
 <a id="known-limitations-and-deferred-work"></a>
 
 - No Windows endpoint, automatic provisioning, reconnect or replay is supplied.
-- Web workspace UI paths still assume host filesystem access; use headless or a custom composition whose consumers honor provider paths.
+- Web workspace UIs read the composed filesystem, so a remote deployment lists, opens and edits remote directories; the adaptive directory chooser mounts its in-app browser rather than an OS-native dialog, which could only return a host path.
+- One composed provider family serves one environment. Addressing several SSH hosts needs one profile per environment.
 - TLS stream keys do not protect against remote OS process-memory inspection or debugging. File-effect policy retains the selected sandbox backend’s limits.
 
 <a id="dev-note"></a>

@@ -81,6 +81,10 @@ Recovery follows the data's semantics:
 
 There is no monolithic Client `Runtime`, `HostFrame`, `events.mux`, `events.host`, or universal `resync()` API. The Connection exposes generation state, Gateway owns logical stream supervision, and each Client model defines replacement or resume semantics appropriate to its data.
 
+## Session ownership
+
+Many clients may observe one Session. The Session log on the owning runtime is the single authoritative source: each attached client opens its own `follow` stream, derives the same logical sequence, and repeats nothing. A client leaving ends only its own stream — never the Session, a running turn, or another client's stream — and a client attaching later receives the missed events in its opening snapshot.
+
 ## Package boundaries
 
 Feature plugin packages may share declarations through `import type`; they do not runtime-import or re-export another feature plugin's values. Cross-package behavior uses injected Cordis services, and cross-package UI uses Slots. Target-specific Conversation Definitions, projection helpers, and final view data stay with their target package even when Chat and Trajectory intentionally implement parallel logic.

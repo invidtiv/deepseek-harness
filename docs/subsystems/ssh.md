@@ -28,13 +28,19 @@ Headless records and checks Session cwd through the mounted filesystem provider.
 
 See the [decision record](../../.agents/notes/implemented/architecture/2026-09-11-posix-ssh-runtime.md) for the alternatives and verification obligations.
 
+## Environment configuration
+
+The [environment registry](../../packages/ssh/ssh-environments/README.md) stores named `SshEnvironment` connection options in the `ssh-environments` settings namespace and resolves them on `ctx.sshEnvironments`. A `SshEnvironment` carries the OpenSSH destination plus optional `port`, `user`, `identityFile`, `identityAgent`, `proxyJump`, `configFile`, `hostKeyChecking`, `connectTimeoutMs`, `serverAliveIntervalMs` and `serverAliveCountMax`; an absent field leaves OpenSSH's own default in effect, so a deployment may keep connection details in `~/.ssh/config`. The registry owns configuration only: the connection, helper verification and remote cleanup remain with `dsh-ssh`, and no environment value reaches a model request.
+
 ## Connection API
 
 ```ts type-equiv
 /** Deployment-owned SSH identity and installed helper; no model argument selects these values. */
 interface Config {
-  /** OpenSSH host alias, including its existing user, key and known-host configuration. */
-  host: string
+  /** OpenSSH destination: a config-file alias, a host name, or an address; mutually exclusive with `environment`. */
+  host?: string
+  /** Named environment resolved through the `ssh-environments` settings registry; mutually exclusive with `host`. */
+  environment?: string
   /** Absolute remote Node executable. */
   node: string
   /** Absolute path to the installed, bundled helper entry. */
@@ -55,6 +61,26 @@ interface Config {
   maxPending?: number
   /** Remote helper lease; loss of heartbeats starts remote managed cleanup. */
   leaseMs?: number
+  /** Explicit OpenSSH port; absent keeps the config file's value. */
+  port?: number
+  /** Explicit login user; absent keeps the config file's value. */
+  user?: string
+  /** Private-key path passed as `-i`; absent keeps the config file's and agent's identities. */
+  identityFile?: string
+  /** Agent socket passed as `IdentityAgent`; absent uses `SSH_AUTH_SOCK`. */
+  identityAgent?: string
+  /** `ProxyJump` destination for a bastion chain. */
+  proxyJump?: string
+  /** Alternate OpenSSH config file passed as `-F`. */
+  configFile?: string
+  /** Host-key policy; the default refuses an unknown or changed key. */
+  hostKeyChecking?: 'yes' | 'accept-new' | 'no'
+  /** `ConnectTimeout` in milliseconds; absent keeps the OpenSSH default. */
+  connectTimeoutMs?: number
+  /** `ServerAliveInterval` in milliseconds. */
+  serverAliveIntervalMs?: number
+  /** `ServerAliveCountMax` probe count. */
+  serverAliveCountMax?: number
 }
 ```
 
@@ -132,4 +158,38 @@ dispose(): Promise<void>
 ```
 
 Source: [`packages/ssh/ssh/src/index.ts`](../../packages/ssh/ssh/src/index.ts)
+
+<a id="ctxsshenvironments--sshenvironments"></a>
+
+### `ctx.sshEnvironments` — `SshEnvironments`
+
+Registry over the deployment's named SSH environments.
+
+The service registers the SSH_ENVIRONMENTS_NAMESPACE settings namespace during activation and resolves a stable id into validated OpenSSH connection options. It never opens a connection and never stores a secret; the SSH provider family owns both.
+
+```ts cordis-catalog
+/**
+ * List configured environments in declaration order.
+ * @returns one client-safe summary per environment.
+ */
+list(): readonly SshEnvironmentSummary[]
+
+/**
+ * Read one environment's stored entry.
+ * @param id - stable environment identity.
+ * @returns the entry, or `undefined` when the id is not configured.
+ */
+get(id: SshEnvironmentId): SshEnvironmentEntry | undefined
+
+/**
+ * Resolve one environment into validated OpenSSH connection options with this
+ * provider's defaults applied.
+ * @param id - stable environment identity.
+ * @returns the resolved connection options.
+ * @throws {SshEnvironmentUnknownError} when the id is not configured.
+ */
+resolve(id: SshEnvironmentId): SshEnvironment
+```
+
+Source: [`packages/ssh/ssh-environments/src/index.ts`](../../packages/ssh/ssh-environments/src/index.ts)
 <!-- END GENERATED cordis-surface -->

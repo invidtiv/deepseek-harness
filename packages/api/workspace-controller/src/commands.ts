@@ -44,7 +44,10 @@ export class WorkspaceCommands {
         if (existing !== undefined) {
           return { workspace: workspaceView(existing), created: false }
         }
-        const workspace = await this.ctx.workspaceRegistry.create(request.path)
+        const workspace = await this.ctx.workspaceRegistry.create(request.path, {
+          ...(request.transport === undefined ? {} : { transport: request.transport }),
+          ...(request.environmentId === undefined ? {} : { environmentId: request.environmentId }),
+        })
         return { workspace: workspaceView(workspace), created: true }
       } catch (error) {
         if (remoteErrorOf(error) !== undefined) throw error

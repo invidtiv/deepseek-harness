@@ -10,13 +10,22 @@ import { z } from 'zod'
 import { SshRpcPeer, SSH_PROTOCOL_VERSION } from './protocol.ts'
 import { helloSchema, type SshStreamEndpoint } from './schemas.ts'
 import { authenticateStream } from './stream-security.ts'
+import { buildMasterArgv, resolveConnectionEnvironment, type SshEnvironment, type SshEnvironmentResolver } from './environment.ts'
+
+export { resolveConnectionEnvironment, resolveSshEnvironment } from './environment.ts'
+export type { HostKeyChecking, SshConnectionSelection, SshEnvironment, SshEnvironmentResolver } from './environment.ts'
 
 type Hello = z.infer<typeof helloSchema>
 
+/** Config fields resolved into an {@link SshEnvironment} instead of the helper-config zod re-validation. */
+type ConnectionOptionField = 'port' | 'user' | 'identityFile' | 'identityAgent' | 'proxyJump' | 'configFile' | 'hostKeyChecking' | 'connectTimeoutMs' | 'serverAliveIntervalMs' | 'serverAliveCountMax'
+
 /** Deployment-owned SSH identity and installed helper; no model argument selects these values. */
 export interface Config {
-  /** OpenSSH host alias, including its existing user, key and known-host configuration. */
-  host: string
+  /** OpenSSH destination: a config-file alias, a host name, or an address; mutually exclusive with `environment`. */
+  host?: string
+  /** Named environment resolved through the `ssh-environments` settings registry; mutually exclusive with `host`. */
+  environment?: string
   /** Absolute remote Node executable. */
   node: string
   /** Absolute path to the installed, bundled helper entry. */
@@ -37,6 +46,26 @@ export interface Config {
   maxPending?: number
   /** Remote helper lease; loss of heartbeats starts remote managed cleanup. */
   leaseMs?: number
+  /** Explicit OpenSSH port; absent keeps the config file's value. */
+  port?: number
+  /** Explicit login user; absent keeps the config file's value. */
+  user?: string
+  /** Private-key path passed as `-i`; absent keeps the config file's and agent's identities. */
+  identityFile?: string
+  /** Agent socket passed as `IdentityAgent`; absent uses `SSH_AUTH_SOCK`. */
+  identityAgent?: string
+  /** `ProxyJump` destination for a bastion chain. */
+  proxyJump?: string
+  /** Alternate OpenSSH config file passed as `-F`. */
+  configFile?: string
+  /** Host-key policy; the default refuses an unknown or changed key. */
+  hostKeyChecking?: 'yes' | 'accept-new' | 'no'
+  /** `ConnectTimeout` in milliseconds; absent keeps the OpenSSH default. */
+  connectTimeoutMs?: number
+  /** `ServerAliveInterval` in milliseconds. */
+  serverAliveIntervalMs?: number
+  /** `ServerAliveCountMax` probe count. */
+  serverAliveCountMax?: number
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -46,11 +75,16 @@ declare module '@deepseek-ai/cordis' {
 /** One non-reconnecting SSH session; loss invalidates all active operations. */
 export class SshConnection extends Service {
   static Config: schema<Config> = schema.object({
-    host: schema.string().required(), node: schema.string().required(), helper: schema.string().required(),
+    host: schema.string(), environment: schema.string(), node: schema.string().required(), helper: schema.string().required(),
     helperHash: schema.string().required(), workspace: schema.string().required(),
     bootstrapPath: schema.string(), bootstrapHash: schema.string(),
     requestTimeoutMs: schema.number().default(30_000), maxFrameBytes: schema.number().default(64 * 1024 * 1024),
     maxPending: schema.number().default(128), leaseMs: schema.number().default(30_000),
+    port: schema.number(), user: schema.string(), identityFile: schema.string(), identityAgent: schema.string(),
+    proxyJump: schema.string(), configFile: schema.string(),
+    hostKeyChecking: schema.union(['yes', 'accept-new', 'no']).default('yes'),
+    connectTimeoutMs: schema.number(), serverAliveIntervalMs: schema.number().default(10_000),
+    serverAliveCountMax: schema.number().default(3),
   })
 
   /** Verified remote helper coordinates; callers must await this before launch. */
@@ -67,14 +101,15 @@ export class SshConnection extends Service {
   private failure: Error | undefined
   private sockets = new Set<Socket>()
   private nextSocket = 0
-  private readonly config: Required<Omit<Config, 'bootstrapPath' | 'bootstrapHash'>> & Pick<Config, 'bootstrapPath' | 'bootstrapHash'>
+  private readonly config: Required<Omit<Config, 'host' | 'environment' | 'bootstrapPath' | 'bootstrapHash' | ConnectionOptionField>> & Pick<Config, 'bootstrapPath' | 'bootstrapHash'>
+  private readonly environment: SshEnvironment
   private remote: Hello | undefined
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'ssh')
     if (process.platform !== 'linux' && process.platform !== 'darwin') throw new Error('SSH runtime requires a POSIX client')
     this.config = z.object({
-      host: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]*$/),
+      host: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]*$/).optional(), environment: z.string().min(1).optional(),
       node: z.string().startsWith('/'), helper: z.string().startsWith('/'), helperHash: z.string().regex(/^[0-9a-f]{64}$/),
       workspace: z.string().startsWith('/'), requestTimeoutMs: z.number().int().positive().max(2_147_483_647),
       bootstrapPath: z.string().startsWith('/').optional(), bootstrapHash: z.string().regex(/^[0-9a-f]{64}$/).optional(),
@@ -82,6 +117,7 @@ export class SshConnection extends Service {
       leaseMs: z.number().int().min(3000).max(600_000),
     }).refine(value => (value.bootstrapPath === undefined) === (value.bootstrapHash === undefined), 'bootstrapPath and bootstrapHash must be paired')
       .parse(config) as typeof this.config
+    this.environment = resolveConnectionEnvironment(config, ctx.get('sshEnvironments') as SshEnvironmentResolver | undefined)
     this.ready = this.start()
     // Startup uses Node I/O, local validation, and Error-valued RPC failures.
     void this.ready.catch((error: unknown) => { this.fail(error as Error) })
@@ -227,7 +263,7 @@ export class SshConnection extends Service {
     const combined = AbortSignal.any(signals)
     combined.throwIfAborted()
     const result = Promise.withResolvers<undefined>()
-    const command = execFile('ssh', ['-S', this.controlPath(), ...args, this.config.host], {
+    const command = execFile('ssh', ['-S', this.controlPath(), ...args, this.environment.host], {
       signal: combined, maxBuffer: 64 * 1024,
     }, (error) => { if (error === null) result.resolve(undefined); else result.reject(error) })
     const closed = new Promise<void>((resolve) => { command.once('close', () => { resolve() }) })
@@ -260,11 +296,7 @@ export class SshConnection extends Service {
     if (this.closed) throw new Error('SSH connection closed before startup')
     const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`
     const command = [this.config.node, '--disable-sigusr1', this.config.helper].map(quote).join(' ')
-    const child = spawn('ssh', [
-      '-T', '-M', '-S', this.controlPath(), '-o', 'ControlPersist=no', '-o', 'BatchMode=yes',
-      '-o', 'StrictHostKeyChecking=yes', '-o', 'ForwardAgent=no', '-o', 'ClearAllForwardings=yes',
-      '-o', 'ServerAliveInterval=10', '-o', 'ServerAliveCountMax=3', this.config.host, command,
-    ], { stdio: ['pipe', 'pipe', 'pipe'] })
+    const child = spawn('ssh', buildMasterArgv(this.environment, this.controlPath(), command), { stdio: ['pipe', 'pipe', 'pipe'] })
     this.child = child
     this.childClosed = new Promise((resolve) => { child.once('close', () => { resolve() }) })
     child.stderr.resume() // SSH diagnostics can contain configured paths; operation errors remain structured.

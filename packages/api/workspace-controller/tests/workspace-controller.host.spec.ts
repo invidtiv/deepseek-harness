@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -7,6 +7,9 @@ import SessionStore, { SessionId } from '@deepseek-ai/dsh-session'
 import Storage from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
+import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
+import SshEnvironments, { SSH_ENVIRONMENTS_NAMESPACE } from '@deepseek-ai/dsh-ssh-environments'
 import WorkspaceRegistry from '@deepseek-ai/dsh-workspace'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import WorkspaceController from '../src/index.ts'
@@ -41,7 +44,23 @@ function deferred<T>(): Deferred<T> {
   return { promise, resolve }
 }
 
-async function harness() {
+/** In-memory settings provider: the environment registry's only external dependency. */
+class MemorySettings extends SettingsProvider {
+  readonly writable = true
+  private readonly sections = new Map<string, Record<string, unknown>>()
+
+  protected async load(): Promise<Record<string, unknown>> { return {} }
+
+  protected async persist(ns: SettingsNamespace, section: Record<string, unknown>): Promise<void> {
+    this.sections.set(ns, section)
+  }
+}
+
+/**
+ * Boot the controller over a storage domain and the composed filesystem.
+ * @param options - compose the real SSH environment registry with a memory settings provider.
+ */
+async function harness(options: { sshEnvironments?: boolean } = {}) {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-workspace-controller-')))
   tempDirs.push(root)
   const ctx = new Context()
@@ -53,7 +72,12 @@ async function harness() {
   ctx.storage.mount('domain', storageDomain)
   ctx.provide('storageDomain', storageDomain)
   ctx.provide('sessionPersistence', { list: () => Promise.resolve([]) } as never)
+  await ctx.plugin(LocalFileSystem)
   await ctx.plugin(WorkspaceRegistry)
+  if (options.sshEnvironments === true) {
+    await ctx.plugin(MemorySettings)
+    await ctx.plugin(SshEnvironments)
+  }
   const dispose = (): void => {}
   ctx.provide('typert', {
     lookups: { configure: () => dispose },
@@ -348,5 +372,99 @@ describe('WorkspaceController follow', () => {
     await ctx.fiber.dispose()
     roots.splice(roots.indexOf(ctx), 1)
     await expect(closing).resolves.toEqual({ done: true, value: undefined })
+  })
+})
+
+describe('Workspace transport projection', () => {
+  it('carries the locator through commands and the follow baseline', async () => {
+    const { controller, root } = await harness()
+    const local = await controller.create({ path: stageDir(root, 'locator-local') })
+    expect(local.workspace).toMatchObject({ transport: 'local' })
+    expect(local.workspace.environmentId).toBeUndefined()
+    const remote = await controller.create({
+      path: stageDir(root, 'locator-remote'), transport: 'ssh', environmentId: 'build01',
+    })
+    expect(remote.workspace).toMatchObject({ transport: 'ssh', environmentId: 'build01' })
+
+    const abort = new AbortController()
+    const iterator = controller.follow(abort.signal)[Symbol.asyncIterator]()
+    const baseline = await nextFrame(iterator)
+    expect(baseline).toMatchObject({ type: 'baseline' })
+    const items = (baseline as unknown as { value: { items: unknown[] } }).value.items
+    expect(items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ workspaceId: remote.workspace.workspaceId, transport: 'ssh', environmentId: 'build01' }),
+      expect.objectContaining({ workspaceId: local.workspace.workspaceId, transport: 'local' }),
+    ]))
+    // A later mutation re-projects the same locator through the increment path.
+    await controller.rename({ workspaceId: remote.workspace.workspaceId, title: 'renamed' })
+    expect(await nextFrame(iterator)).toMatchObject({
+      type: 'upsert',
+      workspace: { workspaceId: remote.workspace.workspaceId, title: 'renamed', transport: 'ssh', environmentId: 'build01' },
+    })
+    abort.abort()
+    await iterator.return?.()
+  })
+})
+
+describe('WorkspaceController file verbs', () => {
+  it('reads and lists through the controller over the composed filesystem', async () => {
+    const { controller, root } = await harness()
+    const directory = stageDir(root, 'files')
+    const file = join(directory, 'notes.txt')
+    writeFileSync(file, 'hello\n')
+
+    const listing = await controller.listFiles({ path: directory }, new AbortController().signal)
+    expect(listing.path).toBe(directory)
+    expect(listing.entries).toEqual([{ name: 'notes.txt', path: file, kind: 'file', hidden: false }])
+
+    await expect(controller.readFile({ path: file }, new AbortController().signal)).resolves.toMatchObject({
+      path: file, content: 'hello\n', truncated: false, binary: false,
+    })
+  })
+})
+
+describe('WorkspaceController environments', () => {
+  it('answers an empty list when no SSH environment registry is composed', async () => {
+    const { controller } = await harness()
+    expect(controller.environments()).toEqual([])
+  })
+
+  it('projects named environments for the picker', async () => {
+    const { controller, ctx } = await harness()
+    ctx.provide('sshEnvironments', {
+      list: () => [
+        { id: 'build01', label: 'Build 01', host: 'build01.example', port: 2222 },
+        { id: 'dev', label: 'dev', host: 'dev.example' },
+      ],
+    } as never)
+    expect(controller.environments()).toEqual([
+      { environmentId: 'build01', label: 'Build 01', host: 'build01.example', port: 2222 },
+      { environmentId: 'dev', label: 'dev', host: 'dev.example' },
+    ])
+  })
+
+  it('reads the composed environment registry and projects no connection reference', async () => {
+    const { controller, ctx } = await harness({ sshEnvironments: true })
+    await ctx.settings.replace(SSH_ENVIRONMENTS_NAMESPACE as SettingsNamespace, {
+      environments: {
+        build01: {
+          host: 'build01.example', label: 'Build 01', port: 2222, user: 'alice',
+          identityFile: '~/.ssh/id_ed25519', proxyJump: 'bastion',
+        },
+        dev: { host: 'dev.example' },
+      },
+    })
+
+    const projected = controller.environments()
+    expect(projected).toEqual([
+      { environmentId: 'build01', label: 'Build 01', host: 'build01.example', port: 2222 },
+      { environmentId: 'dev', label: 'dev', host: 'dev.example' },
+    ])
+    // The picker's projection is the only environment data a client reads; the
+    // login name, key path and jump destination never cross it.
+    const serialized = JSON.stringify(projected)
+    for (const reference of ['alice', 'id_ed25519', 'bastion']) {
+      expect(serialized).not.toContain(reference)
+    }
   })
 })

@@ -435,6 +435,7 @@
       "@deepseek-ai/dsh-spill-local": ["./packages/spill/spill-local/src"],
       "@deepseek-ai/dsh-spill-policy": ["./packages/spill/spill-policy/src"],
       "@deepseek-ai/dsh-ssh": ["./packages/ssh/ssh/src"],
+      "@deepseek-ai/dsh-ssh-environments": ["./packages/ssh/ssh-environments/src"],
       "@deepseek-ai/dsh-storage": ["./packages/storage/storage/src"],
       "@deepseek-ai/dsh-storage-domain": ["./packages/storage/storage-domain/src"],
       "@deepseek-ai/dsh-storage-domain/invariant": ["./packages/storage/storage-domain/src/invariant.ts"],

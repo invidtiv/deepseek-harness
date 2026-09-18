@@ -1,6 +1,6 @@
 {
   "name": "@deepseek-ai/dsh-host-directory-picker-browse",
-  "description": "In-app browsing backend of the directory-picker seam (listing/creation primitives over the host filesystem)",
+  "description": "In-app browsing backend of the directory-picker seam (listing/creation primitives over the composed execution world)",
   "version": "0.1.6-alpha.2",
   "publishConfig": {
     "access": "public"
@@ -31,9 +31,12 @@
     "@deepseek-ai/schemastery": "workspace:^"
   },
   "peerDependencies": {
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-fs": "workspace:^"
   },
   "devDependencies": {
-    "@deepseek-ai/cordis": "workspace:^"
+    "@deepseek-ai/cordis": "workspace:^",
+    "@deepseek-ai/dsh-fs": "workspace:^",
+    "@deepseek-ai/dsh-fs-local": "workspace:^"
   }
 }

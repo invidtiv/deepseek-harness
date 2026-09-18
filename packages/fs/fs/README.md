@@ -63,7 +63,7 @@ The contract is built on one separation and three commitments:
 
 ### How a call flows
 
-Every ordinary operation starts with `resolve(path, { cwd })`, which produces a stable `FsTarget` (an opaque `targetKey` plus a `displayPath` for model/UI output); the same file reached through different paths yields the same key. `processPathFromHostPath(hostPath)` separately maps an absolute host file into this execution world when the backend shares or explicitly maps it, and otherwise returns `undefined`. Reads then go `stat` → `readText`/`streamText`/`readBytes`/`readByteRange`, listings go `listDir`, and mutations go through one per-target critical section: the optional guard is checked, the new content is applied, and the result is published atomically.
+Every ordinary operation starts with `resolve(path, { cwd })`, which produces a stable `FsTarget` (an opaque `targetKey` plus a `displayPath` for model/UI output); the same file reached through different paths yields the same key. `processPathFromHostPath(hostPath)` separately maps an absolute host file into this execution world when the backend shares or explicitly maps it, and otherwise returns `undefined`. Reads then go `stat` → `readText`/`streamText`/`readBytes`/`readByteRange`, listings go `listDir`, directory creation goes through `mkdir`, and mutations go through one per-target critical section: the optional guard is checked, the new content is applied, and the result is published atomically.
 
 ### The `fs/*` policy events
 
@@ -110,7 +110,7 @@ No direct invalidation; the named consumer owns any request-prefix changes.
 These limits define when the contract is a poor fit or needs special operational care. They are current package constraints, not a general filesystem comparison or a task backlog.
 
 - **Text-only mutations by contract** — text reads and both mutations reject binary or non-UTF-8 content with `FS_NOT_TEXT`; `readBytes` and `readByteRange` are the raw-byte primitives, and binary-safe mutations remain deferred.
-- **Thirteen primitives only** — no delete, rename, copy, or watch; `listDir` lists a single level, with recursion, globbing, pagination, and search out of scope ([directory-listing note](../../../.agents/notes/archived/architecture/2026-07-03-filesystem-directory-listing-seam.md)).
+- **Fourteen primitives only** — no delete, rename, copy, or watch; `listDir` lists a single level, with recursion, globbing, pagination, and search out of scope ([directory-listing note](../../../.agents/notes/archived/architecture/2026-07-03-filesystem-directory-listing-seam.md)).
 - **No I/O deadline** — the seam arms no timeout; cancellation is a best-effort optional `AbortSignal` per primitive ([fs family stance](../README.md)).
 - **Resolve-then-operate costs a remote backend two round-trips per tool call** — folding or caching resolution is left to such a backend.
 

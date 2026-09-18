@@ -58,6 +58,21 @@ describe.skipIf(process.platform === 'win32')('SSH helper wire and lifecycle bou
     } finally { await test.close() }
   })
 
+  it('creates one directory through the helper filesystem protocol', async () => {
+    const test = await createHelperHarness()
+    try {
+      const target = await test.client.request('fs.resolve', { path: 'created' }, targetSchema)
+      await expect(test.client.request('fs.mkdir', { target }, z.null())).resolves.toBeNull()
+      expect((await stat(`${test.root}/created`)).isDirectory()).toBe(true)
+      // An explicit policy is resolved on the remote and enforced beside the creation.
+      const escalated = await test.client.request('fs.resolve', { path: 'escalated' }, targetSchema)
+      await expect(test.client.request('fs.mkdir', {
+        target: escalated, policy: { mode: 'danger-full-access', workspaceRoot: test.root },
+      }, z.null())).resolves.toBeNull()
+      expect((await stat(`${test.root}/escalated`)).isDirectory()).toBe(true)
+    } finally { await test.close() }
+  })
+
   it('expires the client lease and joins open text streams and reserved sockets', async () => {
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
     let test: Awaited<ReturnType<typeof createHelperHarness>> | undefined

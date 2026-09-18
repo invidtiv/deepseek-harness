@@ -92,6 +92,7 @@ Nothing here enters a model request, so provider cache reuse is unaffected.
 - Edits the user makes during a turn are attributed to that turn.
 - A working directory outside any git repository lists file-tool edits only, so shell edits are missing from its card; a shadow repository under the Harness home is deferred until its exclude rules can replace a missing `.gitignore` reliably.
 - Outside snapshot coverage only paths a file tool names are captured: a file only a shell command changes there is absent, and a file both changed before its first file-tool call is compared from that call onward.
+- The snapshot baseline canonicalizes the Session's working directory on the Harness host, so a Workspace in another execution world (an SSH workspace) reports a failed baseline and its card lists file-tool edits only; routing that canonicalization through the composed filesystem is deferred.
 - Every file-tool edit copies its whole file once per turn, up to `maxFileBytes`, even for paths the snapshots also cover; the copies go with the Session's temporary directory.
 - A comparison serves the listed file's complete text to the client, including ignored files, repository files above the working directory, and files outside the workspace; the summary route serves only paths and counts. A deployment that must keep such content on the Host composes this plugin out.
 - A comparison that degrades to whole-file replacement carries every line of both sides, up to twice `maxFileBytes`.

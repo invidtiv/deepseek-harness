@@ -24,7 +24,7 @@ kind: "package-reference"
 
 Host 控制器会串行执行正确性取决于当前注册表状态的变更，并为预期失败抛出带有稳定 `workspace/*` 或 `directory-picker/*` 错误码的 `RemoteError`。它的 `follow()` 流会同步订阅持久 Workspace 变更，先发出一份完整 baseline，再按顺序发出 `upsert`、`remove`、`order` 和 `archived` 增量。重连会以替换 baseline 开始新一代，因此消费方不依赖收到断线期间的每个增量。
 
-`readFile` 与 `listFiles` 动词由 `WorkspaceFileBrowse` 在 Host 文件系统上实现：读取以 2 MiB 封顶并带截断标记、通过 NUL 字节检查拒绝二进制内容；列表单次流式枚举，在 1000 条上限内保留按名称排序的头部；缺省的列表路径解析为 Host 默认项目根。预期失败携带稳定代码（`file-not-found`、`file-unreadable`、`directory-unreadable`、`cancelled`）。
+`readFile` 与 `listFiles` 动词由 `WorkspaceFileBrowse` 在组合文件系统上实现，因此 Web 文件浏览器与查看器读取的执行世界与 agent 工具相同：读取以 2 MiB 封顶并带截断标记、通过 NUL 字节检查拒绝二进制内容；列表在 1000 条上限内保留按名称排序的头部；缺省的列表路径在组合后的执行世界中解析为配置的默认项目根；当该世界无法读取宿主文件时退回到该世界的根。预期失败携带稳定代码（`file-not-found`、`file-unreadable`、`directory-unreadable`、`cancelled`）。`environments` 动词为工作区选择器列出部署的具名 SSH 环境——即远程工作区记录、远程会话所选择的身份——未组合 `ssh-environments` 注册表时返回空列表。
 
 Client 入口提供 `ClientWorkspaceModel` 和 `createWorkspaceStateStream()`。该模型拥有 Workspace 行、registry 顺序、已归档 Session id、一元变更回显，以及流与一元调用的竞态处理。较新的 Host 行按 `updatedAt` 获胜；已提交的流顺序优先于较旧的一元响应；已经移除的 Workspace id 不会被延迟数据复活。该包公开与框架无关的快照和订阅，把导航策略与 React 钩子留给 UI owner。
 

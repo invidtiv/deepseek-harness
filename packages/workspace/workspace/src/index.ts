@@ -6,8 +6,8 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { stat } from 'node:fs/promises'
 import { Context, Service } from '@deepseek-ai/cordis'
+import { FsError } from '@deepseek-ai/dsh-fs'
 import type { SessionHeader, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type { DomainGlobal, KvTable } from '@deepseek-ai/dsh-storage-domain'
@@ -15,18 +15,28 @@ import { WorkspaceEntity } from './entity.ts'
 import type { WorkspaceEntityHost } from './entity.ts'
 
 export { WorkspaceMoveInvalidError } from './entity.ts'
-import { defaultWorkspaceTitle, realpathNormalize } from './paths.ts'
+import { absoluteWorkspacePath, defaultWorkspaceTitle } from './paths.ts'
 import { workspaceDomainSpec } from './spec.ts'
 import type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
-import type { Workspace, WorkspaceId as WorkspaceIdBrand } from './types.ts'
+import type { Workspace, WorkspaceId as WorkspaceIdBrand, WorkspaceTransport } from './types.ts'
 
-export type { Workspace } from './types.ts'
+export type { Workspace, WorkspaceTransport } from './types.ts'
 export { workspaceDomainState, workspaceRecord, workspaceDomainSpec } from './spec.ts'
 export type { WorkspaceDomainState, WorkspaceRecord } from './spec.ts'
 export { realpathNormalize } from './paths.ts'
 
 /** Identifies one workspace record (see `src/types.ts` for the brand rationale). */
 export type WorkspaceId = WorkspaceIdBrand
+
+/** Options accepted when creating or reusing a workspace record. */
+export interface WorkspaceCreateOptions {
+  /** Display title used only when a new record is created. */
+  title?: string
+  /** Transport that reaches the directory; defaults to `local`. */
+  transport?: WorkspaceTransport
+  /** Named SSH environment; required with `transport: 'ssh'` and rejected for a local workspace. */
+  environmentId?: string
+}
 
 /**
  * Brand a string as a {@link WorkspaceId}.
@@ -89,7 +99,7 @@ const compareHeaders = (left: SessionHeader, right: SessionHeader): number =>
  * history and commit the initialized marker.
  */
 export class WorkspaceRegistry extends Service {
-  static inject = ['storageDomain', 'sessionPersistence']
+  static inject = ['storageDomain', 'sessionPersistence', 'fs']
 
   private table?: KvTable<WorkspaceId, WorkspaceRecord>
   private global?: DomainGlobal<WorkspaceDomainState>
@@ -108,6 +118,7 @@ export class WorkspaceRegistry extends Service {
       this.sessionPaths.set(id, path)
       this.invalidSessionPaths.delete(id)
     },
+    resolveDirectory: path => this.resolveDirectory(path),
   }
 
   constructor(ctx: Context) {
@@ -139,27 +150,50 @@ export class WorkspaceRegistry extends Service {
   }
 
   /**
+   * Canonicalize a fully qualified directory path in the workspace's execution
+   * world and confirm it is a directory.
+   * @param path - Fully qualified path in that world.
+   * @returns the canonical path, or `undefined` when the target is not a directory.
+   * @throws {FsError} `FS_NOT_FOUND` when no such entry exists.
+   * @throws {TypeError} when the path is not absolute in either execution world.
+   */
+  private async resolveDirectory(path: string): Promise<string | undefined> {
+    if (!absoluteWorkspacePath(path)) {
+      throw new TypeError(`Workspace path is not fully qualified: '${path}'`)
+    }
+    const target = await this.ctx.fs.resolve(path)
+    const info = await this.ctx.fs.stat(target)
+    if (info === undefined) {
+      throw new FsError(`cannot resolve '${path}': no such directory`, 'FS_NOT_FOUND')
+    }
+    return info.type === 'directory' ? this.ctx.fs.processPath(target) : undefined
+  }
+
+  /**
    * Create or reuse a workspace for an existing directory. The fully qualified
-   * path is canonicalized through `fs.realpath`; a relative, nonexistent, or
-   * non-directory path rejects. Repeated calls for the same canonical path
+   * path is canonicalized through `ctx.fs` in the workspace's execution world;
+   * a relative, nonexistent, or non-directory path rejects. Repeated calls for the same canonical path
    * return the existing entity without changing its title.
    * A newly created workspace is prepended to the durable registry order.
    * Different canonical paths may share a display title.
    * @param path - Existing directory to own, in a fully qualified path spelling.
-   * @param title - Display title used only when a new record is created.
+   * @param options - display title and the transport that reaches the directory.
    * @returns the existing or newly durable workspace.
    */
-  // TODO: `title` lost its last production caller when the gateway's
-  // create-by-name branch was deleted
-  // (.agents/notes/archived/simplification/2026-07-31-one-route-to-add-a-workspace.md);
-  // drop the parameter with its @param clause and the `create(path, title?)`
-  // lines in this package's README pair.
-  async create(path: string, title?: string): Promise<Workspace> {
-    const canonical = await realpathNormalize(path)
-    if (!(await stat(canonical)).isDirectory()) {
-      throw new Error(`cannot create a workspace at '${canonical}': path is not a directory`)
+  async create(path: string, options?: WorkspaceCreateOptions): Promise<Workspace> {
+    const transport = options?.transport ?? 'local'
+    const environmentId = options?.environmentId
+    if (transport === 'ssh' && (environmentId === undefined || environmentId.trim() === '')) {
+      throw new Error('cannot create a remote workspace without a named SSH environment')
     }
-    return await this.enqueueOperation(() => this.createCanonical(canonical, title))
+    if (transport === 'local' && environmentId !== undefined) {
+      throw new Error('a local workspace cannot carry an SSH environment')
+    }
+    const canonical = await this.resolveDirectory(path)
+    if (canonical === undefined) {
+      throw new Error(`cannot create a workspace at '${path}': path is not a directory`)
+    }
+    return await this.enqueueOperation(() => this.createCanonical(canonical, options))
   }
 
   /**
@@ -297,25 +331,29 @@ export class WorkspaceRegistry extends Service {
    * @returns the workspace owning the canonical path, when one exists.
    */
   async resolveByPath(path: string): Promise<Workspace | undefined> {
-    const canonical = await realpathNormalize(path)
+    const canonical = await this.resolveDirectory(path)
+    if (canonical === undefined) return undefined
     for (const entity of this.entities.values()) {
       if (entity.path === canonical) return entity
     }
     return undefined
   }
 
-  private async createCanonical(canonical: string, title?: string): Promise<WorkspaceEntity> {
+  private async createCanonical(canonical: string, options?: WorkspaceCreateOptions): Promise<WorkspaceEntity> {
     for (const entity of this.entities.values()) {
       if (entity.path === canonical) return entity
     }
 
-    const workspaceName = title ?? defaultWorkspaceTitle(canonical)
+    const workspaceName = options?.title ?? defaultWorkspaceTitle(canonical)
+    const environmentId = options?.environmentId
     const table = this.requireTable()
     const state = this.requireState()
     const id = WorkspaceId(randomUUID())
     const now = new Date().toISOString()
     const record: WorkspaceRecord = {
       path: canonical,
+      transport: options?.transport ?? 'local',
+      ...(environmentId === undefined ? {} : { environmentId }),
       title: workspaceName,
       sessionIds: [],
       createdAt: now,
@@ -481,6 +519,7 @@ export class WorkspaceRegistry extends Service {
         const createdAt = new Date(group.newestAt).toISOString()
         const record: WorkspaceRecord = {
           path: group.path,
+          transport: 'local',
           title: defaultWorkspaceTitle(group.path),
           sessionIds,
           createdAt,
@@ -599,8 +638,8 @@ export class WorkspaceRegistry extends Service {
       return
     }
     try {
-      const path = await realpathNormalize(header.cwd)
-      if (!(await stat(path)).isDirectory()) {
+      const path = await this.resolveDirectory(header.cwd)
+      if (path === undefined) {
         this.invalidSessionPaths.set(header.id, `cwd '${header.cwd}' is not a directory`)
         return
       }

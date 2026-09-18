@@ -27,4 +27,5 @@ The agent can read and edit workspace files, run commands, delegate work, and ma
 - [Configure models](./providers.md)
 - [Use the Python SDK](./python-sdk.md)
 - [Use other CLI modes](../../../apps/cli/README.md)
+- [Run Sessions on a remote host over SSH](./remote-ssh-workspaces.md)
 - [Develop a plugin](../develop/basic/index.md)

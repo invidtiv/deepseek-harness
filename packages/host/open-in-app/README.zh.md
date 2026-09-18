@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-把本包挂进携带 `webServer`、`connection` 与 `subprocess` 的组合，通常与其浏览器表面 [`dsh-client-ui-open-in-app`](../../client/ui-open-in-app/README.zh.md) 并排；只要主机解析出目录中至少一个已安装的应用，这对包就会在 Web 会话头部放上 "Open In..." 分体按钮。
+把本包挂进携带 `webServer`、`connection`、`subprocess` 与 `fs` 的组合，通常与其浏览器表面 [`dsh-client-ui-open-in-app`](../../client/ui-open-in-app/README.zh.md) 并排；只要主机解析出目录中至少一个已安装的应用，这对包就会在 Web 会话头部放上 "Open In..." 分体按钮。这些路由是本机文件系统的交互入口：当组合后的执行世界不是本机文件系统时，apps 路由回答空目录，open 路由在解析任何内容之前即拒绝，因此远程工作区绝不会打开同名的本机目录。
 
 ### 何时选择
 

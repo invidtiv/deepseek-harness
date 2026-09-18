@@ -7,6 +7,7 @@ import Storage from '@deepseek-ai/dsh-storage'
 import type { StorageBackend } from '@deepseek-ai/dsh-storage'
 import { DomainFacility } from '@deepseek-ai/dsh-storage-domain'
 import type { DomainChanged } from '@deepseek-ai/dsh-storage-domain'
+import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
 import SessionStore, { SESSION_FORMAT_VERSION, SessionId } from '@deepseek-ai/dsh-session'
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import { SessionPersistenceRevision } from '@deepseek-ai/dsh-session-persistence'
@@ -18,7 +19,7 @@ import WorkspaceRegistry, {
   WorkspaceOrderInvalidError,
 } from '../src/index.ts'
 import type { WorkspaceDomainState, WorkspaceRecord } from '../src/index.ts'
-import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath } from '../src/paths.ts'
+import { defaultWorkspaceTitle, fullyQualifiedWorkspacePath, realpathNormalize } from '../src/paths.ts'
 
 const DOMAIN_VERSION = 2
 
@@ -47,6 +48,7 @@ async function harness(options: HarnessOptions = {}) {
   const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
   ctx.storage.mount('domain', facility)
   ctx.provide('storageDomain', facility)
+  await ctx.plugin(LocalFileSystem)
 
   let listed = options.sessions ?? []
   const list = vi.fn(async (): Promise<SessionPersistenceSnapshot[]> =>
@@ -92,6 +94,7 @@ async function storageContext(pool: MemoryMediaPool, backend: StorageBackend = n
   const facility = new DomainFacility(ctx, { backend: 'memory', routes: {} })
   ctx.storage.mount('domain', facility)
   ctx.provide('storageDomain', facility)
+  await ctx.plugin(LocalFileSystem)
   return ctx
 }
 
@@ -137,6 +140,7 @@ function selectiveFailureBackend(
 function record(path: string, sessionIds: string[], createdAt = '2026-07-24T00:00:00.000Z'): WorkspaceRecord {
   return {
     path,
+    transport: 'local',
     title: basename(path),
     sessionIds: sessionIds.map(SessionId),
     createdAt,
@@ -375,15 +379,21 @@ describe('WorkspaceRegistry create and lookup', () => {
     expect(fullyQualifiedWorkspacePath('work', 'linux')).toBe(false)
   })
 
+  it('canonicalizes a fully qualified host path and rejects a relative one', async () => {
+    const dir = await makeDir('normalize')
+    expect(await realpathNormalize(dir)).toBe(await realpath(dir))
+    await expect(realpathNormalize('.')).rejects.toThrow(/fully qualified/)
+  })
+
   it('creates newest-first and idempotently reuses a canonical path without retitling', async () => {
     const firstDir = await makeDir('first')
     const secondDir = await makeDir('second')
     const alias = join(base, 'first-link')
     await symlink(firstDir, alias)
     const { registry, pool } = await harness()
-    const first = await registry.create(firstDir, 'Original')
+    const first = await registry.create(firstDir, { title: 'Original' })
     const second = await registry.create(secondDir)
-    const reused = await registry.create(alias, 'Ignored')
+    const reused = await registry.create(alias, { title: 'Ignored' })
     expect(reused).toBe(first)
     expect(first.title).toBe('Original')
     expect(registry.list()).toEqual([second, first])
@@ -396,8 +406,8 @@ describe('WorkspaceRegistry create and lookup', () => {
     const dir = await makeDir('concurrent')
     const { registry, pool } = await harness()
     const [left, right] = await Promise.all([
-      registry.create(dir, 'Winner'),
-      registry.create(dir, 'Loser'),
+      registry.create(dir, { title: 'Winner' }),
+      registry.create(dir, { title: 'Loser' }),
     ])
     expect(left).toBe(right)
     expect(registry.list()).toEqual([left])
@@ -408,8 +418,8 @@ describe('WorkspaceRegistry create and lookup', () => {
     const firstDir = await makeDir('named-first')
     const secondDir = await makeDir('named-second')
     const { registry } = await harness()
-    const first = await registry.create(firstDir, 'Shared')
-    const second = await registry.create(secondDir, 'Shared')
+    const first = await registry.create(firstDir, { title: 'Shared' })
+    const second = await registry.create(secondDir, { title: 'Shared' })
     expect(first.title).toBe('Shared')
     expect(second.title).toBe('Shared')
     expect(registry.list()).toEqual([second, first])
@@ -420,9 +430,11 @@ describe('WorkspaceRegistry create and lookup', () => {
     const file = join(parent, 'plain.txt')
     await writeFile(file, 'file')
     const { registry } = await harness()
-    await expect(registry.create(join(parent, 'missing'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(registry.create(join(parent, 'missing'))).rejects.toMatchObject({ code: 'FS_NOT_FOUND' })
     await expect(registry.create(file)).rejects.toThrow(/not a directory/)
-    await expect(registry.resolveByPath(join(parent, 'missing'))).rejects.toMatchObject({ code: 'ENOENT' })
+    await expect(registry.resolveByPath(join(parent, 'missing'))).rejects.toMatchObject({ code: 'FS_NOT_FOUND' })
+    // An existing non-directory is no workspace, not an error.
+    await expect(registry.resolveByPath(file)).resolves.toBeUndefined()
     expect(registry.list()).toEqual([])
   })
 
@@ -595,7 +607,9 @@ describe('WorkspaceRegistry create and lookup', () => {
 
   it('rejects table access before the registry has started', async () => {
     const dir = await makeDir('unstarted')
-    const registry = new WorkspaceRegistry(new Context())
+    const bare = new Context()
+    await bare.plugin(LocalFileSystem)
+    const registry = new WorkspaceRegistry(bare)
     await expect(registry.create(dir)).rejects.toThrow(/not started/)
     expect(() => registry.list()).toThrow(/not started/)
     const internals = registry as unknown as { requireTable(): unknown }
@@ -1031,5 +1045,47 @@ describe('registry-global session unarchive', () => {
 
     const second = await harness({ pool, sessions })
     expect(second.registry.archivedSessionIds).toEqual(['kept'])
+  })
+})
+
+describe('Workspace transport locator', () => {
+  it('defaults a new workspace to the local transport', async () => {
+    const dir = await makeDir('transport-local')
+    const { registry } = await harness()
+    const workspace = await registry.create(dir)
+    expect(workspace.transport).toBe('local')
+    expect(workspace.environmentId).toBeUndefined()
+  })
+
+  it('records a named SSH environment for a remote workspace', async () => {
+    const dir = await makeDir('transport-ssh')
+    const { registry } = await harness()
+    const workspace = await registry.create(dir, { transport: 'ssh', environmentId: 'build01' })
+    expect(workspace.transport).toBe('ssh')
+    expect(workspace.environmentId).toBe('build01')
+  })
+
+  it('refuses a remote workspace without a named environment', async () => {
+    const dir = await makeDir('transport-ssh-missing')
+    const { registry } = await harness()
+    await expect(registry.create(dir, { transport: 'ssh' })).rejects.toThrow('without a named SSH environment')
+  })
+
+  it('refuses an environment on a local workspace', async () => {
+    const dir = await makeDir('transport-local-env')
+    const { registry } = await harness()
+    await expect(registry.create(dir, { environmentId: 'build01' })).rejects.toThrow('local workspace cannot carry')
+  })
+
+  it('persists and reloads the locator', async () => {
+    const dir = await makeDir('transport-persist')
+    const result = await harness()
+    const created = await result.registry.create(dir, { transport: 'ssh', environmentId: 'build01' })
+    await result.fiber.dispose()
+    const nextFiber = await result.ctx.plugin(WorkspaceRegistry)
+    const reloaded = result.ctx.workspaceRegistry.get(created.id)
+    expect(reloaded?.transport).toBe('ssh')
+    expect(reloaded?.environmentId).toBe('build01')
+    await nextFiber.dispose()
   })
 })

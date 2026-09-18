@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-host-directory-picker-auto` picks the right directory-picking interaction for every boot: it resolves the host's situation once at boot and mounts the matching backend — [native](../directory-picker-native/README.md) or [browse](../directory-picker-browse/README.md) — together with its browser half, as real Loader entries in the in-memory root tree. The resolution is one pure boot-time sample: `native` requires a loopback-only bind, a non-SSH launch, and a servable display session; anything ambiguous resolves to `browse`, which works everywhere. Pinning an interaction means composing that backend directly. The mounted capability stays stable for the service lifetime, as the seam requires.
+`dsh-host-directory-picker-auto` picks the right directory-picking interaction for every boot: it resolves the host's situation once at boot and mounts the matching backend — [native](../directory-picker-native/README.md) or [browse](../directory-picker-browse/README.md) — together with its browser half, as real Loader entries in the in-memory root tree. The resolution is one pure boot-time sample: `native` requires a loopback-only bind, a host-filesystem execution world, a non-SSH launch, and a servable display session; anything ambiguous resolves to `browse`, which works everywhere. Pinning an interaction means composing that backend directly. The mounted capability stays stable for the service lifetime, as the seam requires.
 
 ## Table of Contents
 
@@ -29,7 +29,7 @@ Compose this plugin instead of a concrete backend when the same composition must
 
 ### How the choice is made
 
-`native` requires every signal that the operator can see the host display and the native backend can serve it: a loopback-only bind (read from the injected `webServer`; an all-interfaces bind admits remote browsers no OS chooser can reach), no SSH launch (the shared [launch-environment](../../util/launch-environment/README.md) predicate ignores project/user `.env` values and checks only inherited non-empty `SSH_CONNECTION`/`SSH_TTY`), and a servable display session — assumed on darwin and win32; on linux, `DISPLAY`/`WAYLAND_DISPLAY` plus a zenity or kdialog binary on `PATH`; never on any other platform. Anything ambiguous resolves to `browse`, which works everywhere.
+`native` requires every signal that the operator can see the host display and the native backend can serve it: a loopback-only bind (read from the injected `webServer`; an all-interfaces bind admits remote browsers no OS chooser can reach), a host-filesystem execution world (the injected `ctx.fs` fact `addressesHostFilesystem`; a backend such as [`dsh-fs-ssh`](../../ssh/fs-ssh/README.md) reports `false`, because a native chooser can only return a host path), no SSH launch (the shared [launch-environment](../../util/launch-environment/README.md) predicate ignores project/user `.env` values and checks only inherited non-empty `SSH_CONNECTION`/`SSH_TTY`), and a servable display session — assumed on darwin and win32; on linux, `DISPLAY`/`WAYLAND_DISPLAY` plus a zenity or kdialog binary on `PATH`; never on any other platform. Anything ambiguous resolves to `browse`, which works everywhere.
 
 ### What you get
 
@@ -60,6 +60,7 @@ The chooser is a pure decision plus a mount: `resolveDirectoryPickerBackend` sam
 | Condition | Backend |
 |---|---|
 | Bind host is not `127.0.0.1` | `browse` |
+| The composed filesystem is not the host filesystem | `browse` |
 | `SSH_CONNECTION` or `SSH_TTY` present | `browse` |
 | darwin or win32 | `native` |
 | linux with a chooser binary and a display | `native` |

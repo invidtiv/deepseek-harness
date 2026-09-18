@@ -1,7 +1,6 @@
-/** Workspace file verbs for the Web GUI's file explorer and viewer: bounded reads and mixed listings over the Host filesystem. */
+/** Workspace file verbs for the Web GUI's file explorer and viewer: bounded reads and mixed listings over the composed filesystem. */
 
-import { open, opendir, stat } from 'node:fs/promises'
-import { join, resolve } from 'node:path'
+import type { FileSystem } from '@deepseek-ai/dsh-fs'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   FileContents, FileListing, FileListingEntry, FileListRequest, FileReadRequest,
@@ -20,24 +19,34 @@ const LIST_FILES_MAX_ENTRIES = 1000
 export interface WorkspaceFileBrowseConfig {
   /**
    * Project root an absent {@link FileListRequest.path} lists — the cwd an
-   * unspecified-cwd session starts from.
+   * unspecified-cwd session starts from. Omitted maps the Host process cwd into
+   * the composed filesystem's execution world, or that world's root when it
+   * cannot read host files.
    */
   readonly cwd?: string
 }
 
 /**
- * Implements the workspace file verbs against the Host filesystem. Reads are
- * binary-refusing and capped; listings stream once and keep the name-sorted
- * head under a fixed bound. Failures map onto the stable wire codes
+ * Implements the workspace file verbs over the composed filesystem, so the Web
+ * file explorer and viewer read the same execution world the agent tools do.
+ * Reads are binary-refusing and bounded; listings keep the name-sorted head
+ * under a fixed row bound. Failures map onto the stable wire codes
  * `file-not-found`, `file-unreadable`, `directory-unreadable`, and
  * `cancelled`.
  */
 export class WorkspaceFileBrowse {
   readonly #cwd: string
 
-  /** @param config - project root for absent listing paths; defaults to the Host process cwd. */
-  constructor(config: WorkspaceFileBrowseConfig = {}) {
-    this.#cwd = config.cwd ?? process.cwd()
+  /**
+   * @param fs - the composed filesystem the explorer and viewer read through.
+   * @param config - project root for absent listing paths; omitted resolves the
+   *   Host process cwd in this filesystem's execution world.
+   */
+  constructor(private readonly fs: FileSystem, config: WorkspaceFileBrowseConfig = {}) {
+    // A remote world cannot read the Host cwd, so map it through the provider and
+    // fall back to the world root: an absent listing path must never name a host
+    // path the viewer's filesystem cannot serve.
+    this.#cwd = config.cwd ?? fs.processPathFromHostPath(process.cwd()) ?? '/'
   }
 
   /**
@@ -53,160 +62,76 @@ export class WorkspaceFileBrowse {
    */
   async readFile(request: FileReadRequest, signal: AbortSignal): Promise<FileContents> {
     const path = request.path
-    let info: Awaited<ReturnType<typeof stat>>
+    let target: Awaited<ReturnType<FileSystem['resolve']>>
+    let info: Awaited<ReturnType<FileSystem['stat']>>
     try {
-      info = await stat(path)
+      target = await this.fs.resolve(path, { signal })
+      info = await this.fs.stat(target, signal)
     } catch {
+      if (signal.aborted) throw new RemoteError('cancelled', 'file read was aborted', { path })
       throw new RemoteError('file-not-found', `file "${path}" was not found`, { path })
     }
-    if (info.isDirectory()) {
-      throw new RemoteError('file-unreadable', `"${path}" is a directory`, { path })
-    }
-    let handle: Awaited<ReturnType<typeof open>> | undefined
+    if (info === undefined) throw new RemoteError('file-not-found', `file "${path}" was not found`, { path })
+    if (info.type === 'directory') throw new RemoteError('file-unreadable', `"${path}" is a directory`, { path })
     try {
-      handle = await open(path, 'r')
       // One byte past the cap distinguishes "exactly the cap" from "over the cap".
-      const readLength = Math.min(info.size, READ_FILE_MAX_BYTES + 1)
-      const buffer = Buffer.alloc(readLength)
-      const { bytesRead } = await handle.read(buffer, 0, readLength, 0)
-      const bounded = buffer.subarray(0, Math.min(bytesRead, READ_FILE_MAX_BYTES))
-      const binary = bounded.includes(0)
-      const content = binary ? '' : bounded.toString('utf8')
+      const bounded = await this.fs.readByteRange(target, { offset: 0, length: READ_FILE_MAX_BYTES + 1 }, signal)
+      const window = bounded.subarray(0, Math.min(bounded.length, READ_FILE_MAX_BYTES))
+      const binary = window.includes(0)
       return {
         path,
-        content,
-        size: info.size,
-        truncated: bytesRead > READ_FILE_MAX_BYTES,
+        content: binary ? '' : Buffer.from(window).toString('utf8'),
+        size: info.size ?? bounded.length,
+        truncated: bounded.length > READ_FILE_MAX_BYTES,
         binary,
       }
     } catch (error: unknown) {
-      if (signal.aborted) {
-        throw new RemoteError('cancelled', 'file read was aborted', { path })
-      }
+      if (signal.aborted) throw new RemoteError('cancelled', 'file read was aborted', { path })
       throw new RemoteError('file-unreadable', `file "${path}" could not be read: ${fsMessage(error)}`, { path })
-    } finally {
-      await handle?.close()
     }
   }
 
   /**
    * List one mixed directory level (child directories and files) for the file
-   * explorer, bounded at {@link LIST_FILES_MAX_ENTRIES}: dirents stream once,
-   * symlink targets probe per row, and the answer keeps the name-sorted head
-   * plus the `truncated` flag. An unreadable or missing level — including a
-   * non-directory target — maps onto the shared listing failure.
+   * explorer, bounded at {@link LIST_FILES_MAX_ENTRIES}. The provider resolves
+   * symlinks, so a live link lists at its target's kind and a broken one is
+   * skipped. An unreadable or missing level — including a non-directory target
+   * — maps onto the shared listing failure.
    * @param request - the listing request.
    * @param signal - caller/connection lifetime; abort stops the scan instead
    *   of letting it outlive a disconnected caller.
    * @returns the mixed listing.
    */
   async listFiles(request: FileListRequest, signal: AbortSignal): Promise<FileListing> {
-    // Absent path lists the default project root — the cwd an unspecified-cwd
-    // session starts from.
-    const target = resolve(request.path ?? this.#cwd)
-    let dir: Awaited<ReturnType<typeof opendir>> | undefined
-    let closed = false
+    const requested = request.path ?? this.#cwd
     try {
-      if (!(await stat(target)).isDirectory()) {
-        throw new RemoteError('directory-unreadable', `"${target}" is not a directory`, { path: target })
+      const target = await this.fs.resolve(requested, { signal })
+      const directory = this.fs.processPath(target)
+      const info = await this.fs.stat(target, signal)
+      if (info === undefined || info.type !== 'directory') {
+        throw new RemoteError('directory-unreadable', `"${directory}" is not a directory`, { path: directory })
       }
-      const window: ListingCandidate[] = []
-      let evicted = false
-      dir = await opendir(target)
-      for (;;) {
-        signal.throwIfAborted()
-        const dirent = await dir.read()
-        if (dirent === null) break
-        // Sockets and fifos have no explorer action; files, directories, and
-        // symlink probes do.
-        if (!dirent.isDirectory() && !dirent.isSymbolicLink() && !dirent.isFile()) continue
-        if (placeListingCandidate(window, {
-          name: dirent.name,
-          direntKind: dirent.isDirectory() ? 'directory' : dirent.isSymbolicLink() ? 'symlink' : 'other',
-        })) evicted = true
+      const listed = await this.fs.listDir(target, signal)
+      const rows: FileListingEntry[] = []
+      let truncated = false
+      for (const entry of [...listed].sort((left, right) => left.name.localeCompare(right.name))) {
+        // Broken/cyclic links and special files have no explorer action.
+        if (entry.type === 'other') continue
+        if (rows.length >= LIST_FILES_MAX_ENTRIES) { truncated = true; break }
+        rows.push({
+          name: entry.name,
+          path: entry.target.displayPath,
+          kind: entry.type === 'directory' ? 'directory' : 'file',
+          hidden: entry.name.startsWith('.'),
+        })
       }
-      await dir.close()
-      closed = true
-      const entries: FileListingEntry[] = []
-      for (const candidate of window) {
-        signal.throwIfAborted()
-        const row = await listingRow(target, candidate.name, candidate.direntKind)
-        if (row !== null) entries.push(row)
-      }
-      return { path: target, entries, truncated: evicted }
+      return { path: directory, entries: rows, truncated }
     } catch (error: unknown) {
       if (remoteErrorOf(error) !== undefined) throw error
-      if (signal.aborted) {
-        throw new RemoteError('cancelled', 'directory listing was aborted', {})
-      }
-      throw new RemoteError('directory-unreadable', `cannot list "${target}": ${fsMessage(error)}`, { path: target })
-    } finally {
-      // Normal releases are awaited in-place above; only a departed caller
-      // drops its handle fire-and-forget here, so an abort never waits behind
-      // the very stalled read it escaped (settlement has no consumer left).
-      if (!closed && dir !== undefined) void dir.close().catch(() => undefined)
+      if (signal.aborted) throw new RemoteError('cancelled', 'directory listing was aborted', {})
+      throw new RemoteError('directory-unreadable', `cannot list "${requested}": ${fsMessage(error)}`, { path: requested })
     }
   }
-}
-
-/** One streamed listing candidate: the dirent facts an explorer row needs. */
-type ListingCandidate = { name: string; direntKind: 'directory' | 'symlink' | 'other' }
-
-/**
- * Insert a streamed candidate into the name-ascending bounded window,
- * keeping the name-sorted head and reporting whether anything beyond the
- * bound was cut. Memory stays O(bound) for arbitrarily large levels, and
- * the reject-at-tail comparison makes a far-over-bound level cost O(1)
- * per extra child (the browse listing's shape).
- */
-function placeListingCandidate(window: ListingCandidate[], candidate: ListingCandidate): boolean {
-  if (window.length === LIST_FILES_MAX_ENTRIES) {
-    /* v8 ignore next -- bounds-established element: the window is exactly full here */
-    const tail = window[LIST_FILES_MAX_ENTRIES - 1]
-    /* v8 ignore next -- same bounds: tail is always a placed candidate */
-    if (tail !== undefined && candidate.name.localeCompare(tail.name) >= 0) return true
-  }
-  let lo = 0
-  let hi = window.length
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1
-    /* v8 ignore next -- bounds-established element: mid lies within [0, hi) */
-    const pivot = window[mid]
-    /* v8 ignore next -- same bounds */
-    if (pivot !== undefined && candidate.name.localeCompare(pivot.name) < 0) hi = mid
-    else lo = mid + 1
-  }
-  window.splice(lo, 0, candidate)
-  if (window.length > LIST_FILES_MAX_ENTRIES) {
-    window.pop()
-    return true
-  }
-  return false
-}
-
-/**
- * One file-explorer row for a dirent; symlinks stat-probe their target so
- * the row's kind matches what the client can actually enter or open. A
- * broken or cyclic link is skipped silently — no explorer action can act
- * on it (the browse listing's broken-link policy).
- */
-async function listingRow(
-  parent: string, name: string, direntKind: 'directory' | 'symlink' | 'other',
-): Promise<FileListingEntry | null> {
-  const path = join(parent, name)
-  let kind: FileListingEntry['kind'] = 'file'
-  if (direntKind === 'directory') kind = 'directory'
-  else if (direntKind === 'symlink') {
-    try {
-      kind = (await stat(path)).isDirectory() ? 'directory' : 'file'
-    } catch {
-      return null
-    }
-  }
-  // POSIX hidden convention (dirents carry no hidden attribute on Windows;
-  // the same limitation the browse listing records). The client owns whether
-  // hidden rows render.
-  return { name, path, kind, hidden: name.startsWith('.') }
 }
 
 /** Message text of an unknown thrown value (filesystem rejections may be anything). */

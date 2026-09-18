@@ -29,13 +29,14 @@ kind: "package-reference"
 
 ### 部署前提
 
-两端均需运行 Linux 或 macOS。本地 `ssh` 命令必须支持连接复用与 Unix 套接字转发，服务器也必须允许该转发。启动前配置主机别名、凭据与已知主机记录：本服务启用 `BatchMode`、要求严格检查主机密钥、禁用认证代理转发，且不提供交互认证流程。
+两端均需运行 Linux 或 macOS。本地 `ssh` 命令必须支持连接复用与 Unix 套接字转发，服务器也必须允许该转发。启动前配置主机别名、凭据与已知主机记录：本服务启用 `BatchMode`、检查主机密钥（默认严格）、禁用认证代理转发，且不提供交互认证流程。
 
 在远端主机安装已构建的辅助程序及其匹配的运行依赖。Node、辅助程序、引导程序及其依赖必须位于工作区和可写临时目录之外，也必须位于后端会替换的临时目录树之外，例如 bwrap 的私有 `/tmp`；工作区仍可位于 `/tmp` 下。摘要校验在辅助程序启动后发现非预期的已安装产物；它不能保证可写部署文件的执行安全，也不能认证恶意 SSH 主机。
 
 | 字段 | 默认值 | 含义 |
 |---|---|---|
-| `host` | 必填 | 已有的 OpenSSH 主机别名 |
+| `host` | `host`/`environment` 二选一 | OpenSSH 目标：配置文件中的别名、主机名或地址 |
+| `environment` | `host`/`environment` 二选一 | 通过 `ssh-environments` settings 注册表解析的具名环境 |
 | `node`、`helper`、`workspace` | 必填 | 远端 Node 可执行文件、辅助程序打包入口和默认工作区的绝对路径 |
 | `helperHash` | 必填 | 已安装辅助程序入口的小写 SHA-256 |
 | `bootstrapPath`、`bootstrapHash` | 省略 | 成对提供的远端 PTC 入口及其小写 SHA-256 |
@@ -43,6 +44,18 @@ kind: "package-reference"
 | `maxFrameBytes` | `67108864` | 每条 JSON 消息的负载上限，最大为 64 MiB |
 | `maxPending` | `128` | 普通未完成请求的数量上限；心跳与有界清理请求使用预留容量 |
 | `leaseMs` | `30000` | 辅助进程心跳租期，范围为 3000 至 600000 毫秒 |
+| `port` | 省略 | 显式 OpenSSH TCP 端口；省略时沿用配置文件的值 |
+| `user` | 省略 | 显式登录用户；省略时沿用配置文件的值 |
+| `identityFile` | 省略 | 作为 `-i` 传入的私钥路径；接受 `~` |
+| `identityAgent` | 省略 | 作为 `IdentityAgent` 传入的 agent 套接字；省略时使用 `SSH_AUTH_SOCK` |
+| `proxyJump` | 省略 | 用于跳板链的 `ProxyJump` 目标 |
+| `configFile` | 省略 | 作为 `-F` 传入的备用 OpenSSH 配置文件 |
+| `hostKeyChecking` | `yes` | `yes` 拒绝未知或已变更的主机密钥；`accept-new` 首次信任未知密钥；`no` 两者都接受 |
+| `connectTimeoutMs` | 省略 | `ConnectTimeout`，单位为毫秒；省略时沿用 OpenSSH 默认值 |
+| `serverAliveIntervalMs` | `10000` | `ServerAliveInterval`，单位为毫秒 |
+| `serverAliveCountMax` | `3` | `ServerAliveCountMax` 探测次数 |
+
+`host` 与 `environment` 必须恰好提供一个：`environment` 指名 `ssh-environments` settings 注册表中的条目。具名环境在构造连接时解析，因此 settings 提供方与 `dsh-ssh-environments` 行必须先完成组合；注册表不可用会使连接失败，而不会回退到其他目标。
 
 使用 PTC 时，配置两个引导字段，并将验证后的 `ctx.ssh.nodeExecutable` 与 `ctx.ssh.bootstrapPath` 传给 [`NodePtcRuntime`](../../ptc-runtime/ptc-runtime-node/README.zh.md)。仅使用文件系统和 Bash 时可以省略这对字段。未配置 PTC 部署时，`bootstrapPath` getter 会拒绝访问。
 
@@ -92,7 +105,8 @@ OpenSSH 主连接承载私有管理 RPC。每条程序流使用独立转发的 U
 <a id="known-limitations-and-deferred-work"></a>
 
 - 不提供 Windows 端点、自动配置远端环境、重连或重放。
-- Web 工作区界面的路径仍假定可访问主机文件系统；请使用 headless 或所有消费方都遵守提供方路径语义的自定义组合。
+- Web 工作区界面读取组合后的文件系统，因此远程部署会列出、打开并编辑远程目录；自适应目录选择器挂载应用内浏览器，而不是只能返回主机路径的 OS 原生对话框。
+- 一份组合后的提供方族只服务一个环境。要访问多台 SSH 主机，需要为每个环境各准备一个 profile。
 - TLS 流密钥不防御远端操作系统级进程内存检查或调试。文件效果策略保留所选沙箱后端的限制。
 
 <a id="dev-note"></a>

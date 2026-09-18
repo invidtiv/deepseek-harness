@@ -1,0 +1,8 @@
+# Web e2e fixture overlay: replace the sandboxed host filesystem with a world
+# that is not the harness host, so the workspace picker lists the virtual tree.
+- id: fs-sandbox
+  disabled: true
+
+- insert:
+    - id: fixture-remote-fs
+      name: '@fixture/remote-fs'

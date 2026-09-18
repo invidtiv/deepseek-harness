@@ -23,6 +23,18 @@ export function fullyQualifiedWorkspacePath(
 }
 
 /**
+ * Check whether a path is absolute in the execution world: POSIX-absolute, or
+ * a fully qualified Windows path. The two forms cannot be told apart from the
+ * string alone, so a path acceptable to either world passes; the composed
+ * filesystem resolves it in the world that actually owns it.
+ * @param path - Candidate Workspace path.
+ * @returns Whether the path is absolute in either execution world.
+ */
+export function absoluteWorkspacePath(path: string): boolean {
+  return posix.isAbsolute(path) || fullyQualifiedWorkspacePath(path, 'win32')
+}
+
+/**
  * Derive a non-empty default title from a canonical Workspace path.
  * @param path - Canonical Workspace path.
  * @param platform - Host platform; injectable for deterministic path tests.
@@ -37,15 +49,14 @@ export function defaultWorkspaceTitle(
 }
 
 /**
- * Canonicalize a fully qualified directory path via `fs.realpath`: trailing
- * slashes, `..` segments, and symlinks are all resolved. This is the ONE
- * uniqueness canon of the package — workspace paths are stored canonicalized,
- * uniqueness is string equality of canonicalized paths (a symlink to an
- * existing workspace's directory collides), and attach-time session `cwd`
- * checks go through the same canon. Relative paths reject before `realpath` can
- * resolve them from the Host cwd or current Windows drive. A path that does not
- * exist rejects with the original `ENOENT` — this is `create`'s reject path (a
- * workspace must point at an existing directory).
+ * Canonicalize a fully qualified path on the HARNESS HOST via `fs.realpath`:
+ * trailing slashes, `..` segments, and symlinks are all resolved. The
+ * workspace registry canonicalizes through `ctx.fs` in each workspace's
+ * execution world instead; this helper serves callers that address the Harness
+ * host directly (for example the Telegram frontend's workspace roots). Relative
+ * paths reject before `realpath` can resolve them from the Host cwd or current
+ * Windows drive. A path that does not exist rejects with the original
+ * `ENOENT`.
  * @param path - The path to canonicalize.
  * @returns the canonical absolute path.
  */

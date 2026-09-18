@@ -21,6 +21,9 @@
       "path": "../webserver"
     },
     {
+      "path": "../../fs/fs"
+    },
+    {
       "path": "../../util/launch-environment"
     }
   ]

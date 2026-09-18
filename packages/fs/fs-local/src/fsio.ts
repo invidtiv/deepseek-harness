@@ -289,6 +289,25 @@ async function resolveListedChildTarget(parent: LocalTarget, name: string): Prom
 }
 
 /**
+ * Create one directory at `target`. The parent must already exist; an existing
+ * target reports `FS_ALREADY_EXISTS` and a missing parent `FS_NOT_FOUND`.
+ * @param target - the resolved directory path to create.
+ * @param signal - aborts before the syscall, which is not retractable.
+ * @returns resolution after the directory exists.
+ */
+export async function createDirectory(target: LocalTarget, signal?: AbortSignal): Promise<void> {
+  throwIfAborted(signal, 'create directory')
+  try {
+    await mkdir(target.targetKey)
+  } catch (error: unknown) {
+    if (isEEXIST(error)) throw new FsError(`cannot create "${target.displayPath}": already exists`, 'FS_ALREADY_EXISTS', { cause: error })
+    if (isENOENT(error) || isENOTDIR(error)) throw new FsError(`cannot create "${target.displayPath}": parent directory is missing`, 'FS_NOT_FOUND', { cause: error })
+    if (isPermissionError(error)) throw new FsError(`cannot create "${target.displayPath}": permission denied`, 'FS_PERMISSION_DENIED', { cause: error })
+    throw new FsError(`cannot create "${target.displayPath}": ${errorMessage(error)}`, 'FS_IO_ERROR', { cause: error })
+  }
+}
+
+/**
  * List direct children of a directory in stable name order. Each child includes
  * a resolved target plus stat metadata when still available; file contents are
  * never read.

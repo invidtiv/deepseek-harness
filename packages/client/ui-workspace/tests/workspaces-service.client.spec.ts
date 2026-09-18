@@ -46,6 +46,7 @@ function workspace(
 ): WorkspaceView {
   return {
     workspaceId: wid(id),
+    transport: 'local',
     path: `/w/${id}`,
     title: id,
     sessionIds,

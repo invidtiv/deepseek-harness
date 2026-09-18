@@ -25,7 +25,7 @@ Use `dsh-host-open-in-app` with its [browser companion](../../client/ui-open-in-
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the package in a composition that carries `webServer`, `connection`, and `subprocess`, normally beside its browser surface [`dsh-client-ui-open-in-app`](../../client/ui-open-in-app/README.md); the pair puts an "Open In..." split button in the Web Session header whenever the host resolved at least one installed catalog application.
+Mount the package in a composition that carries `webServer`, `connection`, `subprocess`, and `fs`, normally beside its browser surface [`dsh-client-ui-open-in-app`](../../client/ui-open-in-app/README.md); the pair puts an "Open In..." split button in the Web Session header whenever the host resolved at least one installed catalog application. The routes are host-filesystem affordances: when the composed execution world is not the host filesystem, the apps route answers an empty catalog and the open route refuses before resolving anything, so a remote Workspace never opens a same-named host directory.
 
 ### When to choose it
 

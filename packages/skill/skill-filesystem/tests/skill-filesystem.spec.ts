@@ -31,6 +31,10 @@ async function writeFlatSkill(root: string, name: string, description: string, b
 }
 
 class TestFileSystem extends FileSystem {
+
+  override async mkdir(): Promise<void> {
+    /* This in-memory fake supports reads and writes only; directory creation is not exercised. */
+  }
   listDirCalls = 0
   failResolvePaths = new Set<string>()
   failStatPaths = new Set<string>()

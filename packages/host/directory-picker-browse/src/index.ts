@@ -1,19 +1,22 @@
 /**
  * Browse backend of the directory-picker seam: registers `ctx.directoryPicker`
  * with the `browse` capability — one-level directory listing and child-directory
- * creation over the host filesystem via Node's stdlib (which already carries
- * the per-OS adaptation). Nothing renders on the host display, so this backend
- * serves remote clients the dialog backend cannot. Policy decisions (hidden
- * entries flagged but returned, symlinks followed, whole-filesystem scope) are
- * recorded in the directory-picker seam Agent Note.
+ * creation over the composed execution world. Listing reads through `ctx.fs`,
+ * so an SSH-backed deployment browses the remote filesystem; a non-process-local
+ * world is refused for creation until an unfenced execution-world create path
+ * exists. Nothing renders on the host display, so this backend serves remote
+ * clients the dialog backend cannot. Policy decisions (hidden entries flagged
+ * but returned, symlink targets followed by the provider, whole-filesystem
+ * scope) are recorded in the directory-picker seam Agent Note.
  * @module @deepseek-ai/dsh-host-directory-picker-browse
  */
 
-import { mkdir, opendir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { basename, dirname, join, posix, resolve, win32 } from 'node:path'
+import { basename, dirname, join, posix, win32 } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
+// Type-only: resolves the `ctx.fs` service this backend reads through.
+import type {} from '@deepseek-ai/dsh-fs'
 import {
   DirectoryPicker, DirectoryPickerError,
 } from '@deepseek-ai/dsh-host-directory-picker'
@@ -53,128 +56,21 @@ export function fullyQualified(path: string, platform: NodeJS.Platform = process
     : posix.isAbsolute(path)
 }
 
-/** One streamed listing candidate: the dirent facts a row needs, nothing else retained. */
-export interface ListingCandidate {
-  /** Base name within the streamed level. */
-  name: string
-  /** Dirent says directory (no probe needed). */
-  isDirectory: boolean
-  /** Dirent says symlink (enterability needs a stat probe). */
-  isSymbolicLink: boolean
-}
-
 /**
- * Insert a streamed candidate into the name-sorted bounded window, evicting
- * the name-largest candidate when the window exceeds `keep`. Memory over an
- * arbitrarily large level therefore stays O(keep) regardless of how many
- * children the directory holds.
- * @param window - the name-ascending window, mutated in place.
- * @param candidate - the streamed candidate to place.
- * @param keep - the window bound.
- * @returns true when an eviction happened (the level has candidates beyond the window).
+ * Whether a wire path is absolute in the execution world: POSIX-absolute, or a
+ * fully qualified Windows path. A relative value must never rebase under the
+ * host process cwd or, on Windows, its current drive.
+ * @param path - candidate path.
+ * @returns whether the path is absolute in either world.
  */
-export function boundedInsert(window: ListingCandidate[], candidate: ListingCandidate, keep: number): boolean {
-  // Full window, name at or beyond the tail: one comparison rejects, so an
-  // oversized level costs O(1) per candidate past the head instead of a
-  // window scan (100k children against a 1,001 window must not approach
-  // 10^8 comparisons).
-  // oxlint-disable-next-line typescript/no-non-null-assertion -- a full window (length === keep >= 1) has a tail
-  if (window.length === keep && candidate.name.localeCompare(window[window.length - 1]!.name) >= 0) return true
-  // Binary insertion keeps a retained candidate at O(log keep) comparisons.
-  let lo = 0
-  let hi = window.length
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1
-    // oxlint-disable-next-line typescript/no-non-null-assertion -- bounded by the loop condition
-    if (candidate.name.localeCompare(window[mid]!.name) < 0) hi = mid
-    else lo = mid + 1
-  }
-  window.splice(lo, 0, candidate)
-  if (window.length <= keep) return false
-  window.pop()
-  return true
+function absoluteInWorld(path: string): boolean {
+  return posix.isAbsolute(path) || fullyQualified(path, 'win32')
 }
-
-/**
- * Await `operation`, but reject with the signal's reason the moment it
- * aborts. Node's filesystem reads are not retractable, so the operation
- * itself keeps running against a handle the caller then closes — its late
- * settlement is swallowed here so an abandoned read cannot surface as an
- * unhandled rejection.
- * @param operation - the in-flight filesystem step.
- * @param signal - caller lifetime; absent means plain awaiting.
- * @returns the operation's value.
- */
-export function raceAbort<T>(operation: Promise<T>, signal: AbortSignal | undefined): Promise<T> {
-  if (signal === undefined) return operation
-  return new Promise<T>((resolve, reject) => {
-    const onAbort = (): void => {
-      operation.catch(() => {
-        // Abandoned read: its handle is being closed by the aborting caller,
-        // and the abort reason already carried the outcome.
-      })
-      reject(asError(signal.reason))
-    }
-    if (signal.aborted) {
-      onAbort()
-      return
-    }
-    signal.addEventListener('abort', onAbort, { once: true })
-    operation.then(
-      (value) => {
-        signal.removeEventListener('abort', onAbort)
-        resolve(value)
-      },
-      (reason: unknown) => {
-        signal.removeEventListener('abort', onAbort)
-        reject(asError(reason))
-      },
-    )
-  })
-}
-
-/** The thrown value as an Error (wire/abort reasons may be anything). */
-function asError(reason: unknown): Error {
-  return reason instanceof Error ? reason : new Error(String(reason))
-}
-
-/* v8 ignore start -- a close failure of an abandoned handle has no consumer, and forcing one needs a filesystem torn down mid-request. */
-/** Swallow the close failure of a handle its caller already departed. */
-function swallowCloseFailure(): void {}
-/* v8 ignore stop */
 
 /** Message text of an unknown thrown value. */
 function messageOf(error: unknown): string {
-  /* v8 ignore next -- node:fs rejects with Error instances; the String arm only satisfies the unknown narrowing. */
+  /* v8 ignore next -- the filesystem and node:fs reject with Error instances; the String arm only satisfies the unknown narrowing. */
   return error instanceof Error ? error.message : String(error)
-}
-
-/**
- * One listing row for a dirent, following symlinks to directories; null for
- * non-directories and broken/cyclic links (skipped silently — the browser
- * shows what can be entered, and a broken link cannot).
- */
-async function directoryRow(
-  parent: string, name: string, isDirectory: boolean, isSymbolicLink: boolean, signal: AbortSignal | undefined,
-): Promise<DirectoryEntry | null> {
-  const path = join(parent, name)
-  let enterable = isDirectory
-  if (!enterable && isSymbolicLink) {
-    try {
-      // The probe races the caller too: a symlink target on a stalled
-      // network filesystem must not keep a departed caller's request alive.
-      enterable = (await raceAbort(stat(path), signal)).isDirectory()
-    } catch {
-      /* v8 ignore next 2 -- an abort landing mid-probe needs a stalled stat; the per-candidate check in list covers the settled path. */
-      if (signal?.aborted) throw asError(signal.reason)
-      // Broken or cyclic symlink: stat is the probe, failure means "not enterable".
-      return null
-    }
-  }
-  if (!enterable) return null
-  // POSIX hidden convention; Windows' hidden attribute is not exposed by
-  // dirents (Known Limitations). The client owns whether hidden rows show.
-  return { name, path, hidden: name.startsWith('.') }
 }
 
 /** Validated plugin configuration. */
@@ -185,6 +81,8 @@ export interface Config {
 
 /** The `ctx.directoryPicker` browse implementation (stable capability object per service life). */
 export default class BrowseDirectoryPicker extends DirectoryPicker {
+  static inject = ['fs']
+
   /**
    * `maxEntries` bounds the complete listing level a single `list` call may
    * materialize and put on the wire: at most this many child-directory rows
@@ -215,107 +113,66 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
   }
 
   private async list(path?: string, signal?: AbortSignal): Promise<DirectoryListing> {
-    const home = homedir()
-    // The seam contract takes fully qualified paths only; resolve() would
-    // silently rebase a relative or empty wire value under the host process
-    // cwd (or, for rooted drive-less Windows forms, its current drive).
-    if (path !== undefined && !fullyQualified(path)) {
-      throw new DirectoryPickerError('directory-unreadable', path, `cannot list "${path}": not a fully qualified path`)
+    // The seam contract takes absolute paths only; a relative or empty wire
+    // value must not resolve against the host cwd.
+    if (path !== undefined && !absoluteInWorld(path)) {
+      throw new DirectoryPickerError('directory-unreadable', path, `cannot list "${path}": not an absolute path`)
     }
-    const target = resolve(path ?? home)
-    // Stream the level (opendir, one dirent at a time) into a name-sorted
-    // window of maxEntries + 1 candidates: memory stays bounded no matter how
-    // many children the directory holds, the window keeps the name-sorted
-    // head, and the +1 slot lets an in-window extra row prove the cut. A
-    // window candidate that turns out non-enterable (broken symlink) is not
-    // backfilled from beyond the window — an eviction already marks the
-    // level truncated, which stays the honest answer.
-    const keep = this.config.maxEntries + 1
-    const window: ListingCandidate[] = []
-    let evicted = false
+    // The execution world's home when the composed filesystem is process-local;
+    // a remote world has no host home, so the root is the safe default.
+    const home = this.ctx.fs.processPathFromHostPath(homedir()) ?? '/'
+    const requested = path ?? home
     try {
-      // Every filesystem await races the caller's signal: a stalled
-      // opendir/read on a network filesystem must not keep a departed
-      // caller's scan alive, and an already-aborted request rejects even
-      // when the level is empty.
-      const opening = opendir(target)
-      const level = await raceAbort(opening, signal).catch((error: unknown) => {
-        // The abandoned open can still mint a handle after the abort won;
-        // close it so a departed caller cannot leak a descriptor. (A lost
-        // race against opendir's own rejection has nothing to close, and
-        // the close's own failure is swallowed — the request already
-        // returned, so a cleanup error has no consumer.)
-        void opening.then(dir => dir.close().catch(swallowCloseFailure), () => {
-          // Already rejected: raceAbort surfaced or swallowed it.
-        })
-        throw error
-      })
-      try {
-        for (;;) {
-          const dirent = await raceAbort(level.read(), signal)
-          if (dirent === null) break
-          // Only rows a browser could enter contend for the window; dirent
-          // says "directory" outright, a symlink needs the later stat probe.
-          if (!dirent.isDirectory() && !dirent.isSymbolicLink()) continue
-          const candidate = { name: dirent.name, isDirectory: dirent.isDirectory(), isSymbolicLink: dirent.isSymbolicLink() }
-          if (boundedInsert(window, candidate, keep)) evicted = true
+      const target = await this.ctx.fs.resolve(requested, signal === undefined ? {} : { signal })
+      const info = await this.ctx.fs.stat(target, signal)
+      if (info === undefined || info.type !== 'directory') throw new Error('not a directory')
+      const directory = this.ctx.fs.processPath(target)
+      const listed = await this.ctx.fs.listDir(target, signal)
+      // Only rows a browser could enter; the provider already resolved
+      // symlinks, so a live link lists at its target's kind and a broken one
+      // is skipped. The name-sorted head is kept under the configured bound.
+      const entries: DirectoryEntry[] = []
+      let truncated = false
+      for (const entry of [...listed].sort((left, right) => left.name.localeCompare(right.name))) {
+        if (entry.type !== 'directory') continue
+        if (entries.length === this.config.maxEntries) {
+          truncated = true
+          break
         }
-      } finally {
-        // Manual read() never auto-closes; close on every exit. The aborted
-        // exit must not await it — Node queues close behind any in-flight
-        // read, so awaiting would chain the departed caller back onto the
-        // very stall the abort escaped (the abandoned read's settlement is
-        // already swallowed by raceAbort).
-        const closing = level.close()
-        /* v8 ignore next 3 -- an abort between open and close needs a stalled read; the abandoned-close arm has no observable outcome. */
-        if (signal?.aborted) {
-          closing.catch(swallowCloseFailure)
-        } else {
-          await closing
-        }
+        entries.push({ name: entry.name, path: entry.target.displayPath, hidden: entry.name.startsWith('.') })
       }
+      return { path: directory, home, crumbs: ancestryCrumbs(directory), entries, truncated }
     } catch (error: unknown) {
       // An abort is the caller's own reason, not an unreadable directory.
       signal?.throwIfAborted()
-      throw new DirectoryPickerError('directory-unreadable', target, `cannot list ${target}: ${messageOf(error)}`)
+      throw new DirectoryPickerError('directory-unreadable', requested, `cannot list ${requested}: ${messageOf(error)}`)
     }
-    const entries: DirectoryEntry[] = []
-    let truncated = evicted
-    for (const candidate of window) {
-      // A caller that departed between reads and probes stops before the
-      // next probe (each probe's own await is raced inside directoryRow).
-      signal?.throwIfAborted()
-      const row = await directoryRow(target, candidate.name, candidate.isDirectory, candidate.isSymbolicLink, signal)
-      if (row === null) continue
-      if (entries.length === this.config.maxEntries) {
-        truncated = true
-        break
-      }
-      entries.push(row)
-    }
-    return { path: target, home, crumbs: ancestryCrumbs(target), entries, truncated }
   }
 
   private async createDirectory(path: string, name: string): Promise<string> {
-    // Same fully-qualified fence as list: never rebase a parent under the
-    // cwd or the current drive.
-    if (!fullyQualified(path)) {
-      throw new DirectoryPickerError('directory-create-failed', path, `cannot create under "${path}": not a fully qualified parent path`)
+    // Same absolute fence as list: never rebase a parent under the cwd.
+    if (!absoluteInWorld(path)) {
+      throw new DirectoryPickerError('directory-create-failed', path, `cannot create under "${path}": not an absolute parent path`)
     }
-    const parent = resolve(path)
     // The backend owns segment validation; the Remote controller also refuses
     // invalid wire input, but direct service consumers must hit the same fence.
     if (name.trim() === '' || name === '.' || name === '..' || /[/\\]/.test(name)) {
-      throw new DirectoryPickerError('directory-create-failed', join(parent, name), `"${name}" is not a single path segment`)
+      throw new DirectoryPickerError('directory-create-failed', join(path, name), `"${name}" is not a single path segment`)
     }
-    const target = join(parent, name)
+    const parent = this.ctx.fs.processPath(await this.ctx.fs.resolve(path))
+    // Build the child through the provider so a remote world's separator and
+    // canonical spelling are its own, not the host's.
+    const child = await this.ctx.fs.resolve(name, { cwd: parent })
+    const target = this.ctx.fs.processPath(child)
     try {
       // Non-recursive: the parent is the directory the browser is showing, so
-      // a missing parent is a real failure, not a level to invent.
-      await mkdir(target)
+      // a missing parent is a real failure, not a level to invent. The
+      // operator's own directory choice is not an agent file effect, so it is
+      // created unfenced regardless of the deployment's agent sandbox.
+      await this.ctx.fs.mkdir(child, undefined, { mode: 'danger-full-access', workspaceRoot: parent })
       return target
     } catch (error: unknown) {
-      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'EEXIST') {
+      if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'FS_ALREADY_EXISTS') {
         throw new DirectoryPickerError('directory-exists', target, `${target} already exists`)
       }
       throw new DirectoryPickerError('directory-create-failed', target, `cannot create ${target}: ${messageOf(error)}`)

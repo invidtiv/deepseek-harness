@@ -28,13 +28,19 @@ headless 通过已挂载的文件系统提供方记录和检查 Session cwd。�
 
 替代方案与验证责任见[决策记录](../../.agents/notes/implemented/architecture/2026-09-11-posix-ssh-runtime.zh.md)。
 
+## 环境配置
+
+[环境注册表](../../packages/ssh/ssh-environments/README.zh.md) 将具名 `SshEnvironment` 连接选项存放在 `ssh-environments` settings 命名空间中，并在 `ctx.sshEnvironments` 上解析它们。`SshEnvironment` 包含 OpenSSH 目标以及可选的 `port`、`user`、`identityFile`、`identityAgent`、`proxyJump`、`configFile`、`hostKeyChecking`、`connectTimeoutMs`、`serverAliveIntervalMs` 与 `serverAliveCountMax`；缺席的字段沿用 OpenSSH 自身的默认值，因此部署可以把连接细节保留在 `~/.ssh/config` 中。注册表只拥有配置：连接、辅助程序校验与远端清理仍属于 `dsh-ssh`，且没有任何环境值会进入模型请求。
+
 ## 连接 API
 
 ```ts type-equiv
 /** Deployment-owned SSH identity and installed helper; no model argument selects these values. */
 interface Config {
-  /** OpenSSH host alias, including its existing user, key and known-host configuration. */
-  host: string
+  /** OpenSSH destination: a config-file alias, a host name, or an address; mutually exclusive with `environment`. */
+  host?: string
+  /** Named environment resolved through the `ssh-environments` settings registry; mutually exclusive with `host`. */
+  environment?: string
   /** Absolute remote Node executable. */
   node: string
   /** Absolute path to the installed, bundled helper entry. */
@@ -55,6 +61,26 @@ interface Config {
   maxPending?: number
   /** Remote helper lease; loss of heartbeats starts remote managed cleanup. */
   leaseMs?: number
+  /** Explicit OpenSSH port; absent keeps the config file's value. */
+  port?: number
+  /** Explicit login user; absent keeps the config file's value. */
+  user?: string
+  /** Private-key path passed as `-i`; absent keeps the config file's and agent's identities. */
+  identityFile?: string
+  /** Agent socket passed as `IdentityAgent`; absent uses `SSH_AUTH_SOCK`. */
+  identityAgent?: string
+  /** `ProxyJump` destination for a bastion chain. */
+  proxyJump?: string
+  /** Alternate OpenSSH config file passed as `-F`. */
+  configFile?: string
+  /** Host-key policy; the default refuses an unknown or changed key. */
+  hostKeyChecking?: 'yes' | 'accept-new' | 'no'
+  /** `ConnectTimeout` in milliseconds; absent keeps the OpenSSH default. */
+  connectTimeoutMs?: number
+  /** `ServerAliveInterval` in milliseconds. */
+  serverAliveIntervalMs?: number
+  /** `ServerAliveCountMax` probe count. */
+  serverAliveCountMax?: number
 }
 ```
 
@@ -132,4 +158,38 @@ dispose(): Promise<void>
 ```
 
 Source: [`packages/ssh/ssh/src/index.ts`](../../packages/ssh/ssh/src/index.ts)
+
+<a id="ctxsshenvironments--sshenvironments"></a>
+
+### `ctx.sshEnvironments` — `SshEnvironments`
+
+Registry over the deployment's named SSH environments.
+
+The service registers the SSH_ENVIRONMENTS_NAMESPACE settings namespace during activation and resolves a stable id into validated OpenSSH connection options. It never opens a connection and never stores a secret; the SSH provider family owns both.
+
+```ts cordis-catalog
+/**
+ * List configured environments in declaration order.
+ * @returns one client-safe summary per environment.
+ */
+list(): readonly SshEnvironmentSummary[]
+
+/**
+ * Read one environment's stored entry.
+ * @param id - stable environment identity.
+ * @returns the entry, or `undefined` when the id is not configured.
+ */
+get(id: SshEnvironmentId): SshEnvironmentEntry | undefined
+
+/**
+ * Resolve one environment into validated OpenSSH connection options with this
+ * provider's defaults applied.
+ * @param id - stable environment identity.
+ * @returns the resolved connection options.
+ * @throws {SshEnvironmentUnknownError} when the id is not configured.
+ */
+resolve(id: SshEnvironmentId): SshEnvironment
+```
+
+Source: [`packages/ssh/ssh-environments/src/index.ts`](../../packages/ssh/ssh-environments/src/index.ts)
 <!-- END GENERATED cordis-surface -->

@@ -1,10 +1,22 @@
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest'
+import { Context } from '@deepseek-ai/cordis'
+import type { FileSystem } from '@deepseek-ai/dsh-fs'
+import LocalFileSystem from '@deepseek-ai/dsh-fs-local'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type { FileListing } from '../src/types.ts'
 import { WorkspaceFileBrowse } from '../src/file-browse.ts'
+
+let ctx: Context
+let fsService: FileSystem
+beforeAll(async () => {
+  ctx = new Context()
+  await ctx.plugin(LocalFileSystem)
+  fsService = ctx.fs
+})
+afterAll(async () => { await ctx.fiber.dispose() })
 
 /** Harness root; realized paths must pass through realpathSync on macOS (/var → /private/var). */
 function makeRoot(prefix: string): string {
@@ -37,7 +49,7 @@ describe('WorkspaceFileBrowse.listFiles', () => {
     writeFileSync(join(root, 'b-file.txt'), '')
     writeFileSync(join(root, '.hidden-file'), '')
 
-    const browse = new WorkspaceFileBrowse({ cwd: root })
+    const browse = new WorkspaceFileBrowse(fsService, { cwd: root })
     const listing = await browse.listFiles({}, new AbortController().signal)
     expect(listing.path).toBe(root)
     expect(listing.truncated).toBe(false)
@@ -55,7 +67,7 @@ describe('WorkspaceFileBrowse.listFiles', () => {
     mkdirSync(join(root, 'parent'))
     writeFileSync(join(root, 'parent', 'leaf.md'), '')
 
-    const browse = new WorkspaceFileBrowse({ cwd: '/definitely-not-the-requested-path' })
+    const browse = new WorkspaceFileBrowse(fsService, { cwd: '/definitely-not-the-requested-path' })
     const listing = await browse.listFiles({ path: join(root, 'parent') }, new AbortController().signal)
     expect(listing.path).toBe(join(root, 'parent'))
     expect(listing.entries).toEqual([
@@ -72,7 +84,7 @@ describe('WorkspaceFileBrowse.listFiles', () => {
     symlinkSync(join(root, 'real'), join(root, 'link'))
     symlinkSync(join(root, 'missing-target'), join(root, 'broken'))
 
-    const browse = new WorkspaceFileBrowse({ cwd: root })
+    const browse = new WorkspaceFileBrowse(fsService, { cwd: root })
     const listing = await browse.listFiles({ path: root }, new AbortController().signal)
     // No explorer action can act on a broken link, so it is skipped silently
     // (the browse listing's broken-link policy).
@@ -88,7 +100,7 @@ describe('WorkspaceFileBrowse.listFiles', () => {
     const file = join(root, 'plain.txt')
     writeFileSync(file, '')
 
-    const browse = new WorkspaceFileBrowse({ cwd: root })
+    const browse = new WorkspaceFileBrowse(fsService, { cwd: root })
     expect(await errorCode(browse.listFiles({ path: file }, new AbortController().signal))).toMatchObject({
       code: 'directory-unreadable',
       details: { path: file },
@@ -100,7 +112,7 @@ describe('WorkspaceFileBrowse.listFiles', () => {
     roots.push(root)
     const missing = join(root, 'absent')
 
-    const browse = new WorkspaceFileBrowse({ cwd: root })
+    const browse = new WorkspaceFileBrowse(fsService, { cwd: root })
     expect(await errorCode(browse.listFiles({ path: missing }, new AbortController().signal))).toMatchObject({
       code: 'directory-unreadable',
       details: { path: missing },
@@ -117,7 +129,7 @@ describe('WorkspaceFileBrowse.listFiles', () => {
       writeFileSync(join(root, `n${String(index).padStart(4, '0')}`), '')
     }
 
-    const browse = new WorkspaceFileBrowse({ cwd: root })
+    const browse = new WorkspaceFileBrowse(fsService, { cwd: root })
     const listing: FileListing = await browse.listFiles({ path: root }, new AbortController().signal)
     expect(listing.truncated).toBe(true)
     expect(listing.entries.length).toBe(1000)
@@ -131,7 +143,7 @@ describe('WorkspaceFileBrowse.listFiles', () => {
 
     const abort = new AbortController()
     abort.abort()
-    const browse = new WorkspaceFileBrowse({ cwd: root })
+    const browse = new WorkspaceFileBrowse(fsService, { cwd: root })
     expect(await errorCode(browse.listFiles({ path: root }, abort.signal))).toMatchObject({
       code: 'cancelled',
     })
@@ -151,7 +163,7 @@ describe('WorkspaceFileBrowse.readFile', () => {
     const file = join(root, 'notes.txt')
     writeFileSync(file, 'héllo\n')
 
-    const browse = new WorkspaceFileBrowse({ cwd: root })
+    const browse = new WorkspaceFileBrowse(fsService, { cwd: root })
     const contents = await browse.readFile({ path: file }, new AbortController().signal)
     expect(contents).toEqual({ path: file, content: 'héllo\n', size: 7, truncated: false, binary: false })
   })
@@ -162,7 +174,7 @@ describe('WorkspaceFileBrowse.readFile', () => {
     const file = join(root, 'blob.bin')
     writeFileSync(file, Buffer.from([0x61, 0x00, 0x62]))
 
-    const browse = new WorkspaceFileBrowse({ cwd: root })
+    const browse = new WorkspaceFileBrowse(fsService, { cwd: root })
     const contents = await browse.readFile({ path: file }, new AbortController().signal)
     expect(contents.binary).toBe(true)
     expect(contents.content).toBe('')
@@ -176,7 +188,7 @@ describe('WorkspaceFileBrowse.readFile', () => {
     // One byte over the 2 MiB read cap: the prefix is capped, the flag proves over-read.
     writeFileSync(file, 'a'.repeat(2 * 1024 * 1024 + 1))
 
-    const browse = new WorkspaceFileBrowse({ cwd: root })
+    const browse = new WorkspaceFileBrowse(fsService, { cwd: root })
     const contents = await browse.readFile({ path: file }, new AbortController().signal)
     expect(contents.truncated).toBe(true)
     expect(contents.content.length).toBe(2 * 1024 * 1024)
@@ -189,7 +201,7 @@ describe('WorkspaceFileBrowse.readFile', () => {
     const dir = join(root, 'folder')
     mkdirSync(dir)
 
-    const browse = new WorkspaceFileBrowse({ cwd: root })
+    const browse = new WorkspaceFileBrowse(fsService, { cwd: root })
     expect(await errorCode(browse.readFile({ path: join(root, 'absent') }, new AbortController().signal)))
       .toMatchObject({ code: 'file-not-found', details: { path: join(root, 'absent') } })
     expect(await errorCode(browse.readFile({ path: dir }, new AbortController().signal)))

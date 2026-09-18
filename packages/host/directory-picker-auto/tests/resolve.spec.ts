@@ -11,6 +11,7 @@ const attended: DirectoryPickerHostFacts = {
   bindHost: '127.0.0.1',
   platform: 'darwin',
   ssh: false,
+  hostFilesystem: true,
   env: {},
   linuxChooser: false,
 }
@@ -27,6 +28,11 @@ describe('resolveDirectoryPickerBackend', () => {
 
   it('resolves browse under an SSH launch', () => {
     expect(resolveDirectoryPickerBackend({ ...attended, ssh: true })).toBe('browse')
+  })
+
+  it('resolves browse when the composed filesystem is not the host filesystem', () => {
+    expect(resolveDirectoryPickerBackend({ ...attended, hostFilesystem: false })).toBe('browse')
+    expect(resolveDirectoryPickerBackend({ ...attended, platform: 'linux', linuxChooser: true, env: { DISPLAY: ':0' }, hostFilesystem: false })).toBe('browse')
   })
 
   it('requires a display session and a chooser binary on linux', () => {

@@ -9,6 +9,10 @@ interface Config { root: string }
 
 /** Empty provider-owned workspace; no operation accesses the host filesystem. */
 export default class ProviderCwdFileSystem extends FileSystem {
+
+  override async mkdir(): Promise<void> {
+    /* This in-memory fake supports reads and writes only; directory creation is not exercised. */
+  }
   static inject = ['sandboxPolicy']
   static Config: schema<Config> = schema.object({ root: schema.string().required() })
   private readonly config: Config

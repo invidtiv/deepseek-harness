@@ -18,6 +18,9 @@
       "path": "../../../vendor/schemastery"
     },
     {
+      "path": "../../fs/fs"
+    },
+    {
       "path": "../../storage/storage"
     },
     {

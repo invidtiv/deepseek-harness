@@ -15,6 +15,13 @@ import type {} from '@deepseek-ai/dsh-typert-protocol'
  */
 export type WorkspaceId = Branded<'WorkspaceId'>
 
+/**
+ * Transport that reaches a workspace's directory. `local` is the Harness
+ * host's own filesystem; `ssh` is the execution world of a named SSH
+ * environment.
+ */
+export type WorkspaceTransport = 'local' | 'ssh'
+
 declare module '@deepseek-ai/dsh-typert-protocol' {
   interface RemoteErrorDetailsMap {
     /** No registration carries that Workspace identity. */
@@ -32,10 +39,18 @@ export interface Workspace {
   /** Stable record id (generated uuid). */
   readonly id: WorkspaceId
 
+  /** Transport that reaches {@link path}: the harness host's filesystem, or a named SSH environment's. */
+  readonly transport: WorkspaceTransport
+
+  /** Named SSH environment when {@link transport} is `ssh`; absent for a local workspace. */
+  readonly environmentId?: string | undefined
+
   /**
-   * Canonical directory path: the `fs.realpath` of the path given at create
-   * time (trailing slashes, `..`, and symlinks all resolved). Never rewritten
-   * afterwards, even when the directory disappears (see {@link status}).
+   * Canonical directory path in the workspace's execution world: the
+   * `ctx.fs.processPath` of the resolved target at create time (trailing
+   * slashes, `..`, and symlinks are resolved by that world's filesystem).
+   * Never rewritten afterwards, even when the directory disappears (see
+   * {@link status}).
    */
   readonly path: string
 

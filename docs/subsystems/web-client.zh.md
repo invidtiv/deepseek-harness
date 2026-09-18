@@ -81,6 +81,10 @@ Connection 拥有 request correlation、`/api` carrier、trust check、精确 Fe
 
 架构中没有统一的 Client `Runtime`、`HostFrame`、`events.mux`、`events.host` 或通用 `resync()` API。Connection 公开 generation state，Gateway 管理 logical stream，Client model 则按自身数据定义 replacement 或 resume 语义。
 
+## 会话所有者
+
+多个客户端可以观测同一个 Session。拥有该 Session 的运行时上的 Session 日志是唯一权威来源：每个接入的客户端打开自己的 `follow` 流，派生出相同的逻辑序列，且不会重复任何内容。客户端离开只会结束它自己的流——绝不会终止 Session、正在运行的一轮或另一个客户端的流；较晚接入的客户端会在其 opening snapshot 中收到错过的那些事件。
+
 ## 包边界
 
 功能插件包可以通过 `import type` 共享声明；不得运行时导入或转发另一个功能插件的值。跨包行为使用注入的 Cordis service，跨包 UI 使用 Slots。特定 target 的 Conversation Definition、projection helper 与最终 view data 留在所属 target 包中，即使 Chat 和 Trajectory 有意实现平行逻辑。

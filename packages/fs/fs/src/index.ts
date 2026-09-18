@@ -105,6 +105,20 @@ export abstract class FileSystem extends Service {
   }
 
   /**
+   * Capability fact: whether targets in this provider name entries in the
+   * harness host's own filesystem. A surface that offers an OS-native path
+   * chooser reads it, because such a chooser can only return a host path: a
+   * backend for another execution world reports `false` so the surface falls
+   * back to an interaction that lists the provider's directories. The base
+   * provider and every host-backed backend report `true`.
+   * @returns true when a harness-host path identifies the same file as
+   *   {@link processPath} does.
+   */
+  get addressesHostFilesystem(): boolean {
+    return true
+  }
+
+  /**
    * Resolve a model/plugin-supplied path into a stable {@link FsTarget}. May perform I/O (a
    * remote/sandboxed backend may need a round-trip to map a path to a stable identity), hence
    * async even though the local backend only normalizes + realpaths.
@@ -234,6 +248,23 @@ export abstract class FileSystem extends Service {
    * @returns one entry per direct child, in stable name order.
    */
   abstract listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]>
+
+  /**
+   * Create one directory at the resolved target. The target's parent must
+   * already exist; an existing target reports `FS_ALREADY_EXISTS` and a
+   * missing parent `FS_NOT_FOUND`. The backend applies its own file-effect
+   * policy, so a sandboxing backend refuses a target outside its allowed root
+   * with `FS_SANDBOX_DENIED` before the directory is created.
+   * @param target - the resolved directory path to create.
+   * @param signal - aborts before creation takes effect.
+   * @param sandboxPolicy - the per-call mode and workspace root this creation
+   *   runs under; a sandboxing backend fences the creation by it, the bare
+   *   backend ignores it. Omit to leave the backend its own default. A user
+   *   directory choice passes \`danger-full-access\` so the agent sandbox does
+   *   not fence the operator's own selection.
+   * @returns resolution after the directory exists.
+   */
+  abstract mkdir(target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy): Promise<void>
 
   /**
    * Atomically create or replace UTF-8 text. `expected` guards intent and

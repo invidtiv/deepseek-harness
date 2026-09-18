@@ -31,6 +31,8 @@ let root: string | undefined
 let context: Context | undefined
 /** Answer the connection stub gives every route until a test changes it. */
 const trust: { rejection: 401 | 403 | undefined } = { rejection: undefined }
+/** Whether the composed filesystem addresses the host; tests flip it. */
+const world = { hostFilesystem: true }
 
 afterEach(async () => {
   await context?.fiber.dispose()
@@ -39,6 +41,7 @@ afterEach(async () => {
   root = undefined
   internals.catalog = {}
   trust.rejection = undefined
+  world.hostFilesystem = true
   vi.unstubAllEnvs()
 })
 
@@ -74,6 +77,9 @@ async function boot(layers: readonly LaunchEnvironmentLayerInput[] = []): Promis
   context.provide('subprocess', {
     resolveExecutable: () => Promise.reject(new Error('spec host resolves nothing')),
   } as never)
+  // The launch routes are host-filesystem affordances; this fact is what makes
+  // them reachable in the composition under test.
+  context.provide('fs', { addressesHostFilesystem: world.hostFilesystem } as never)
   await context.plugin(Loader)
   context.loader.builtins.include = Include
   const modules = new Map<string, unknown>([
@@ -165,6 +171,30 @@ describe('open-in-app host routes (real Loader composition)', () => {
     expect(open.status).toBe(400)
     expect(run).not.toHaveBeenCalled()
     expect(resolveExecutable).not.toHaveBeenCalled()
+    expect(launch).not.toHaveBeenCalled()
+  })
+
+  it('offers no launch affordance for a Workspace outside the host filesystem', async () => {
+    const run = vi.fn<NativeCommandRunner>()
+    const launch = vi.fn<OpenInAppLauncher>()
+    internals.catalog = { platform: 'darwin', env: {}, run, launch, resolveExecutable: pathTable() }
+    world.hostFilesystem = false
+    const base = await boot()
+
+    // No catalog means no button: a host app would target the wrong directory.
+    const apps = await fetch(`${base}/open-in-app/apps`)
+    expect(apps.status).toBe(200)
+    expect(await apps.json()).toEqual({ apps: [] })
+
+    // A direct launch is refused even though the host path really exists.
+    const open = await fetch(`${base}/open-in-app/open`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ app: 'finder', path: root }),
+    })
+    expect(open.status).toBe(400)
+    expect(await open.text()).toContain('outside the host filesystem')
+    expect(run).not.toHaveBeenCalled()
     expect(launch).not.toHaveBeenCalled()
   })
 

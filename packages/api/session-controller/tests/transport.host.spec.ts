@@ -167,6 +167,111 @@ describe('SessionHistoryController', () => {
     expect(await iterator.next()).toMatchObject({ done: true })
   })
 
+  it('fans one Session out to two concurrent observers without duplication or loss', async () => {
+    const { ctx, transport } = await setup()
+    const session = ctx.sessions.create(SessionId('two-observers'), { meta: { cwd: '/workspace' } })
+    const first = new AbortController()
+    const second = new AbortController()
+    const address = { kind: 'session', sessionId: session.id } as const
+    const observerA = transport.follow({ address }, first.signal)[Symbol.asyncIterator]()
+    const observerB = transport.follow({ address }, second.signal)[Symbol.asyncIterator]()
+
+    // Both clients derive the same opening snapshot from the same log.
+    const openingA = await observerA.next()
+    const openingB = await observerB.next()
+    expect(openingA).toEqual(openingB)
+    expect(openingA).toMatchObject({ done: false, value: { type: 'snapshot', cursor: -1 } })
+
+    session.append('turn/start', { turn: 1 })
+    for (const observer of [observerA, observerB]) {
+      expect(await observer.next()).toMatchObject({ done: false, value: { type: 'event', event: { type: 'turn/start', seq: 0 } } })
+    }
+
+    // One observer departing ends only its own stream; the Session and the other
+    // observer keep running, and the next event reaches the remaining client once.
+    first.abort()
+    expect(await observerA.next()).toMatchObject({ done: true })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(await observerB.next()).toMatchObject({ done: false, value: { type: 'event', event: { type: 'turn/end', seq: 1 } } })
+    expect(ctx.sessions.get(session.id)).toBe(session)
+    expect(session.seq).toBe(2)
+
+    second.abort()
+    expect(await observerB.next()).toMatchObject({ done: true })
+  })
+
+  it('gives a second observer the complete history it missed while the first keeps following', async () => {
+    const { ctx, transport } = await setup()
+    const session = ctx.sessions.create(SessionId('late-observer'), { meta: { cwd: '/workspace' } })
+    const first = new AbortController()
+    const address = { kind: 'session', sessionId: session.id } as const
+    const observerA = transport.follow({ address }, first.signal)[Symbol.asyncIterator]()
+    expect(await observerA.next()).toMatchObject({ done: false, value: { type: 'snapshot', cursor: -1 } })
+
+    session.append('turn/start', { turn: 1 })
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    expect(await observerA.next()).toMatchObject({ done: false, value: { type: 'event', event: { seq: 0 } } })
+    expect(await observerA.next()).toMatchObject({ done: false, value: { type: 'event', event: { seq: 1 } } })
+
+    const second = new AbortController()
+    const observerB = transport.follow({ address }, second.signal)[Symbol.asyncIterator]()
+    expect(await observerB.next()).toMatchObject({
+      done: false,
+      value: {
+        type: 'snapshot',
+        records: [
+          { type: 'event', event: { seq: 0 } },
+          { type: 'event', event: { seq: 1 } },
+        ],
+      },
+    })
+
+    // Both observers converge on the events appended after the second attached.
+    session.append('turn/start', { turn: 2 })
+    expect(await observerA.next()).toMatchObject({ done: false, value: { type: 'event', event: { seq: 2 } } })
+    expect(await observerB.next()).toMatchObject({ done: false, value: { type: 'event', event: { seq: 2 } } })
+
+    first.abort()
+    second.abort()
+    expect(await observerA.next()).toMatchObject({ done: true })
+    expect(await observerB.next()).toMatchObject({ done: true })
+  })
+
+  it('gives an observer attaching mid-turn the history so far and the same turn end', async () => {
+    const { ctx, transport } = await setup()
+    const session = ctx.sessions.create(SessionId('mid-turn-attach'), { meta: { cwd: '/workspace' } })
+    const address = { kind: 'session', sessionId: session.id } as const
+    const first = new AbortController()
+    const observerA = transport.follow({ address }, first.signal)[Symbol.asyncIterator]()
+    expect(await observerA.next()).toMatchObject({ done: false, value: { type: 'snapshot', cursor: -1 } })
+
+    // Turn 1 opens: the first client watches it live.
+    session.append('turn/start', { turn: 1 })
+    expect(await observerA.next()).toMatchObject({ done: false, value: { type: 'event', event: { type: 'turn/start', seq: 0 } } })
+
+    // A second client joins while the turn is still open: the opening snapshot
+    // carries the started turn, so the newcomer is not waiting for its beginning.
+    const second = new AbortController()
+    const observerB = transport.follow({ address }, second.signal)[Symbol.asyncIterator]()
+    expect(await observerB.next()).toMatchObject({
+      done: false,
+      value: {
+        type: 'snapshot',
+        cursor: 0,
+        records: [{ type: 'event', event: { type: 'turn/start', seq: 0 } }],
+      },
+    })
+
+    // The turn end reaches both observers exactly once.
+    session.append('turn/end', { turn: 1, reason: { kind: 'completed' } })
+    for (const observer of [observerA, observerB]) {
+      expect(await observer.next()).toMatchObject({ done: false, value: { type: 'event', event: { type: 'turn/end', seq: 1 } } })
+    }
+
+    first.abort()
+    second.abort()
+  })
+
   it('subscribes before a cold read and ignores unrelated and replayed buffered events', async () => {
     const { ctx, transport } = await setup()
     const sessionId = SessionId('cold-race')

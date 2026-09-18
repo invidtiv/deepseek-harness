@@ -24,6 +24,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import { isAbsolute } from 'node:path'
 import { stat } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-fs'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-subprocess'
 import { launchedThroughSsh, launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
@@ -44,7 +45,7 @@ export type * from './shared.ts'
 /** Cordis function-plugin name. */
 export const name = 'open-in-app'
 /** The route carrier, the trust fence guarding every route, and the PATH resolver. */
-export const inject = ['webServer', 'connection', 'subprocess']
+export const inject = ['webServer', 'connection', 'subprocess', 'fs']
 
 /** Open-in-app host configuration. */
 export interface Config {
@@ -199,6 +200,13 @@ export function apply(ctx: Context, config: Config): void {
         sendMethodNotAllowed(res, 'GET')
         return
       }
+      // This route launches a HOST application on a HOST directory. In a
+      // composition whose execution world is elsewhere, an empty list removes
+      // the client's launch affordance instead of offering a wrong target.
+      if (!ctx.fs.addressesHostFilesystem) {
+        sendJson(res, 200, { apps: [] })
+        return
+      }
       sendJson(res, 200, { apps: [...(await availability()).keys()] })
     },
   }), `open-in-app: GET ${OPEN_IN_APP_APPS_ROUTE}`)
@@ -269,6 +277,15 @@ export function apply(ctx: Context, config: Config): void {
       const parsed = parseOpenBody(text)
       if (parsed === null) {
         sendJson(res, 400, { code: 'bad-request', message: 'request body must be JSON with string "app" and "path"' })
+        return
+      }
+      // A host path and a path in another execution world can share a spelling.
+      // Resolve and launch nothing when the Workspace is not on this host.
+      if (!ctx.fs.addressesHostFilesystem) {
+        sendJson(res, 400, {
+          code: 'bad-request',
+          message: 'Open in app launches a host application; this Workspace is outside the host filesystem',
+        })
         return
       }
       const app = OPEN_IN_APP_CATALOG.find(entry => entry.id === parsed.app)

@@ -76,6 +76,10 @@ async function write(path: string, content: string): Promise<void> {
 }
 
 class RecordingFileSystem extends FileSystem {
+
+  override async mkdir(): Promise<void> {
+    /* This in-memory fake supports reads and writes only; directory creation is not exercised. */
+  }
   entries = new Map<string, { type: FsInfo['type']; content?: string; version?: FsVersion }>()
   missingOnResolve = new Set<string>()
   throwOnStat = new Set<string>()

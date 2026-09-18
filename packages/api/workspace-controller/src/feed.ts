@@ -23,6 +23,8 @@ import type {
 export function workspaceView(workspace: Workspace): WorkspaceView {
   return {
     workspaceId: workspace.id,
+    transport: workspace.transport,
+    ...(workspace.environmentId === undefined ? {} : { environmentId: workspace.environmentId }),
     path: workspace.path,
     title: workspace.title,
     sessionIds: [...workspace.sessionIds],
@@ -35,6 +37,8 @@ function changedWorkspaceView(workspaceId: string, value: unknown): WorkspaceVie
   const record: WorkspaceRecord = workspaceRecord.parse(value)
   return {
     workspaceId: WorkspaceId(workspaceId),
+    transport: record.transport,
+    ...(record.environmentId === undefined ? {} : { environmentId: record.environmentId }),
     path: record.path,
     title: record.title,
     sessionIds: [...record.sessionIds],

@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-Users who cannot reach an OS chooser still pick a workspace directory through `dsh-host-directory-picker-browse`: it provides one-level directory listing and child-directory creation over Node's standard library, and nothing renders on the host display — so it serves the remote clients the native backend cannot reach. Listings return directories only, name-sorted, with symlink-to-directory following and a host-owned `hidden` flag; creation is non-recursive and validates a single path segment. One composition row also fills the workspace flow's directory holes with the in-app **Select Workspace Directory** dialog.
+Users who cannot reach an OS chooser still pick a workspace directory through `dsh-host-directory-picker-browse`: it provides one-level directory listing and child-directory creation over the composed execution world (`ctx.fs`), and nothing renders on the host display — so it serves the remote clients the native backend cannot reach. Listings return directories only, name-sorted, with symlink-to-directory following and a host-owned `hidden` flag; creation is non-recursive and validates a single path segment. One composition row also fills the workspace flow's directory holes with the in-app **Select Workspace Directory** dialog.
 
 ## Table of Contents
 
@@ -25,19 +25,19 @@ Users who cannot reach an OS chooser still pick a workspace directory through `d
 <a id="use-this-package"></a>
 ## Use this package
 
-Compose this backend when a workspace directory must be chosen without an OS chooser — remote browsers, SSH-forwarded sessions, or unattended hosts. The workspace flow drives `directoryPicker/list` and `directoryPicker/createDirectory`; both primitives answer from the host filesystem.
+Compose this backend when a workspace directory must be chosen without an OS chooser — remote browsers, SSH-forwarded sessions, or unattended hosts. The workspace flow drives `directoryPicker/list` and `directoryPicker/createDirectory`; listing answers from the composed filesystem, and creation requires a process-local world.
 
 ### Listing a directory
 
-`list(path?)` returns one directory level: name-sorted child directories with their absolute paths, a `hidden` flag (dot-prefixed on POSIX), a `home` anchor, and `crumbs` — the root-to-target ancestor chain where every crumb is a jump target and the root is labeled by its full path. An absent path lists the host account's home directory. One call returns at most `maxEntries` rows (config, default 1,000 — the bound GitHub's web UI applies to directory listings), and a cut level reports `truncated: true` so the client can say the level is incomplete. Symlinks to directories are followed; broken and cyclic links are skipped.
+`list(path?)` returns one directory level: name-sorted child directories with their absolute paths, a `hidden` flag (dot-prefixed on POSIX), a `home` anchor, and `crumbs` — the root-to-target ancestor chain where every crumb is a jump target and the root is labeled by its full path. An absent path lists the execution world's home when the composed filesystem is process-local and the filesystem root otherwise. One call returns at most `maxEntries` rows (config, default 1,000 — the bound GitHub's web UI applies to directory listings), and a cut level reports `truncated: true` so the client can say the level is incomplete. Symlinks to directories are followed; broken and cyclic links are skipped.
 
 ### Creating a directory
 
-`createDirectory(path, name)` creates one child directory under an existing parent. It is non-recursive — a missing parent is a real failure, not a level to invent — and rejects anything but a single non-blank path segment (`name` must not contain separators and must not be `.` or `..`).
+`createDirectory(path, name)` creates one child directory under an existing parent. It is non-recursive — a missing parent is a real failure, not a level to invent — and rejects anything but a single non-blank path segment (`name` must not contain separators and must not be `.` or `..`). Creation resolves the child through the composed filesystem and runs it under an explicit `danger-full-access` policy, because the operator's own directory choice is not an agent file effect — so it works in a remote world too.
 
 ### Observable failures
 
-Both primitives refuse a path that is not fully qualified — relative forms, and on Windows the rooted drive-less forms (`\foo`, `/foo`) and incomplete UNC prefixes that `isAbsolute` accepts — with `directory-unreadable` or `directory-create-failed`, instead of resolving it under the host process working directory. Creation of an existing child answers `directory-exists`. A caller's `AbortSignal` stops an in-flight scan, so a disconnect or timeout does not leave the scan outliving the caller.
+Both primitives refuse a path that is not absolute in the execution world — relative forms, and on Windows the rooted drive-less forms (`\foo`, `/foo`) and incomplete UNC prefixes that `isAbsolute` accepts — with `directory-unreadable` or `directory-create-failed`, instead of resolving it under the host process working directory. Creation of an existing child answers `directory-exists`. A caller's `AbortSignal` stops an in-flight scan, so a disconnect or timeout does not leave the scan outliving the caller.
 
 ### Configuration
 
@@ -57,7 +57,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Design concept
 
-The backend streams one directory level through a bounded name-sorted window so memory stays O(maxEntries) no matter how many children the directory holds: a cut level keeps the name-sorted head, hidden rows count against the bound, only windowed candidates are probed, and the level reports `truncated: true`. Window insertion is binary with an O(1) full-window tail rejection, so an oversized level costs O(1) per candidate past the head instead of a window scan.
+The backend asks the composed filesystem for one directory level and keeps the name-sorted head under `maxEntries`: a cut level reports `truncated: true`, and hidden rows count against the bound. Memory is bounded by the provider's own listing plus the retained rows; the backend holds no stream handle of its own.
 
 ### The fully-qualified fence
 
@@ -65,13 +65,13 @@ The backend streams one directory level through a bounded name-sorted window so 
 
 ### Abort and probing
 
-Every filesystem await races the caller's signal (`raceAbort`), so a stalled network filesystem cannot keep a departed caller's request alive; an abandoned read's late settlement is swallowed. Symlink enterability is decided by a `stat` probe — failure means not enterable — and a windowed broken symlink is not backfilled from beyond the window, because an eviction already marked the level truncated.
+Every filesystem await carries the caller's signal into the provider, so a stalled network filesystem cannot keep a departed caller's request alive. The provider resolves symlinks, so a live link lists at its target's kind and a broken or cyclic link is reported as `other` and skipped.
 
 ### Source map
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | `BrowseDirectoryPicker` service: listing, creation, bounded window, error mapping |
+| [`src/index.ts`](src/index.ts) | `BrowseDirectoryPicker` service: listing, creation, error mapping |
 | — | No runtime invariant companion is published; each list/create is one stateless filesystem round trip; the filesystem itself is the authoritative state. |
 
 </details>

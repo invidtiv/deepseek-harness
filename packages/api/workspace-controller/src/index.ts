@@ -17,6 +17,7 @@ import type {
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
   WorkspaceDeleteValue,
+  WorkspaceEnvironmentView,
   WorkspaceFollowFrame,
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
@@ -31,6 +32,11 @@ export { DirectoryPickerController } from './directory-picker.ts'
 export { WorkspaceFileBrowse } from './file-browse.ts'
 export type { WorkspaceFileBrowseConfig } from './file-browse.ts'
 
+/** Structural view of the SSH environment registry the picker reads by service name. */
+interface SshEnvironmentLister {
+  list(): readonly { id: string; label: string; host: string; port?: number }[]
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context {
     /** Host Workspace business API and Remote namespace owner. */
@@ -40,7 +46,7 @@ declare module '@deepseek-ai/cordis' {
 
 /** Host service backing the generated `ctx.remote.workspace` namespace. */
 export class WorkspaceController extends TypertRemoteService {
-  static inject = ['typert', 'workspaceRegistry']
+  static inject = ['typert', 'workspaceRegistry', 'fs']
 
   private readonly commands: WorkspaceCommands
   private readonly feed: WorkspaceFeed
@@ -51,7 +57,7 @@ export class WorkspaceController extends TypertRemoteService {
     super(ctx, 'workspaceController', { namespace: 'workspace' })
     this.commands = new WorkspaceCommands(ctx)
     this.feed = new WorkspaceFeed(ctx)
-    this.browse = new WorkspaceFileBrowse()
+    this.browse = new WorkspaceFileBrowse(ctx.fs)
     // This package is the Loader entry for both Remote owners it hosts: the
     // directory-picking seam is abstract and never an entry itself. The child
     // stays pending until a picking backend is composed, so a host without one
@@ -67,6 +73,21 @@ export class WorkspaceController extends TypertRemoteService {
   @Remote('create')
   create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue> {
     return this.commands.create(request)
+  }
+
+  /**
+   * List the deployment's named SSH environments for the workspace picker.
+   * @returns each configured environment, or an empty list when no registry is composed.
+   */
+  @Remote('environments')
+  environments(): WorkspaceEnvironmentView[] {
+    const registry = this.ctx.get('sshEnvironments') as SshEnvironmentLister | undefined
+    return registry?.list().map(environment => ({
+      environmentId: environment.id,
+      label: environment.label,
+      host: environment.host,
+      ...(environment.port === undefined ? {} : { port: environment.port }),
+    })) ?? []
   }
 
   /**
@@ -146,12 +167,12 @@ export class WorkspaceController extends TypertRemoteService {
 
   /**
    * List one mixed directory level (child directories and files) for the
-   * file explorer, bounded: dirents stream once, symlink targets probe per
-   * row, and the answer keeps the name-sorted head plus the `truncated`
-   * flag. An unreadable or missing level — including a non-directory
-   * target — fails with the shared listing code.
-   * @param request - the listing request; an absent path lists the Host's
-   *   default project root.
+   * file explorer, bounded: the composed filesystem resolves symlinks, and
+   * the answer keeps the name-sorted head plus the `truncated` flag. An
+   * unreadable or missing level — including a non-directory target — fails
+   * with the shared listing code.
+   * @param request - the listing request; an absent path lists the
+   *   configured default project root.
    * @param signal - caller/connection lifetime.
    * @returns the mixed listing.
    */

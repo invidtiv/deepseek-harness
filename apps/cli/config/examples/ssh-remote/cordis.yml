@@ -1,0 +1,53 @@
+# Opt-in overlay that moves file, process and sandbox execution to one named
+# POSIX SSH environment while the Harness, its model transport and Session
+# storage stay on the machine running `dsh`. Paths in the Web workspace picker,
+# the file explorer and every ordinary tool then name entries on the remote
+# host, so `bash`, `read`/`write`/`edit`, `glob`/`grep`, terminals, LSP and PTC
+# need no ssh, scp or remote_* tool.
+#
+# The local providers are DISABLED rather than supplemented: two rows may not
+# register the same `ctx.fs`, `ctx.subprocess` or `ctx.sandbox`. The remote
+# filesystem reports `addressesHostFilesystem: false`, so the adaptive
+# directory-picker mounts its in-app browser instead of an OS-native dialog that
+# could only return a host path.
+#
+# Configure the named environment in the `ssh-environments` settings section
+# ($DSH_HOME/settings.yaml) before starting; see the SSH provider family README.
+# Every DSH_SSH_* value below is deployment-specific and must be set.
+
+- id: fs-sandbox
+  disabled: true
+
+- id: subprocess
+  disabled: true
+
+- id: sandbox
+  disabled: true
+
+# The default workspace and the file-effect root are remote paths.
+- id: sandbox-policy
+  config:
+    mode: !!js process.env.DSH_PERMISSION_MODE ?? 'workspace-write'
+    workspaceRoot: !!js process.env.DSH_SSH_WORKSPACE
+
+- insert:
+    - id: ssh-environments
+      name: '@deepseek-ai/dsh-ssh-environments'
+
+    - id: ssh
+      name: '@deepseek-ai/dsh-ssh'
+      config:
+        environment: !!js process.env.DSH_SSH_ENVIRONMENT
+        node: !!js process.env.DSH_SSH_NODE
+        helper: !!js process.env.DSH_SSH_HELPER
+        helperHash: !!js process.env.DSH_SSH_HELPER_HASH
+        workspace: !!js process.env.DSH_SSH_WORKSPACE
+
+    - id: fs-ssh
+      name: '@deepseek-ai/dsh-fs-ssh'
+
+    - id: subprocess-ssh
+      name: '@deepseek-ai/dsh-subprocess-ssh'
+
+    - id: sandbox-ssh
+      name: '@deepseek-ai/dsh-sandbox-ssh'

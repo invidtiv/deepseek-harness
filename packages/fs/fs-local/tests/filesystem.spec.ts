@@ -8,7 +8,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { constants as bufferConstants } from 'node:buffer'
-import { mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, unlink, utimes, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, realpath, rm, stat, symlink, unlink, utimes, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, parse, relative } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -399,6 +399,33 @@ describe('listDir', () => {
   it('honors a pre-aborted signal', async () => {
     await mkdir(join(dir, 'skills'), { recursive: true })
     await expect(fs.listDir(await fs.resolve('skills'), AbortSignal.abort())).rejects.toMatchObject({ code: 'FS_ABORTED' })
+  })
+})
+
+describe('mkdir', () => {
+  it('creates one directory under an existing parent', async () => {
+    await fs.mkdir(await fs.resolve('created'))
+    expect((await fs.stat(await fs.resolve('created')))?.type).toBe('directory')
+  })
+
+  it('reports an existing target as FS_ALREADY_EXISTS', async () => {
+    await mkdir(join(dir, 'present'))
+    await expect(fs.mkdir(await fs.resolve('present'))).rejects.toMatchObject({ code: 'FS_ALREADY_EXISTS' })
+  })
+
+  it('honors a pre-aborted signal', async () => {
+    await expect(fs.mkdir(await fs.resolve('later'), AbortSignal.abort())).rejects.toMatchObject({ code: 'FS_ABORTED' })
+  })
+
+  it.skipIf(process.platform === 'win32')('reports an unwritable parent as FS_PERMISSION_DENIED', async () => {
+    const parent = join(dir, 'locked')
+    await mkdir(parent)
+    await chmod(parent, 0o500)
+    try {
+      await expect(fs.mkdir(await fs.resolve('locked/child'))).rejects.toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+    } finally {
+      await chmod(parent, 0o700)
+    }
   })
 })
 

@@ -12,9 +12,10 @@
  */
 
 import type { Context } from '@deepseek-ai/cordis'
-// Empty type imports carry the `loader` and `webServer` Context merges for the reads below.
+// Empty type imports carry the `loader`, `webServer` and `fs` Context merges for the reads below.
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
+import type {} from '@deepseek-ai/dsh-fs'
 import { launchedThroughSsh, launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { canExecute, hasLinuxChooserBinary } from './probe.ts'
 import type { DirectoryPickerBackendKind } from './resolve.ts'
@@ -26,8 +27,12 @@ export { resolveDirectoryPickerBackend } from './resolve.ts'
 
 /** Cordis plugin name. */
 export const name = 'directory-picker-auto'
-/** Required services: the effective bind host (`webServer`) and the entry tree the backend mounts into (`loader`). */
-export const inject = ['webServer', 'loader']
+/**
+ * Required services: the effective bind host (`webServer`), the composed
+ * execution world (`fs`) whose host-filesystem fact the chooser reads, and the
+ * entry tree the backend mounts into (`loader`).
+ */
+export const inject = ['webServer', 'fs', 'loader']
 
 /**
  * Host backend package per resolved kind — fixed composition vocabulary, not a
@@ -64,6 +69,7 @@ export async function apply(ctx: Context): Promise<void> {
     bindHost: ctx.webServer.host,
     platform: process.platform,
     ssh: launchedThroughSsh(launchEnvironmentOf(ctx)),
+    hostFilesystem: ctx.fs.addressesHostFilesystem,
     env: process.env,
     linuxChooser: hasLinuxChooserBinary(process.env.PATH, canExecute),
   })

@@ -24,6 +24,12 @@ export interface DirectoryPickerHostFacts {
   platform: NodeJS.Platform
   /** SSH launch fact from the inherited process layer, independent of `.env` values. */
   ssh: boolean
+  /**
+   * The composed filesystem's `addressesHostFilesystem` fact. A native
+   * chooser returns a host path, so a backend for another execution world can
+   * never be served by it.
+   */
+  hostFilesystem: boolean
   /** Environment sample; DISPLAY/WAYLAND_DISPLAY marks a Linux display. */
   env: DirectoryPickerEnv
   /** Whether a Linux chooser binary the native backend can drive (zenity/kdialog) is on PATH; consulted only when `platform` is linux. */
@@ -48,6 +54,7 @@ const present = (value: string | undefined): boolean => value !== undefined && v
  */
 export function resolveDirectoryPickerBackend(facts: DirectoryPickerHostFacts): DirectoryPickerBackendKind {
   if (facts.bindHost !== '127.0.0.1') return 'browse'
+  if (!facts.hostFilesystem) return 'browse'
   if (facts.ssh) return 'browse'
   if (facts.platform === 'darwin' || facts.platform === 'win32') return 'native'
   if (facts.platform !== 'linux' || !facts.linuxChooser) return 'browse'

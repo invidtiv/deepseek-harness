@@ -12,6 +12,7 @@ import { isAbsolute, join, parse, relative, resolve } from 'node:path'
 import { createServer } from 'node:net'
 import {
   applyLiteralEdit,
+  createDirectory,
   listDirectory,
   probe,
   probeNoFollow,
@@ -298,6 +299,39 @@ describe('listDirectory', () => {
     } finally {
       await chmod(root, 0o700)
     }
+  })
+
+  it('maps a missing parent to FS_NOT_FOUND and an existing target to FS_ALREADY_EXISTS', async () => {
+    const root = join(dir, 'create-arms')
+    await mkdir(root)
+    await expect(createDirectory(localTarget(join(root, 'missing', 'child'))))
+      .rejects.toMatchObject({ code: 'FS_NOT_FOUND' })
+    const present = join(root, 'present')
+    await mkdir(present)
+    await expect(createDirectory(localTarget(present))).rejects.toMatchObject({ code: 'FS_ALREADY_EXISTS' })
+  })
+
+  it('translates directory creation permission failures into FS_PERMISSION_DENIED', async () => {
+    const root = join(dir, 'create-restricted')
+    await mkdir(root)
+    await chmod(root, 0o500)
+    try {
+      const error = await createDirectory(localTarget(join(root, 'child'))).then(() => undefined, (caught: unknown) => caught)
+      // Root-like environments may still be able to create inside a mode-0500 directory.
+      if (error === undefined) return
+      expect(error).toBeInstanceOf(FsError)
+      expect(error).toMatchObject({ code: 'FS_PERMISSION_DENIED' })
+    } finally {
+      await chmod(root, 0o700)
+    }
+  })
+
+  it.skipIf(process.platform === 'win32')('maps an unexpected creation failure to FS_IO_ERROR', async () => {
+    const root = join(dir, 'create-generic')
+    await mkdir(root)
+    // A component past NAME_MAX is ENAMETOOLONG, which no explicit arm claims.
+    await expect(createDirectory(localTarget(join(root, 'x'.repeat(300)))))
+      .rejects.toMatchObject({ code: 'FS_IO_ERROR' })
   })
 
   it('translates preflight metadata IO failures into FS_IO_ERROR', async () => {

@@ -149,6 +149,12 @@ export async function runSshHelper(transport: HelperTransport): Promise<void> {
       const input = z.object({ path: z.string(), cwd: remotePath.optional() }).strict().parse(raw)
       return method === 'fs.resolve' ? ctx.fs.resolve(input.path, { cwd: input.cwd ?? workspace, signal }) : await ctx.fs.lstat(input.path, { cwd: input.cwd ?? workspace }, signal) ?? null
     }
+    if (method === 'fs.mkdir') {
+      const input = z.object({ target: targetSchema, policy: policySchema.optional() }).strict().parse(raw)
+      const target = asTarget(input.target)
+      await ctx.fs.mkdir(target, signal, input.policy === undefined ? undefined : await policy(input.policy, signal))
+      return null
+    }
     if (method === 'fs.stat' || method === 'fs.list' || method === 'fs.readText' || method === 'fs.stream') {
       const target = asTarget(z.object({ target: targetSchema }).strict().parse(raw).target)
       if (method === 'fs.stat') return await ctx.fs.stat(target, signal) ?? null

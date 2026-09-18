@@ -1048,6 +1048,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'one entry per direct child, in stable name order.',
       },
       {
+        signature: 'abstract mkdir(target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy): Promise<void>',
+        description: 'Create one directory at the resolved target. The target\'s parent must already exist; an existing target reports `FS_ALREADY_EXISTS` and a missing parent `FS_NOT_FOUND`. The backend applies its own file-effect policy, so a sandboxing backend refuses a target outside its allowed root with `FS_SANDBOX_DENIED` before the directory is created.',
+        parameters: [{ name: 'target', description: 'the resolved directory path to create.' }, { name: 'signal', description: 'aborts before creation takes effect.' }, { name: 'sandboxPolicy', description: 'the per-call mode and workspace root this creation runs under; a sandboxing backend fences the creation by it, the bare backend ignores it. Omit to leave the backend its own default. A user directory choice passes \\`danger-full-access\\` so the agent sandbox does not fence the operator\'s own selection.' }],
+        returns: 'resolution after the directory exists.',
+      },
+      {
         signature: 'abstract writeText( target: FsTarget, content: string, expected?: FsWriteIntent, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy, ): Promise<FsWriteOutcome>',
         description: 'Atomically create or replace UTF-8 text. `expected` guards intent and staleness; omission allows unconditional overwrite.',
         parameters: [{ name: 'target', description: 'the resolved target to write.' }, { name: 'content', description: 'the full new file content.' }, { name: 'expected', description: 'the write intent guarding the write; omit for unconditional.' }, { name: 'signal', description: 'aborts before atomic publication takes effect.' }, { name: 'sandboxPolicy', description: 'the per-call mode and workspace root this write runs under; a sandboxing backend fences the write by it, the bare backend ignores it. Omit to leave the backend its own default.' }],
@@ -2508,6 +2514,32 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'sshEnvironments',
+    summary: 'Registry over the deployment\'s named SSH environments.',
+    description: 'Registry over the deployment\'s named SSH environments.\n\nThe service registers the SSH_ENVIRONMENTS_NAMESPACE settings namespace during activation and resolves a stable id into validated OpenSSH connection options. It never opens a connection and never stores a secret; the SSH provider family owns both.',
+    methods: [
+      {
+        signature: 'list(): readonly SshEnvironmentSummary[]',
+        description: 'List configured environments in declaration order.',
+        parameters: [],
+        returns: 'one client-safe summary per environment.',
+      },
+      {
+        signature: 'get(id: SshEnvironmentId): SshEnvironmentEntry | undefined',
+        description: 'Read one environment\'s stored entry.',
+        parameters: [{ name: 'id', description: 'stable environment identity.' }],
+        returns: 'the entry, or `undefined` when the id is not configured.',
+      },
+      {
+        signature: 'resolve(id: SshEnvironmentId): SshEnvironment',
+        description: 'Resolve one environment into validated OpenSSH connection options with this provider\'s defaults applied.',
+        parameters: [{ name: 'id', description: 'stable environment identity.' }],
+        returns: 'the resolved connection options.',
+        throws: ['{SshEnvironmentUnknownError} when the id is not configured.'],
+      },
+    ],
+  },
+  {
     key: 'storage',
     summary: 'The storage hub service.',
     description: 'The storage hub service. Backends register under `backend`; data forms mount under their `StorageForms` key and are reached as `ctx.storage.<form>`.',
@@ -3270,6 +3302,12 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the Workspace and whether this call created it.',
       },
       {
+        signature: '@Remote(\'environments\') environments(): WorkspaceEnvironmentView[]',
+        description: 'List the deployment\'s named SSH environments for the workspace picker.',
+        parameters: [],
+        returns: 'each configured environment, or an empty list when no registry is composed.',
+      },
+      {
         signature: '@Remote(\'rename\') rename(request: WorkspaceRenameRequest): Promise<WorkspaceValue>',
         description: 'Rename one Workspace to a unique non-blank title.',
         parameters: [{ name: 'request', description: 'Workspace identity and proposed title.' }],
@@ -3313,8 +3351,8 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
       },
       {
         signature: '@Remote(\'listFiles\') listFiles(request: FileListRequest, signal: AbortSignal): Promise<FileListing>',
-        description: 'List one mixed directory level (child directories and files) for the file explorer, bounded: dirents stream once, symlink targets probe per row, and the answer keeps the name-sorted head plus the `truncated` flag. An unreadable or missing level — including a non-directory target — fails with the shared listing code.',
-        parameters: [{ name: 'request', description: 'the listing request; an absent path lists the Host\'s default project root.' }, { name: 'signal', description: 'caller/connection lifetime.' }],
+        description: 'List one mixed directory level (child directories and files) for the file explorer, bounded: the composed filesystem resolves symlinks, and the answer keeps the name-sorted head plus the `truncated` flag. An unreadable or missing level — including a non-directory target — fails with the shared listing code.',
+        parameters: [{ name: 'request', description: 'the listing request; an absent path lists the configured default project root.' }, { name: 'signal', description: 'caller/connection lifetime.' }],
         returns: 'the mixed listing.',
       },
       {
@@ -3380,9 +3418,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Durable workspace registry. Startup waits for `sessionPersistence`, builds one canonical-cwd header index, and completes the one-time history bootstrap before the service becomes active. The persistence dependency is mandatory so an unavailable peer can never be mistaken for an empty history and commit the initialized marker.',
     methods: [
       {
-        signature: 'async create(path: string, title?: string): Promise<Workspace>',
-        description: 'Create or reuse a workspace for an existing directory. The fully qualified path is canonicalized through `fs.realpath`; a relative, nonexistent, or non-directory path rejects. Repeated calls for the same canonical path return the existing entity without changing its title. A newly created workspace is prepended to the durable registry order. Different canonical paths may share a display title.',
-        parameters: [{ name: 'path', description: 'Existing directory to own, in a fully qualified path spelling.' }, { name: 'title', description: 'Display title used only when a new record is created.' }],
+        signature: 'async create(path: string, options?: WorkspaceCreateOptions): Promise<Workspace>',
+        description: 'Create or reuse a workspace for an existing directory. The fully qualified path is canonicalized through `ctx.fs` in the workspace\'s execution world; a relative, nonexistent, or non-directory path rejects. Repeated calls for the same canonical path return the existing entity without changing its title. A newly created workspace is prepended to the durable registry order. Different canonical paths may share a display title.',
+        parameters: [{ name: 'path', description: 'Existing directory to own, in a fully qualified path spelling.' }, { name: 'options', description: 'display title and the transport that reaches the directory.' }],
         returns: 'the existing or newly durable workspace.',
       },
       {
@@ -4884,6 +4922,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'HostConnectionRpc',
     declaration: 'export interface HostConnectionRpc {\n    handle(channel: string, handler: ConnectionRpcHandler): () => Promise<void>;\n    intercept(channel: \'/api\', matches: ConnectionRpcEndpointMatcher, handler: ConnectionRpcHandler): () => Promise<void>;\n}',
+  },
+  {
+    name: 'HostKeyChecking',
+    declaration: 'export type HostKeyChecking = \'yes\' | \'accept-new\' | \'no\';',
   },
   {
     name: 'ImageAttachmentLimits',
@@ -6426,6 +6468,22 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SpillSource = {\n    kind: \'tool\';\n    toolName: string;\n    callId: ToolCallId;\n    label: string;\n} | {\n    kind: \'session-reference\';\n    sessionId: SessionId;\n    label: string;\n};',
   },
   {
+    name: 'SshEnvironment',
+    declaration: 'export interface SshEnvironment {\n    host: string;\n    port?: number;\n    user?: string;\n    identityFile?: string;\n    identityAgent?: string;\n    proxyJump?: string;\n    configFile?: string;\n    hostKeyChecking?: HostKeyChecking;\n    connectTimeoutMs?: number;\n    serverAliveIntervalMs?: number;\n    serverAliveCountMax?: number;\n}',
+  },
+  {
+    name: 'SshEnvironmentEntry',
+    declaration: 'export interface SshEnvironmentEntry extends SshEnvironment {\n    label?: string;\n}',
+  },
+  {
+    name: 'SshEnvironmentId',
+    declaration: 'export type SshEnvironmentId = Branded<\'SshEnvironmentId\'>;',
+  },
+  {
+    name: 'SshEnvironmentSummary',
+    declaration: 'export interface SshEnvironmentSummary {\n    readonly id: SshEnvironmentId;\n    readonly label: string;\n    readonly host: string;\n    readonly port?: number;\n}',
+  },
+  {
     name: 'SshStreamEndpoint',
     declaration: 'export type SshStreamEndpoint = z.infer<typeof streamEndpointSchema>;',
   },
@@ -7195,7 +7253,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'Workspace',
-    declaration: 'export interface Workspace {\n    readonly id: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sessionIds: readonly SessionId[];\n    setTitle(title: string): Promise<void>;\n    attachSession(sessionId: SessionId): Promise<void>;\n    insertSessionBefore(sessionId: SessionId, beforeSessionId?: SessionId): Promise<void>;\n    detachSession(sessionId: SessionId): Promise<void>;\n    status(): Promise<\'ok\' | \'missing-dir\'>;\n}',
+    declaration: 'export interface Workspace {\n    readonly id: WorkspaceId;\n    readonly transport: WorkspaceTransport;\n    readonly environmentId?: string | undefined;\n    readonly path: string;\n    readonly title: string;\n    readonly createdAt: string;\n    readonly updatedAt: string;\n    readonly sessionIds: readonly SessionId[];\n    setTitle(title: string): Promise<void>;\n    attachSession(sessionId: SessionId): Promise<void>;\n    insertSessionBefore(sessionId: SessionId, beforeSessionId?: SessionId): Promise<void>;\n    detachSession(sessionId: SessionId): Promise<void>;\n    status(): Promise<\'ok\' | \'missing-dir\'>;\n}',
   },
   {
     name: 'WorkspaceArchiveSessionRequest',
@@ -7222,8 +7280,12 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkspaceChangesSummary {\n    turn: number;\n    cwd: string;\n    files: WorkspaceChangedFile[];\n    total: number;\n    added: number;\n    deleted: number;\n    snapshot?: {\n        before: string;\n        after: string;\n    };\n}',
   },
   {
+    name: 'WorkspaceCreateOptions',
+    declaration: 'export interface WorkspaceCreateOptions {\n    title?: string;\n    transport?: WorkspaceTransport;\n    environmentId?: string;\n}',
+  },
+  {
     name: 'WorkspaceCreateRequest',
-    declaration: 'export interface WorkspaceCreateRequest {\n    readonly path: string;\n}',
+    declaration: 'export interface WorkspaceCreateRequest {\n    readonly path: string;\n    readonly transport?: \'local\' | \'ssh\';\n    readonly environmentId?: string;\n}',
   },
   {
     name: 'WorkspaceCreateValue',
@@ -7248,6 +7310,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   {
     name: 'WorkspaceDirectoryListing',
     declaration: 'export interface WorkspaceDirectoryListing {\n    readonly path: string;\n    readonly entries: readonly WorkspaceDirectoryEntry[];\n    readonly truncated: boolean;\n}',
+  },
+  {
+    name: 'WorkspaceEnvironmentView',
+    declaration: 'export interface WorkspaceEnvironmentView {\n    readonly environmentId: string;\n    readonly label: string;\n    readonly host: string;\n    readonly port?: number;\n}',
   },
   {
     name: 'WorkspaceFileBytes',
@@ -7306,6 +7372,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface WorkspaceRenameRequest {\n    readonly workspaceId: WorkspaceId;\n    readonly title: string;\n}',
   },
   {
+    name: 'WorkspaceTransport',
+    declaration: 'export type WorkspaceTransport = \'local\' | \'ssh\';',
+  },
+  {
     name: 'WorkspaceUnarchiveSessionRequest',
     declaration: 'export interface WorkspaceUnarchiveSessionRequest {\n    readonly sessionId: SessionId;\n}',
   },
@@ -7315,7 +7385,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkspaceView',
-    declaration: 'export interface WorkspaceView {\n    readonly workspaceId: WorkspaceId;\n    readonly path: string;\n    readonly title: string;\n    readonly sessionIds: readonly SessionId[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
+    declaration: 'export interface WorkspaceView {\n    readonly workspaceId: WorkspaceId;\n    readonly transport: \'local\' | \'ssh\';\n    readonly environmentId?: string;\n    readonly path: string;\n    readonly title: string;\n    readonly sessionIds: readonly SessionId[];\n    readonly createdAt: string;\n    readonly updatedAt: string;\n}',
   },
 ]
 

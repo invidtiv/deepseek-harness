@@ -14,7 +14,11 @@ export type { DirectoryEntry, DirectoryListing } from '@deepseek-ai/dsh-host-dir
 /** One durable Workspace projected for browser consumers. */
 export interface WorkspaceView {
   readonly workspaceId: WorkspaceId
-  /** Canonical host directory path. */
+  /** Transport that reaches `path`: the harness host's filesystem, or a named SSH environment's. */
+  readonly transport: 'local' | 'ssh'
+  /** Named SSH environment when `transport` is `ssh`; absent for a local workspace. */
+  readonly environmentId?: string
+  /** Canonical directory path in the workspace's execution world. */
   readonly path: string
   /** User-visible title. */
   readonly title: string
@@ -57,9 +61,25 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
   }
 }
 
+/** One named SSH environment offered by the workspace picker. */
+export interface WorkspaceEnvironmentView {
+  /** Stable environment identity to pass back as `WorkspaceCreateRequest.environmentId`. */
+  readonly environmentId: string
+  /** Display label. */
+  readonly label: string
+  /** OpenSSH destination. */
+  readonly host: string
+  /** Explicit TCP port, when the environment declares one. */
+  readonly port?: number
+}
+
 /** Existing directory requested for Workspace adoption. */
 export interface WorkspaceCreateRequest {
   readonly path: string
+  /** Transport that reaches the directory; defaults to `local`. */
+  readonly transport?: 'local' | 'ssh'
+  /** Named SSH environment; required with `transport: 'ssh'` and rejected for a local workspace. */
+  readonly environmentId?: string
 }
 
 /** Created or previously registered Workspace. */

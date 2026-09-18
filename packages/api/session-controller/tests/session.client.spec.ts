@@ -145,6 +145,28 @@ describe('live event path', () => {
     expect(session.eventSource.getSnapshot()).toBe(before)
   })
 
+  it('gives two client Sessions the same window from one event log, independently', async ({ mock, start }) => {
+    const first = await sessionBench(mock, start, SID)
+    const second = await sessionBench(mock, start, SID)
+    mock.stream(FOLLOW, followScript(history(plainTurn(SessionSeq(0), 0, 'a', 'b'))))
+    await Promise.all([first.open(), second.open()])
+
+    const seeded = [0, 1, 2, 3, 4, 5]
+    expect(eventSeqs(first)).toEqual(seeded)
+    expect(eventSeqs(second)).toEqual(seeded)
+
+    // One live frame reaches both independent journals exactly once.
+    await pushEvent(mock, ev.assistant(SessionSeq(6), 1, 'c'))
+    expect(eventSeqs(first)).toEqual([...seeded, 6])
+    expect(eventSeqs(second)).toEqual([...seeded, 6])
+
+    // Disposing one client's Session ends only its own stream: the other keeps
+    // its window and receives the next event.
+    await first.dispose()
+    await pushEvent(mock, ev.turnStart(SessionSeq(7), 2))
+    expect(eventSeqs(second)).toEqual([...seeded, 6, 7])
+  })
+
   it('keeps the authoritative host blank bit across unrelated log events', async ({ mock, start }) => {
     const session = await opened(mock, start, [])
     session.handleBlank(true)

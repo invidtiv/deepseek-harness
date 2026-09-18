@@ -57,6 +57,12 @@ describe('SSH filesystem provider', () => {
     expect(fs.sandboxMode).toBe('read-only')
   })
 
+  it('reports that it does not address the harness host filesystem', async () => {
+    const { fs, dispatch } = await setup()
+    expect(fs.addressesHostFilesystem).toBe(false)
+    expect(dispatch).not.toHaveBeenCalled()
+  })
+
   it('compares POSIX canonical identities without accepting a sibling prefix', async () => {
     const { fs } = await setup()
     const makeTarget = (path: string): FsTarget => ({ targetKey: FsTargetKey(path), displayPath: path })
@@ -81,6 +87,28 @@ describe('SSH filesystem provider', () => {
     expect(await fs.lstat('missing')).toBeUndefined()
     expect(await fs.listDir(target)).toEqual(entries)
     expect(dispatch.mock.calls[2]).toEqual(['fs.lstat', { path: 'link', cwd: '/remote/work' }, undefined])
+  })
+
+  it('creates one remote directory through the helper', async () => {
+    const { fs, dispatch } = await setup()
+    dispatch.mockResolvedValue(null)
+    const signal = new AbortController().signal
+    await fs.mkdir(target, signal)
+    expect(dispatch).toHaveBeenCalledWith('fs.mkdir', { target }, signal)
+  })
+
+  it('forwards an explicit per-call policy for directory creation', async () => {
+    const { fs, dispatch } = await setup()
+    dispatch.mockResolvedValue(null)
+    const policy = { mode: 'danger-full-access' as const, workspaceRoot: '/remote/work' }
+    await fs.mkdir(target, undefined, policy)
+    expect(dispatch).toHaveBeenCalledWith('fs.mkdir', { target, policy }, undefined)
+  })
+
+  it('maps a remote already-exists refusal to FS_ALREADY_EXISTS', async () => {
+    const { fs, dispatch } = await setup()
+    dispatch.mockRejectedValue(new RemoteOperationError('exists', 'FS_ALREADY_EXISTS'))
+    await expect(fs.mkdir(target)).rejects.toMatchObject({ code: 'FS_ALREADY_EXISTS' })
   })
 
   it('decodes binary responses and retains caller-owned read limits', async () => {

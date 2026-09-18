@@ -13,6 +13,7 @@ import { mountAgentLoopTestDependencies } from '@deepseek-ai/dsh-agent-loop-test
 import CommandRuntime from '@deepseek-ai/dsh-commands'
 import { credentialRef, CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { CredentialInfo, CredentialKey, CredentialRecord, CredentialRecordEntry, CredentialRecordInfo, CredentialRef, ResolvedCredential } from '@deepseek-ai/dsh-credentials'
+import { LocalFileSystem } from '@deepseek-ai/dsh-fs-local'
 import JsonlSessionPersistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import FileSettingsProvider from '@deepseek-ai/dsh-settings-file'
 import Storage from '@deepseek-ai/dsh-storage'
@@ -493,6 +494,7 @@ export async function makeTelegramHarness(options: {
   if (options.commands !== false) await ctx.plugin(CommandRuntime)
   if (options.userQuestions !== false) await ctx.plugin(UserQuestionService)
   await ctx.plugin(ApprovalService)
+  await ctx.plugin(LocalFileSystem)
   if (options.workspaceRegistry === true) await ctx.plugin(WorkspaceRegistry)
   if (options.settings === true) {
     const settingsPath = join(await mkdtemp(join(tmpdir(), 'telegram-settings-')), 'settings.yaml')

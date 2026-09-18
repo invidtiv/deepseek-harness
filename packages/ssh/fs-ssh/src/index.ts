@@ -13,7 +13,8 @@ import { z } from 'zod'
 const errorCodes: Record<FsErrorCode, true> = {
   FS_NOT_FOUND: true, FS_NOT_DIRECTORY: true, FS_NOT_TEXT: true, FS_NOT_REGULAR_FILE: true,
   FS_TOO_LARGE: true, FS_PERMISSION_DENIED: true, FS_SANDBOX_DENIED: true, FS_IO_ERROR: true,
-  FS_STALE_VERSION: true, FS_NOT_OBSERVED: true, FS_AMBIGUOUS_EDIT: true, FS_EDIT_NOT_FOUND: true, FS_ABORTED: true,
+  FS_STALE_VERSION: true, FS_NOT_OBSERVED: true, FS_ALREADY_EXISTS: true, FS_AMBIGUOUS_EDIT: true,
+  FS_EDIT_NOT_FOUND: true, FS_ABORTED: true,
 }
 
 /** Remote filesystem paired with the SSH subprocess and sandbox providers. */
@@ -21,6 +22,9 @@ export class SshFileSystem extends FileSystem {
   static inject = ['ssh', 'sandboxPolicy']
 
   override get sandboxMode(): SandboxMode { return this.ctx.sandboxPolicy.defaultMode }
+
+  /** Targets name remote-host entries, so a host path chooser cannot address them. */
+  override get addressesHostFilesystem(): boolean { return false }
 
   override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
     return await this.call('fs.resolve', { path, cwd: opts?.cwd }, targetSchema, opts?.signal) as FsTarget
@@ -77,6 +81,10 @@ export class SshFileSystem extends FileSystem {
 
   override async listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]> {
     return await this.call('fs.list', { target }, entriesSchema, signal) as FsDirEntry[]
+  }
+
+  override async mkdir(target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy): Promise<void> {
+    await this.call('fs.mkdir', sandboxPolicy === undefined ? { target } : { target, policy: sandboxPolicy }, z.null(), signal)
   }
 
   override async writeText(

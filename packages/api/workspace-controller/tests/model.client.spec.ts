@@ -10,6 +10,7 @@ import type {
   WorkspaceCreateValue,
   WorkspaceDeleteRequest,
   WorkspaceDeleteValue,
+  WorkspaceEnvironmentView,
   WorkspaceFollowFrame,
   WorkspaceInsertBeforeRequest,
   WorkspaceInsertSessionBeforeRequest,
@@ -33,6 +34,7 @@ function workspace(
 ): WorkspaceView {
   return {
     workspaceId: wid(id),
+    transport: 'local',
     path: `/w/${id}`,
     title: id,
     sessionIds,
@@ -134,6 +136,11 @@ class FakeWorkspaceRemote implements WorkspaceRemote {
   listFiles(request: FileListRequest): Promise<RemoteResult<FileListing>> {
     this.record('listFiles', request)
     return Promise.resolve(remoteOk({ path: request.path ?? '/home/test', entries: [], truncated: false }))
+  }
+
+  environments(): Promise<RemoteResult<WorkspaceEnvironmentView[]>> {
+    this.record('environments', undefined)
+    return Promise.resolve(remoteOk([]))
   }
 
   async *follow(_signal?: AbortSignal): AsyncGenerator<WorkspaceFollowFrame> {}
@@ -456,5 +463,22 @@ describe('ClientWorkspaceModel', () => {
     expect(model.getSnapshot().items).toEqual([])
     model.removeView(wid('gone'))
     expect(model.getSnapshot().items).toEqual([])
+  })
+})
+describe('ClientWorkspaceModel file verbs', () => {
+  it('forwards a read and both listing forms to the Remote', async () => {
+    const remote = new FakeWorkspaceRemote()
+    const model = modelFor(remote)
+    const signal = new AbortController().signal
+
+    await expect(model.readFile('/work/a.txt', signal)).resolves.toMatchObject({ ok: true })
+    expect(remote.calls).toContainEqual({ method: 'readFile', request: { path: '/work/a.txt' } })
+
+    await expect(model.listFiles('/work', signal)).resolves.toMatchObject({ ok: true })
+    expect(remote.calls).toContainEqual({ method: 'listFiles', request: { path: '/work' } })
+
+    // An absent path asks the Host for its configured default project root.
+    await expect(model.listFiles()).resolves.toMatchObject({ ok: true })
+    expect(remote.calls).toContainEqual({ method: 'listFiles', request: {} })
   })
 })

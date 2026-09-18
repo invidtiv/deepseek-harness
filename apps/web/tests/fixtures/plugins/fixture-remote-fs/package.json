@@ -1,0 +1,8 @@
+{
+  "name": "@fixture/remote-fs",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Web e2e fixture: a filesystem whose execution world is not the harness host.",
+  "type": "module",
+  "main": "index.js"
+}

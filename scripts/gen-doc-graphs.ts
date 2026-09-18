@@ -550,6 +550,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns one authenticated OpenSSH connection, installed helper identity, independent program streams and disconnect cleanup for the paired remote providers.',
   },
   {
+    key: 'sshEnvironments',
+    pkg: 'ssh-environments',
+    title: 'Named SSH environment registry',
+    mode: 'core',
+    note: 'Registers the ssh-environments settings namespace and resolves a stable id into validated OpenSSH connection options. It opens no connection, stores no secret, and leaves connection, helper and cleanup ownership with the SSH provider family.',
+  },
+  {
     key: 'subprocess',
     pkg: 'subprocess',
     title: 'Subprocess seam',

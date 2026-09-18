@@ -86,6 +86,12 @@ describe('read-only', () => {
     await writeFile(path, 'hello')
     expect(await fs.readText(await target(path))).toBe('hello')
   })
+
+  it('denies directory creation, leaving nothing on disk', async () => {
+    const path = join(workspace, 'denied-dir')
+    await expect(fs.mkdir(await target(path))).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+    expect(existsSync(path)).toBe(false)
+  })
 })
 
 describe('workspace-write containment', () => {
@@ -96,6 +102,18 @@ describe('workspace-write containment', () => {
     const outcome = await fs.writeText(await target(path), 'inside')
     expect(outcome.operation).toBe('create')
     expect(await readFile(path, 'utf8')).toBe('inside')
+  })
+
+  it('creates a directory under the workspace', async () => {
+    const path = join(workspace, 'created-dir')
+    await fs.mkdir(await target(path))
+    expect(existsSync(path)).toBe(true)
+  })
+
+  it('denies directory creation outside the workspace, leaving nothing on disk', async () => {
+    const path = join(outside, 'outside-dir')
+    await expect(fs.mkdir(await target(path))).rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
+    expect(existsSync(path)).toBe(false)
   })
 
   it('a write to the platform temp area lands (parity with the bash runner grant)', async () => {
@@ -218,6 +236,13 @@ describe('the per-call policy override (escalation)', () => {
     const path = join(outside, 'granted-full.txt')
     await fs.writeText(await target(path), 'full', undefined, undefined, { mode: 'danger-full-access', workspaceRoot: workspace })
     expect(await readFile(path, 'utf8')).toBe('full')
+  })
+
+  it('a danger-full-access stamp lets directory creation land outside the workspace', async () => {
+    await boot('read-only')
+    const path = join(outside, 'granted-dir')
+    await fs.mkdir(await target(path), undefined, { mode: 'danger-full-access', workspaceRoot: workspace })
+    expect(existsSync(path)).toBe(true)
   })
 })
 

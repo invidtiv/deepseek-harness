@@ -21,6 +21,10 @@ import type {
 
 /** A minimal in-memory fake implementing the provider primitives. */
 class FakeFileSystem extends FileSystem {
+
+  override async mkdir(): Promise<void> {
+    /* This in-memory fake supports reads and writes only; directory creation is not exercised. */
+  }
   files = new Map<string, string>()
 
   override async resolve(path: string): Promise<FsTarget> {
@@ -91,6 +95,7 @@ describe('FileSystem provider seam', () => {
     await ctx.plugin(FakeFileSystem)
     const fs = ctx.fs as FakeFileSystem
     expect(fs.sandboxMode).toBeUndefined()
+    expect(fs.addressesHostFilesystem).toBe(true)
     expect(fs.processPathFromHostPath('/host/file')).toBeUndefined()
     fs.files.set('a.txt', 'hi')
     const target = await fs.resolve('a.txt')
