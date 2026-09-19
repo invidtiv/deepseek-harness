@@ -58,9 +58,10 @@ class MemorySettings extends SettingsProvider {
 
 /**
  * Boot the controller over a storage domain and the composed filesystem.
- * @param options - compose the real SSH environment registry with a memory settings provider.
+ * @param options - compose the real SSH environment registry with a memory settings provider, and
+ *   name the environment a composed connection reaches.
  */
-async function harness(options: { sshEnvironments?: boolean } = {}) {
+async function harness(options: { sshEnvironments?: boolean; reachableEnvironment?: string } = {}) {
   const root = realpathSync.native(mkdtempSync(join(tmpdir(), 'dsh-workspace-controller-')))
   tempDirs.push(root)
   const ctx = new Context()
@@ -77,6 +78,9 @@ async function harness(options: { sshEnvironments?: boolean } = {}) {
   if (options.sshEnvironments === true) {
     await ctx.plugin(MemorySettings)
     await ctx.plugin(SshEnvironments)
+  }
+  if (options.reachableEnvironment !== undefined) {
+    ctx.provide('ssh', { environmentId: options.reachableEnvironment } as never)
   }
   const dispose = (): void => {}
   ctx.provide('typert', {
@@ -377,7 +381,7 @@ describe('WorkspaceController follow', () => {
 
 describe('Workspace transport projection', () => {
   it('carries the locator through commands and the follow baseline', async () => {
-    const { controller, root } = await harness()
+    const { controller, root } = await harness({ reachableEnvironment: 'build01' })
     const local = await controller.create({ path: stageDir(root, 'locator-local') })
     expect(local.workspace).toMatchObject({ transport: 'local' })
     expect(local.workspace.environmentId).toBeUndefined()
@@ -438,9 +442,32 @@ describe('WorkspaceController environments', () => {
       ],
     } as never)
     expect(controller.environments()).toEqual([
-      { environmentId: 'build01', label: 'Build 01', host: 'build01.example', port: 2222 },
-      { environmentId: 'dev', label: 'dev', host: 'dev.example' },
+      { environmentId: 'build01', label: 'Build 01', host: 'build01.example', port: 2222, reachable: false },
+      { environmentId: 'dev', label: 'dev', host: 'dev.example', reachable: false },
     ])
+  })
+
+  it('marks the environments a composed connection reaches', async () => {
+    const { controller, ctx } = await harness({ reachableEnvironment: 'build01' })
+    ctx.provide('sshEnvironments', {
+      list: () => [
+        { id: 'build01', label: 'Build 01', host: 'build01.example' },
+        { id: 'dev', label: 'dev', host: 'dev.example' },
+      ],
+    } as never)
+
+    expect(controller.environments()).toEqual([
+      { environmentId: 'build01', label: 'Build 01', host: 'build01.example', reachable: true },
+      { environmentId: 'dev', label: 'dev', host: 'dev.example', reachable: false },
+    ])
+  })
+
+  it('refuses a workspace naming an environment this deployment cannot reach', async () => {
+    const { controller, root } = await harness({ reachableEnvironment: 'build01' })
+
+    await expect(controller.create({
+      path: stageDir(root, 'unreachable'), transport: 'ssh', environmentId: 'build09',
+    })).rejects.toMatchObject({ code: 'workspace/unknown-environment' })
   })
 
   it('reads the composed environment registry and projects no connection reference', async () => {
@@ -457,8 +484,8 @@ describe('WorkspaceController environments', () => {
 
     const projected = controller.environments()
     expect(projected).toEqual([
-      { environmentId: 'build01', label: 'Build 01', host: 'build01.example', port: 2222 },
-      { environmentId: 'dev', label: 'dev', host: 'dev.example' },
+      { environmentId: 'build01', label: 'Build 01', host: 'build01.example', port: 2222, reachable: false },
+      { environmentId: 'dev', label: 'dev', host: 'dev.example', reachable: false },
     ])
     // The picker's projection is the only environment data a client reads; the
     // login name, key path and jump destination never cross it.

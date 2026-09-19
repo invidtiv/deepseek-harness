@@ -13,7 +13,11 @@ export class SshSandboxProvider extends SandboxProvider {
   override async confine(argv: readonly string[], policy: SandboxPolicy, signal?: AbortSignal): Promise<ConfinedArgv> {
     signal?.throwIfAborted()
     try {
-      const confined = await this.ctx.ssh.request('sandbox', { argv, policy }, factsSchema, signal)
+      // The policy's workspace root selects the world whose backend resolves and
+      // applies the sandbox; a targetless deployment keeps its own connection.
+      const worlds = this.ctx.get('sshWorlds')
+      const ssh = worlds === undefined ? this.ctx.ssh : worlds.connectionFor(policy.workspaceRoot)
+      const confined = await ssh.request('sandbox', { argv, policy }, factsSchema, signal)
       signal?.throwIfAborted()
       return {
         ...confined,

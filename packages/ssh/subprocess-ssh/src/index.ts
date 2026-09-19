@@ -5,7 +5,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { SubprocessRuntime, SubprocessExecutableNotFoundError } from '@deepseek-ai/dsh-subprocess'
 import type { SubprocessCollectedOutputs, SubprocessHandle, SubprocessOutcome, SubprocessOutputMode, SubprocessSpawnSpec, SubprocessTerminalHandle, SubprocessTerminalEnvironment, SubprocessTerminalSignal, SubprocessTerminalSpawnSpec } from '@deepseek-ai/dsh-subprocess'
 import { OutputCollector } from '@deepseek-ai/dsh-subprocess-local/output'
-import type { SshConnection } from '@deepseek-ai/dsh-ssh'
+import type { SshWorldConnection } from '@deepseek-ai/dsh-ssh'
 import { doneSchema, foregroundSchema, terminalActivitySchema, outputSnapshotFrameLimit, outputSnapshotSchema, preparedSchema, remotePath, streamEndpointSchema } from '@deepseek-ai/dsh-ssh/schemas'
 import type { SshProcessId } from '@deepseek-ai/dsh-ssh/schemas'
 import { SshRpcPeer, RemoteOperationError } from '@deepseek-ai/dsh-ssh/protocol'
@@ -42,7 +42,7 @@ class RemoteProcess implements SubprocessHandle {
   private spills: { stdout?: string | undefined; stderr?: string | undefined } = {}
   private readonly updateCollection: Partial<Record<'stdout' | 'stderr', (snapshot: { tail: string; totalBytes: number }, final: boolean) => void>> = {}
 
-  constructor(private readonly ssh: SshConnection, private readonly spec: SubprocessSpawnSpec) {
+  constructor(private readonly ssh: SshWorldConnection, private readonly spec: SubprocessSpawnSpec) {
     this.stdin = spec.stdio.stdin === 'pipe' ? this.inbound : undefined
     this.stdout = spec.stdio.stdout === 'pipe' ? this.out : undefined
     this.stderr = spec.stdio.stderr === 'pipe' ? this.err : undefined
@@ -253,6 +253,9 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
   }
 
   override async resolveExecutable(command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal): Promise<string> {
+    // The seam carries no target for this lookup, so a multi-world deployment
+    // refuses it instead of resolving on whichever world happens to be default.
+    this.requireDefaultWorld('executable resolution')
     try {
       return await this.ctx.ssh.request('executable', { command, env }, remotePath, signal)
     } catch (error) {
@@ -264,6 +267,7 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
   }
 
   override terminalEnvironment(signal?: AbortSignal): Promise<SubprocessTerminalEnvironment> {
+    this.requireDefaultWorld('terminal environment resolution')
     return this.ctx.ssh.request('terminal.environment', {}, z.object({
       platform: z.enum(['posix', 'windows']), defaultShell: z.string().optional(),
     }).strict().transform(value => ({ platform: value.platform,
@@ -271,10 +275,21 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
     })), signal)
   }
 
+  /** The connection that owns one remote path: the composed pool's routing, or the deployment's own connection. */
+  private connectionFor(path: string): SshWorldConnection {
+    const worlds = this.ctx.get('sshWorlds')
+    return worlds === undefined ? this.ctx.ssh : worlds.connectionFor(path)
+  }
+
+  /** Refuse a target-less lookup while the deployment composes worlds it cannot select between. */
+  private requireDefaultWorld(operation: string): void {
+    this.ctx.get('sshWorlds')?.requireDefaultWorld(operation)
+  }
+
   override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     this.lifetime.signal.throwIfAborted()
     spec.signal?.throwIfAborted()
-    const handle = new RemoteProcess(this.ctx.ssh, spec)
+    const handle = new RemoteProcess(this.connectionFor(spec.cwd), spec)
     this.live.add(handle)
     void handle.done.then(() => handle.waitForExit()).then(() => handle.streamsClosed)
       .then(() => { this.live.delete(handle) }).catch(() => {})
@@ -291,7 +306,7 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
   }
 
   private async createTerminal(spec: SubprocessTerminalSpawnSpec, signal: AbortSignal): Promise<SubprocessTerminalHandle> {
-    const ssh = this.ctx.ssh
+    const ssh = this.connectionFor(spec.cwd)
     const prepared = await ssh.request('process.prepare', {
       argv: spec.argv, cwd: spec.cwd, env: environment(spec.env), graceMs: spec.graceMs,
       terminal: { rows: spec.rows, cols: spec.cols, terminalType: spec.terminalType, shellActivity: spec.shellActivity },

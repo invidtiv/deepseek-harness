@@ -90,6 +90,13 @@ declare class SshConnection extends Service {
   static Config: schema<Config>;
   /** Verified remote helper coordinates; callers must await this before launch. */
   readonly ready: Promise<Hello>;
+  /**
+   * Named ssh-environments registry identity this connection resolved; absent
+   * when the connection was configured with an inline OpenSSH destination.
+   * Owners that project where workspace directories live read it by service
+   * name, so they need no dependency on this package.
+   */
+  readonly environmentId: string | undefined;
   constructor(ctx: Context, config: Config);
   /** Hold plugin readiness until the remote identity and helper digest are verified. */
   async [Service.init](): Promise<void>;
@@ -192,4 +199,52 @@ resolve(id: SshEnvironmentId): SshEnvironment
 ```
 
 Source: [`packages/ssh/ssh-environments/src/index.ts`](../../packages/ssh/ssh-environments/src/index.ts)
+
+<a id="ctxsshworlds--sshworlds"></a>
+
+### `ctx.sshWorlds` — `SshWorlds`
+
+Routes each remote operation to the connection that owns its target's world.
+
+```ts cordis-catalog
+/**
+ * Register one composed connection for the world it serves.
+ * @param environmentId - the world's environment id; undefined is the deployment default.
+ * @param connection - the connection that owns that world.
+ * @returns the disposer removing this registration.
+ */
+register(environmentId: string | undefined, connection: SshWorldConnection): () => void
+
+/**
+ * List the worlds with a composed connection.
+ * @returns the environment ids in registration order; the default connection contributes none.
+ */
+list(): readonly string[]
+
+/**
+ * Refuse an operation that carries no target while named worlds are composed.
+ * @param operation - the provider operation that needs a single world.
+ * @throws {SshWorldMultipleError} when more than one named world is composed.
+ */
+requireDefaultWorld(operation: string): void
+
+/**
+ * Resolve the connection one remote path belongs to.
+ * @param path - absolute remote path in some composed world.
+ * @returns the connection serving that path's world.
+ * @throws {SshWorldUnavailableError} when the path's world has no composed connection.
+ * @throws {SshWorldAmbiguousError} when two worlds claim the path.
+ */
+connectionFor(path: string): SshWorldConnection
+
+/**
+ * Resolve the world one remote path belongs to: the longest owning locator wins.
+ * @param path - absolute remote path in some composed world.
+ * @returns the owning environment id, or undefined for the default connection.
+ * @throws {SshWorldAmbiguousError} when two worlds claim the same directory.
+ */
+worldFor(path: string): string | undefined
+```
+
+Source: [`packages/ssh/ssh/src/worlds.ts`](../../packages/ssh/ssh/src/worlds.ts)
 <!-- END GENERATED cordis-surface -->

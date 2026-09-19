@@ -21,7 +21,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-将本服务与一个 settings 提供方（例如 [`dsh-settings-file`](../../settings/settings-file/README.zh.md)）以及 [SSH 提供方族](../ssh/README.zh.md) 一同组合。在 `ssh-environments` settings 小节中配置环境：
+Web bundle 会把本服务与 settings 提供方一同组合，因此插件设置页的 **SSH 环境**卡片可以定义这些 id；在服务器上执行文件的部署还会组合 [SSH 提供方族](../ssh/README.zh.md)，并在其中选用一个 id。在 `ssh-environments` settings 小节中配置环境：
 
 ```yaml
 ssh-environments:
@@ -50,7 +50,7 @@ ssh-environments:
 
 - **不支持交互式认证。** SSH 提供方启用 `BatchMode`；密码与口令提示不可用，因此部署须使用密钥或 SSH agent 认证。
 - **单一扁平 settings 小节。** 环境存放在一个 settings 命名空间中，没有密钥槽位；未来的口令或令牌字段必须使用 `role('secret')`，让 settings 的 wire 脱敏将其移除。
-- **尚无 settings 卡片。** 该命名空间已注册，并可通过 `settings.describe()` 发现，但目前没有任何 settings 卡片渲染它：在卡片通过客户端 settings-scope seam 绑定同一命名空间之前，请直接编辑 `$DSH_HOME/settings.yaml` 中的 `ssh-environments` 小节。
+- **settings 卡片每个环境只编辑两个字段。**[SSH 环境卡片](../../client/ui-settings-plugins/README.zh.md)通过客户端 settings-scope seam 绑定该命名空间，编辑每个环境的标识与 OpenSSH 目标；其余选项——`identityFile`、`identityAgent`、`proxyJump`、`configFile`、host-key 策略与超时——均原样写回，因此仍需来自 `$DSH_HOME/settings.yaml` 或 `~/.ssh/config`。
 - **不拥有连接。** 注册表只解析选项；它从不打开、保活或重连连接。
 - **无不变式伴随包。** 不发布运行时不变量伴随包，因为注册表不拥有独立的运行时状态：它读取一个 settings 命名空间并返回分离的值，所有持久关系由 settings 提供方自身的测试观察。
 

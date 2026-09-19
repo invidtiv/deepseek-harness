@@ -62,8 +62,10 @@ describe.skipIf(process.platform === 'win32')('SSH helper wire and lifecycle bou
     const test = await createHelperHarness()
     try {
       const target = await test.client.request('fs.resolve', { path: 'created' }, targetSchema)
-      await expect(test.client.request('fs.mkdir', { target }, z.null())).resolves.toBeNull()
-      expect((await stat(`${test.root}/created`)).isDirectory()).toBe(true)
+      // The helper's own policy is read-only, so a creation that carries no
+      // policy is refused instead of running unconfined.
+      await expect(test.client.request('fs.mkdir', { target }, z.null()))
+        .rejects.toMatchObject({ code: 'FS_SANDBOX_DENIED' })
       // An explicit policy is resolved on the remote and enforced beside the creation.
       const escalated = await test.client.request('fs.resolve', { path: 'escalated' }, targetSchema)
       await expect(test.client.request('fs.mkdir', {

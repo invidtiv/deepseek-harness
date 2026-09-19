@@ -29,7 +29,9 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { SessionSearchResultItem } from '@deepseek-ai/dsh-api-session-controller/client'
 import type { RemoteHostFacts } from '@deepseek-ai/dsh-api-remotes/client'
-import type { WorkspaceId, WorkspaceView } from '@deepseek-ai/dsh-api-workspace-controller/client'
+import type {
+  WorkspaceEnvironmentView, WorkspaceId, WorkspaceView,
+} from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { createWorkspaceViewStore } from '../stores.ts'
 
@@ -134,8 +136,17 @@ export type WorkspaceBrowserInjected = {
    * session clears the selection into the New Session view state.
    */
   archiveSession: (sessionId: SessionId) => Promise<void>
-  /** Adopt a picked host directory as a real Workspace before targeting a Session. */
-  createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
+  /**
+   * Adopt a picked host directory as a real Workspace before targeting a
+   * Session; a named SSH environment creates it in that world.
+   */
+  createWorkspace: (input: { path: string; environmentId?: string }) => Promise<WorkspaceView>
+  /**
+   * List the deployment's named SSH environments when the add menu opens, so a
+   * listed Workspace shows its label and each reachable world offers its own
+   * add action.
+   */
+  listEnvironments: () => Promise<readonly WorkspaceEnvironmentView[]>
 }
 
 /** Full browser props: shell owner share + viewing store + injected actions + the locale seat. */
@@ -153,8 +164,16 @@ export type WorkspaceBrowserProps =
  * supplies the implicit index signature required by the registry.
  */
 export type WorkspacePickerInjected = DirectoryPickingInjected & {
-  /** Adopt a picked host directory as a real Workspace before targeting a Session. */
-  createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
+  /**
+   * Adopt a picked host directory as a real Workspace before targeting a
+   * Session; a named SSH environment creates it in that world.
+   */
+  createWorkspace: (input: { path: string; environmentId?: string }) => Promise<WorkspaceView>
+  /**
+   * List the deployment's named SSH environments, so a listed Workspace shows
+   * the label its environment declares instead of the recorded id.
+   */
+  listEnvironments: () => Promise<readonly WorkspaceEnvironmentView[]>
 }
 
 /**

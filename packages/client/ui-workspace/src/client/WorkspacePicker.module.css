@@ -18,3 +18,23 @@
 .menuStatus {
   color: var(--dsw-alias-label-secondary);
 }
+
+/* A listed Workspace row: title then the server its paths live in. */
+.menuLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.menuTitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.menuServer {
+  flex: none;
+  font-size: 12px;
+  color: var(--dsw-alias-label-secondary);
+}

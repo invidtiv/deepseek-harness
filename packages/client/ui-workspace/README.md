@@ -25,7 +25,7 @@ This package lets users browse grouped or flat Session lists, choose a Workspace
 <a id="use-this-package"></a>
 ## Use this package
 
-Use the sidebar to browse Workspaces and their Sessions, reorder them, and start new ones; use the picker in the Session Intent hero to choose a Workspace for a new session. An open Workspace shows five non-blank Sessions by default and keeps the selected blank **New Session** as one provisional extra row until its first prompt. **Show more** reveals the hidden remainder; closing and reopening the Workspace restores this folded projection.
+Use the sidebar to browse Workspaces and their Sessions, reorder them, and start new ones; use the picker in the Session Intent hero to choose a Workspace for a new session. An open Workspace shows five non-blank Sessions by default and keeps the selected blank **New Session** as one provisional extra row until its first prompt. **Show more** reveals the hidden remainder; closing and reopening the Workspace restores this folded projection. A Workspace whose directories live on a named SSH environment shows the label that environment declares in the picker menu beside its title — the recorded id when the served list does not carry that environment — and one on an unnamed SSH world shows the remote-server label; a Workspace on the Harness host's own filesystem shows neither. The menu reads the environment list through the Workspace Client service when it opens, so a failed read leaves the recorded ids.
 
 ### Reordering and view options
 

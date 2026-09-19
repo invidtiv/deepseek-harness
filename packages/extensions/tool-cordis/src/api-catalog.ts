@@ -2495,6 +2495,11 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [],
       },
       {
+        signature: 'readonly environmentId: string | undefined',
+        description: 'Named ssh-environments registry identity this connection resolved; absent when the connection was configured with an inline OpenSSH destination. Owners that project where workspace directories live read it by service name, so they need no dependency on this package.',
+        parameters: [],
+      },
+      {
         signature: 'async request<T>(method: string, params: unknown, result: z.ZodType<T>, signal?: AbortSignal, wait: boolean = false): Promise<T>',
         description: 'Send a helper operation; cancellation never replays an ambiguous mutation.',
         parameters: [{ name: 'method', description: 'the private helper operation.' }, { name: 'params', description: 'JSON request fields validated by the helper.' }, { name: 'result', description: 'response validation before returning provider-visible data.' }, { name: 'signal', description: 'cancellation, which does not undo completed remote effects.' }, { name: 'wait', description: 'allow a process observation to outlast the administrative deadline.' }],
@@ -2536,6 +2541,45 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         parameters: [{ name: 'id', description: 'stable environment identity.' }],
         returns: 'the resolved connection options.',
         throws: ['{SshEnvironmentUnknownError} when the id is not configured.'],
+      },
+    ],
+  },
+  {
+    key: 'sshWorlds',
+    summary: 'Routes each remote operation to the connection that owns its target\'s world.',
+    description: 'Routes each remote operation to the connection that owns its target\'s world.',
+    methods: [
+      {
+        signature: 'register(environmentId: string | undefined, connection: SshWorldConnection): () => void',
+        description: 'Register one composed connection for the world it serves.',
+        parameters: [{ name: 'environmentId', description: 'the world\'s environment id; undefined is the deployment default.' }, { name: 'connection', description: 'the connection that owns that world.' }],
+        returns: 'the disposer removing this registration.',
+      },
+      {
+        signature: 'list(): readonly string[]',
+        description: 'List the worlds with a composed connection.',
+        parameters: [],
+        returns: 'the environment ids in registration order; the default connection contributes none.',
+      },
+      {
+        signature: 'requireDefaultWorld(operation: string): void',
+        description: 'Refuse an operation that carries no target while named worlds are composed.',
+        parameters: [{ name: 'operation', description: 'the provider operation that needs a single world.' }],
+        throws: ['{SshWorldMultipleError} when more than one named world is composed.'],
+      },
+      {
+        signature: 'connectionFor(path: string): SshWorldConnection',
+        description: 'Resolve the connection one remote path belongs to.',
+        parameters: [{ name: 'path', description: 'absolute remote path in some composed world.' }],
+        returns: 'the connection serving that path\'s world.',
+        throws: ['{SshWorldUnavailableError} when the path\'s world has no composed connection.', '{SshWorldAmbiguousError} when two worlds claim the path.'],
+      },
+      {
+        signature: 'worldFor(path: string): string | undefined',
+        description: 'Resolve the world one remote path belongs to: the longest owning locator wins.',
+        parameters: [{ name: 'path', description: 'absolute remote path in some composed world.' }],
+        returns: 'the owning environment id, or undefined for the default connection.',
+        throws: ['{SshWorldAmbiguousError} when two worlds claim the same directory.'],
       },
     ],
   },
@@ -6488,6 +6532,10 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export type SshStreamEndpoint = z.infer<typeof streamEndpointSchema>;',
   },
   {
+    name: 'SshWorldConnection',
+    declaration: 'export interface SshWorldConnection {\n    request<T>(method: string, params: unknown, result: z.ZodType<T>, signal?: AbortSignal, wait?: boolean): Promise<T>;\n    connectStream(endpoint: SshStreamEndpoint, signal?: AbortSignal): Promise<Socket>;\n    dispose(): Promise<void>;\n}',
+  },
+  {
     name: 'StorageBackend',
     declaration: 'export interface StorageBackend {\n    readonly kv?: KvFacet;\n    close(): Promise<void>;\n}',
   },
@@ -7313,7 +7361,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'WorkspaceEnvironmentView',
-    declaration: 'export interface WorkspaceEnvironmentView {\n    readonly environmentId: string;\n    readonly label: string;\n    readonly host: string;\n    readonly port?: number;\n}',
+    declaration: 'export interface WorkspaceEnvironmentView {\n    readonly environmentId: string;\n    readonly label: string;\n    readonly host: string;\n    readonly port?: number;\n    readonly reachable: boolean;\n}',
   },
   {
     name: 'WorkspaceFileBytes',

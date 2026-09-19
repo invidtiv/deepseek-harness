@@ -14,6 +14,8 @@ import { buildMasterArgv, resolveConnectionEnvironment, type SshEnvironment, typ
 
 export { resolveConnectionEnvironment, resolveSshEnvironment } from './environment.ts'
 export type { HostKeyChecking, SshConnectionSelection, SshEnvironment, SshEnvironmentResolver } from './environment.ts'
+export { SshWorldAmbiguousError, SshWorldUnavailableError, SshWorlds } from './worlds.ts'
+export type { SshWorldConnection, SshWorldLocator, SshWorldLocatorSource } from './worlds.ts'
 
 type Hello = z.infer<typeof helloSchema>
 
@@ -89,6 +91,13 @@ export class SshConnection extends Service {
 
   /** Verified remote helper coordinates; callers must await this before launch. */
   readonly ready: Promise<Hello>
+  /**
+   * Named ssh-environments registry identity this connection resolved; absent
+   * when the connection was configured with an inline OpenSSH destination.
+   * Owners that project where workspace directories live read it by service
+   * name, so they need no dependency on this package.
+   */
+  readonly environmentId: string | undefined
   private rpc: SshRpcPeer | undefined
   private child: ChildProcessWithoutNullStreams | undefined
   private childClosed: Promise<void> | undefined
@@ -118,6 +127,15 @@ export class SshConnection extends Service {
     }).refine(value => (value.bootstrapPath === undefined) === (value.bootstrapHash === undefined), 'bootstrapPath and bootstrapHash must be paired')
       .parse(config) as typeof this.config
     this.environment = resolveConnectionEnvironment(config, ctx.get('sshEnvironments') as SshEnvironmentResolver | undefined)
+    this.environmentId = config.environment
+    // A composed pool owns routing between environments; this connection
+    // contributes itself under the id its configuration resolved.
+    ctx.inject(['sshWorlds'], (worldsCtx) => {
+      worldsCtx.effect(
+        () => worldsCtx.sshWorlds.register(this.environmentId, this),
+        'ssh: world registration',
+      )
+    })
     this.ready = this.start()
     // Startup uses Node I/O, local validation, and Error-valued RPC failures.
     void this.ready.catch((error: unknown) => { this.fail(error as Error) })

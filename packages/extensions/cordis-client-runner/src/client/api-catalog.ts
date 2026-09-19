@@ -404,9 +404,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Workspace Controller\'s Client service face.',
     methods: [
       {
-        signature: 'create(input: { path: string }): Promise<WorkspaceView>',
+        signature: 'create(input: { path: string; environmentId?: string }): Promise<WorkspaceView>',
         description: 'Register an existing path as a Workspace.',
-        parameters: [{ name: 'input', description: 'Host create payload.' }],
+        parameters: [{ name: 'input', description: 'Host create payload; a named SSH environment selects the world.' }],
         returns: 'the created or idempotently resolved Workspace.',
       },
       {

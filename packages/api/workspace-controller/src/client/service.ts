@@ -4,7 +4,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { RemoteFailure } from '@deepseek-ai/dsh-typert-protocol'
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
-import type { FileContents, FileListing, WorkspaceView } from '../types.ts'
+import type { FileContents, FileListing, WorkspaceEnvironmentView, WorkspaceView } from '../types.ts'
 import type { ClientWorkspaceModel, WorkspaceSnapshot } from './model.ts'
 
 /** Structured create failure for callers that distinguish Host business errors. */
@@ -37,6 +37,16 @@ export class FileListError extends Error {
   }
 }
 
+/** Structured environment-listing failure for configuration consumers. */
+export class EnvironmentListError extends Error {
+  override readonly name = 'EnvironmentListError'
+
+  /** @param rpcError - Host business or folded transport failure. */
+  constructor(readonly rpcError: RemoteFailure) {
+    super(`environment listing failed: ${rpcError.code}: ${rpcError.message}`)
+  }
+}
+
 /** Bare observable source for the Workspace Controller snapshot. */
 export interface WorkspaceSource {
   /** Read the identity-stable current snapshot. */
@@ -55,10 +65,10 @@ export interface IWorkspaces {
   readonly list: WorkspaceSource
   /**
    * Register an existing path as a Workspace.
-   * @param input - Host create payload.
+   * @param input - Host create payload; a named SSH environment selects the world.
    * @returns the created or idempotently resolved Workspace.
    */
-  create(input: { path: string }): Promise<WorkspaceView>
+  create(input: { path: string; environmentId?: string }): Promise<WorkspaceView>
   /**
    * Rename a Workspace.
    * @param workspaceId - target Workspace.
@@ -113,6 +123,12 @@ export interface IWorkspaces {
    * @returns the level's listing.
    */
   listFiles(path?: string, signal?: AbortSignal): Promise<FileListing>
+  /**
+   * List the deployment's named SSH environments for surfaces that label a
+   * workspace's execution world.
+   * @returns each configured environment, or an empty list when none is.
+   */
+  environments(): Promise<readonly WorkspaceEnvironmentView[]>
 }
 
 /** Owns the bare Workspace snapshot and Workspace-only commands. */
@@ -128,7 +144,7 @@ export class WorkspaceController extends Service implements IWorkspaces {
     this.list = model
   }
 
-  async create(input: { path: string }): Promise<WorkspaceView> {
+  async create(input: { path: string; environmentId?: string }): Promise<WorkspaceView> {
     const result = await this.model.create(input)
     if (!result.ok) throw new WorkspaceCreateError(result.error)
     return result.value.workspace
@@ -179,6 +195,12 @@ export class WorkspaceController extends Service implements IWorkspaces {
   async listFiles(path?: string, signal?: AbortSignal): Promise<FileListing> {
     const result = await this.model.listFiles(path, signal)
     if (!result.ok) throw new FileListError(result.error)
+    return result.value
+  }
+
+  async environments(): Promise<readonly WorkspaceEnvironmentView[]> {
+    const result = await this.model.environments()
+    if (!result.ok) throw new EnvironmentListError(result.error)
     return result.value
   }
 }

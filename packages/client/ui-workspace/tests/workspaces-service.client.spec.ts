@@ -191,6 +191,7 @@ class FakeWorkspaces implements IWorkspaces {
   declare readonly insertSessionBefore: IWorkspaces['insertSessionBefore']
   declare readonly readFile: IWorkspaces['readFile']
   declare readonly listFiles: IWorkspaces['listFiles']
+  declare readonly environments: IWorkspaces['environments']
 
   constructor(initial: WorkspaceSnapshot) {
     this.list = new MutableSource(initial)

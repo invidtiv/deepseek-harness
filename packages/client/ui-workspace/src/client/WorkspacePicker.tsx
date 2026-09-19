@@ -14,10 +14,11 @@ import {
   Button, IconFolderClose16, IconPlusOutline16, Menu, Modal, type MenuEntry,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  WorkspaceId, WorkspaceSnapshot, WorkspaceView,
+  WorkspaceEnvironmentView, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SnapshotSelectorHook } from '@deepseek-ai/dsh-client-ui-slots'
 import type { DirectoryFlowOwnerProps, WorkspacePickerProps } from './contract/slots.ts'
+import { workspaceServerLabel } from './server-label.ts'
 import css from './WorkspacePicker.module.css'
 
 const ADD_WORKSPACE = '::add-workspace'
@@ -32,8 +33,21 @@ export interface WorkspacePickFlowProps {
   anchorRef?: RefObject<HTMLElement | null> | undefined
   /** Selector hook over the workspace list (framework standard hook). */
   useWorkspaces: <S>(selector: (state: WorkspaceSnapshot) => S) => S
-  /** Adopt a picked host directory as a real Workspace. */
-  createWorkspace: (input: { path: string }) => Promise<WorkspaceView>
+  /**
+   * Adopt a picked host directory as a real Workspace; a named SSH environment
+   * creates it in that world.
+   */
+  createWorkspace: (input: { path: string; environmentId?: string }) => Promise<WorkspaceView>
+  /**
+   * Display label of each served SSH environment by id; a Workspace whose
+   * environment the list does not carry falls back to the id it records.
+   */
+  /**
+   * List the deployment's named SSH environments when the menu opens: a listed
+   * Workspace shows its environment's label, and with more than one reachable
+   * world each add entry names the world it creates in.
+   */
+  listEnvironments?: () => Promise<readonly WorkspaceEnvironmentView[]>
   /** Bound occupancy selector hook for this surface's directory-flow hole (empty leaves the surface with no add action). */
   useDirectoryFlow: SnapshotSelectorHook<boolean>
   /** Render this surface's directory-flow hole with the owner conversation (the entry's narrowed renderSlot). */
@@ -61,6 +75,7 @@ export function WorkspacePickFlow({
   anchorRef,
   useWorkspaces,
   createWorkspace,
+  listEnvironments = () => Promise.resolve([]),
   useDirectoryFlow,
   renderDirectoryFlow,
   onPick,
@@ -79,6 +94,22 @@ export function WorkspacePickFlow({
   const [modalError, setModalError] = useState<string | null>(null)
   const [flowOpen, setFlowOpen] = useState(false)
   const [pickingFolder, setPickingFolder] = useState(false)
+  // World the next adoption creates in; absent leaves the choice to the Host.
+  const [targetEnvironment, setTargetEnvironment] = useState<string | undefined>(undefined)
+  const [servedEnvironments, setServedEnvironments] = useState<readonly WorkspaceEnvironmentView[]>([])
+  // The served environment list is read when the menu opens, so a label and the
+  // offered worlds follow the deployment's configuration; a failed read leaves
+  // the recorded ids and no extra choice. The auto-open decision below waits for
+  // this read, so a world that is still arriving is never skipped past.
+  const [environmentsSettled, setEnvironmentsSettled] = useState(false)
+  useEffect(() => {
+    if (!open) return
+    setEnvironmentsSettled(false)
+    void listEnvironments().then(
+      (served) => { setServedEnvironments(served); setEnvironmentsSettled(true) },
+      () => { setServedEnvironments([]); setEnvironmentsSettled(true) },
+    )
+  }, [open, listEnvironments])
   // One picking interaction at a time: while the flow is open (native chooser
   // pending, browse dialog up) or its pick is being adopted, every other
   // menu action stays disabled — a late outcome must not race a concurrent
@@ -98,19 +129,44 @@ export function WorkspacePickFlow({
   useEffect(() => {
     if (flowOpen && !flowAvailable) setFlowOpen(false)
   }, [flowOpen, flowAvailable])
+  const environmentLabels = new Map(servedEnvironments.map(environment => [environment.environmentId, environment.label]))
+  const reachableEnvironments = servedEnvironments
+    .filter(environment => environment.reachable)
+    .map(environment => ({ environmentId: environment.environmentId, label: environment.label }))
+  // A deployment that reaches several worlds offers one add action per world,
+  // so the entry the operator picks decides where the directory is created.
   const addEntries: MenuEntry[] = flowAvailable
-    ? [{ id: ADD_WORKSPACE, label: t('menu.addWorkspace'), icon: <IconPlusOutline16 size={16} />, disabled: flowBusy }]
+    ? reachableEnvironments.length > 1
+      ? reachableEnvironments.map(environment => ({
+        id: `${ADD_WORKSPACE}:${environment.environmentId}`,
+        label: t('menu.addWorkspaceOn', { name: environment.label }),
+        icon: <IconPlusOutline16 size={16} />,
+        disabled: flowBusy,
+      }))
+      : [{ id: ADD_WORKSPACE, label: t('menu.addWorkspace'), icon: <IconPlusOutline16 size={16} />, disabled: flowBusy }]
     : []
   // With workspaces listed, the add action pins below the scroll region
   // (divider + always visible); otherwise it IS the menu.
   const pinAdd = !addOnly && workspaces.length > 0
   const items: MenuEntry[] = pinAdd
-    ? workspaces.map(workspace => ({
-      id: workspace.workspaceId,
-      label: workspace.title,
-      icon: <IconFolderClose16 size={16} />,
-      disabled: flowBusy,
-    }))
+    ? workspaces.map((workspace) => {
+      // The server an SSH Workspace's paths live in; a row on the Harness
+      // host's own filesystem carries no label.
+      const server = workspaceServerLabel(workspace, environmentLabels, t('server.remote'))
+      return {
+        id: workspace.workspaceId,
+        label: server === undefined
+          ? workspace.title
+          : (
+            <span className={css.menuLabel}>
+              <span className={css.menuTitle}>{workspace.title}</span>
+              <span className={css.menuServer}>{server}</span>
+            </span>
+          ),
+        icon: <IconFolderClose16 size={16} />,
+        disabled: flowBusy,
+      }
+    })
     : addEntries
   // Nothing listed and nothing to add with (a composition that mounts this
   // package without any directory-picker): an empty popover would claim a
@@ -124,7 +180,7 @@ export function WorkspacePickFlow({
 
   /** Adopt a picked directory; failures land in the folder-error dialog (Choose again reopens the flow). */
   const adoptDirectory = (path: string): Promise<void> =>
-    createWorkspace({ path }).then((workspace) => {
+    createWorkspace(targetEnvironment === undefined ? { path } : { path, environmentId: targetEnvironment }).then((workspace) => {
       setFlowOpen(false)
       onPick(workspace.workspaceId)
     }).catch((reason: unknown) => {
@@ -149,7 +205,7 @@ export function WorkspacePickFlow({
   // loading status instead of jumping into a flow the arriving list would have
   // made unnecessary; the add-only surface lists nothing and never waits.
   const listSettled = addOnly || workspaceSnapshot.phase === 'ready'
-  const addIsTheOnlyEntry = !pinAdd && listSettled && addEntries.length === 1
+  const addIsTheOnlyEntry = !pinAdd && listSettled && environmentsSettled && addEntries.length === 1
   // `flowBusy` gates this exactly as it disables the equivalent menu entry: a
   // pick still being adopted owns the surface until it settles.
   useEffect(() => {
@@ -174,6 +230,13 @@ export function WorkspacePickFlow({
 
   const handleSelect = (id: string): void => {
     if (id === ADD_WORKSPACE) {
+      setTargetEnvironment(undefined)
+      openDirectoryFlow()
+      return
+    }
+    const target = `${ADD_WORKSPACE}:`
+    if (id.startsWith(target)) {
+      setTargetEnvironment(id.slice(target.length))
       openDirectoryFlow()
       return
     }
@@ -230,6 +293,7 @@ export function WorkspacePicker({
   onPick,
   onClose,
   createWorkspace,
+  listEnvironments,
   useDirectoryFlow,
   renderSlot,
   t,
@@ -241,6 +305,7 @@ export function WorkspacePicker({
       anchorRef={anchorRef}
       useWorkspaces={useWorkspaces}
       createWorkspace={createWorkspace}
+      listEnvironments={listEnvironments}
       useDirectoryFlow={useDirectoryFlow}
       renderDirectoryFlow={owner => renderSlot('conversation.hero.workspace.directoryFlow', owner)}
       selectedId={selectedId}

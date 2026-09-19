@@ -5,7 +5,7 @@ import { FileSystem, FsError } from '@deepseek-ai/dsh-fs'
 import type { FsDirEntry, FsEditOutcome, FsEditRequest, FsErrorCode, FsInfo, FsPathInfo, FsTarget, FsVersion, FsWriteIntent, FsWriteOutcome } from '@deepseek-ai/dsh-fs'
 import type { SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
-import type {} from '@deepseek-ai/dsh-ssh'
+import type { SshWorldConnection } from '@deepseek-ai/dsh-ssh'
 import { RemoteOperationError } from '@deepseek-ai/dsh-ssh/protocol'
 import { editResultSchema, entriesSchema, infoSchema, pathInfoSchema, targetSchema, textStreamIdSchema, writeResultSchema } from '@deepseek-ai/dsh-ssh/schemas'
 import { z } from 'zod'
@@ -27,7 +27,7 @@ export class SshFileSystem extends FileSystem {
   override get addressesHostFilesystem(): boolean { return false }
 
   override async resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget> {
-    return await this.call('fs.resolve', { path, cwd: opts?.cwd }, targetSchema, opts?.signal) as FsTarget
+    return await this.call(path, 'fs.resolve', { path, cwd: opts?.cwd }, targetSchema, opts?.signal) as FsTarget
   }
 
   override processPath(target: FsTarget): string { return String(target.targetKey) }
@@ -42,20 +42,24 @@ export class SshFileSystem extends FileSystem {
   }
 
   override async stat(target: FsTarget, signal?: AbortSignal): Promise<FsInfo | undefined> {
-    return await this.call('fs.stat', { target }, infoSchema.nullable(), signal) as FsInfo | null ?? undefined
+    return await this.call(this.processPath(target), 'fs.stat', { target }, infoSchema.nullable(), signal) as FsInfo | null ?? undefined
   }
 
   override async lstat(path: string, opts?: { cwd?: string }, signal?: AbortSignal): Promise<FsPathInfo | undefined> {
-    return await this.call('fs.lstat', { path, cwd: opts?.cwd }, pathInfoSchema.nullable(), signal) as FsPathInfo | null ?? undefined
+    return await this.call(path, 'fs.lstat', { path, cwd: opts?.cwd }, pathInfoSchema.nullable(), signal) as FsPathInfo | null ?? undefined
   }
 
   override readText(target: FsTarget, signal?: AbortSignal): Promise<string> {
-    return this.call('fs.readText', { target }, z.string(), signal)
+    return this.call(this.processPath(target), 'fs.readText', { target }, z.string(), signal)
   }
 
   override async streamText(target: FsTarget, signal?: AbortSignal): Promise<AsyncIterable<string>> {
-    const id = await this.call('fs.stream', { target }, textStreamIdSchema, signal)
-    const call = this.call.bind(this)
+    // One stream id belongs to the connection that opened it, so every
+    // continuation stays on that same world.
+    const connection = this.connectionFor(this.processPath(target))
+    const id = await this.callOn(connection, 'fs.stream', { target }, textStreamIdSchema, signal)
+    const call = <T>(method: string, params: unknown, schema: z.ZodType<T>, at?: AbortSignal): Promise<T> =>
+      this.callOn(connection, method, params, schema, at)
     return (async function* () {
       let ended = false
       try {
@@ -72,26 +76,30 @@ export class SshFileSystem extends FileSystem {
   }
 
   override async readBytes(target: FsTarget, signal: AbortSignal | undefined, maxBytes: number): Promise<Uint8Array> {
-    return Buffer.from(await this.call('fs.readBytes', { target, maxBytes }, z.base64(), signal), 'base64')
+    return Buffer.from(await this.call(this.processPath(target), 'fs.readBytes', { target, maxBytes }, z.base64(), signal), 'base64')
   }
 
   override async readByteRange(target: FsTarget, range: { offset: number; length: number }, signal?: AbortSignal): Promise<Uint8Array> {
-    return Buffer.from(await this.call('fs.readRange', { target, ...range }, z.base64(), signal), 'base64')
+    return Buffer.from(await this.call(this.processPath(target), 'fs.readRange', { target, ...range }, z.base64(), signal), 'base64')
   }
 
   override async listDir(target: FsTarget, signal?: AbortSignal): Promise<FsDirEntry[]> {
-    return await this.call('fs.list', { target }, entriesSchema, signal) as FsDirEntry[]
+    return await this.call(this.processPath(target), 'fs.list', { target }, entriesSchema, signal) as FsDirEntry[]
   }
 
   override async mkdir(target: FsTarget, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy): Promise<void> {
-    await this.call('fs.mkdir', sandboxPolicy === undefined ? { target } : { target, policy: sandboxPolicy }, z.null(), signal)
+    // Same resolution as the other mutations: an omitted policy is the
+    // deployment's, so a remote caller behaves like a local one. The helper
+    // still fails closed on a call that carries no policy at all.
+    const policy = sandboxPolicy ?? this.ctx.sandboxPolicy.resolve()
+    await this.call(this.processPath(target), 'fs.mkdir', { target, policy }, z.null(), signal)
   }
 
   override async writeText(
     target: FsTarget, content: string, expected?: FsWriteIntent, signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsWriteOutcome> {
     const policy = sandboxPolicy ?? this.ctx.sandboxPolicy.resolve()
-    return await this.call('fs.write', { target, content, expected, policy }, writeResultSchema, signal) as FsWriteOutcome
+    return await this.call(this.processPath(target), 'fs.write', { target, content, expected, policy }, writeResultSchema, signal) as FsWriteOutcome
   }
 
   override async editText(
@@ -99,11 +107,23 @@ export class SshFileSystem extends FileSystem {
     signal?: AbortSignal, sandboxPolicy?: SandboxExecutionPolicy,
   ): Promise<FsEditOutcome> {
     const policy = sandboxPolicy ?? this.ctx.sandboxPolicy.resolve()
-    return await this.call('fs.edit', { target, edit, expected, policy }, editResultSchema, signal) as FsEditOutcome
+    return await this.call(this.processPath(target), 'fs.edit', { target, edit, expected, policy }, editResultSchema, signal) as FsEditOutcome
   }
 
-  private async call<T>(method: string, params: unknown, schema: z.ZodType<T>, signal?: AbortSignal): Promise<T> {
-    try { return await this.ctx.ssh.request(method, params, schema, signal) } catch (error) {
+  /** The connection that owns one remote path: the composed pool's routing, or the deployment's own connection. */
+  private connectionFor(path: string): SshWorldConnection {
+    const worlds = this.ctx.get('sshWorlds')
+    return worlds === undefined ? this.ctx.ssh : worlds.connectionFor(path)
+  }
+
+  private async call<T>(at: string, method: string, params: unknown, schema: z.ZodType<T>, signal?: AbortSignal): Promise<T> {
+    return await this.callOn(this.connectionFor(at), method, params, schema, signal)
+  }
+
+  private async callOn<T>(
+    connection: SshWorldConnection, method: string, params: unknown, schema: z.ZodType<T>, signal?: AbortSignal,
+  ): Promise<T> {
+    try { return await connection.request(method, params, schema, signal) } catch (error) {
       if (error instanceof RemoteOperationError && error.code !== undefined && Object.hasOwn(errorCodes, error.code)) {
         throw new FsError(error.message, error.code as FsErrorCode, { cause: error })
       }

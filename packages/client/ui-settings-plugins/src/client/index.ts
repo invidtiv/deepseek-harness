@@ -29,6 +29,7 @@ import type { PluginsSettingsSectionInjected, PluginsSettingsTabEntry } from './
 import { SubagentCard } from './SubagentCard.tsx'
 import { subagentCardFace } from './subagent-card-controller.ts'
 import { SubagentLimitsCardController } from './subagent-limits-card-controller.ts'
+import { SshEnvironmentsCard } from './SshEnvironmentsCard.tsx'
 import { TelegramCard } from './TelegramCard.tsx'
 import { WebSearchCard } from './WebSearchCard.tsx'
 import { AGENT_LOOP_NS, AgentLoopCardController } from './agent-loop-card-controller.ts'
@@ -36,6 +37,7 @@ import { SHELL_NS, BashCardController } from './bash-card-controller.ts'
 import {
   SUBAGENT_MODEL_SELECTION_NS, SubagentModelSelectionCardController,
 } from './subagent-model-selection-card-controller.ts'
+import { SSH_ENVIRONMENTS_NS, SshEnvironmentsCardController } from './ssh-environments-card-controller.ts'
 import { TELEGRAM_NS, TelegramCardController } from './telegram-card-controller.ts'
 import { WEB_SEARCH_NS, WebSearchCardController } from './web-search-card-controller.ts'
 import { en, zh } from './locales.ts'
@@ -50,6 +52,10 @@ export type { AgentLoopCardFace, AgentLoopCardState } from './agent-loop-card-co
 export type { BashCardFace, BashCardState } from './bash-card-controller.ts'
 export type { TelegramCardFace, TelegramCardState } from './telegram-card-controller.ts'
 export type { WebSearchCardFace, WebSearchCardState } from './web-search-card-controller.ts'
+export type {
+  SshEnvironmentRow, SshEnvironmentsCardFace, SshEnvironmentsCardState, SshEnvironmentsSettings,
+} from './ssh-environments-card-controller.ts'
+export type { SshEnvironmentsCardProps } from './SshEnvironmentsCard.tsx'
 
 /** Dictionary namespace owned by this plugin. */
 const NS = 'settings.plugins'
@@ -79,6 +85,9 @@ export function apply(ctx: ClientContext): void {
   const subagentLimitsFace = subagentLimits.inject()
   const subagentModelsFace = subagentModelSelection.inject()
   const telegram = new TelegramCardController(ctx.settingsScope.bind({ namespace: TELEGRAM_NS }))
+  const sshEnvironments = new SshEnvironmentsCardController(
+    ctx.settingsScope.bind({ namespace: SSH_ENVIRONMENTS_NS }),
+  )
 
   // The credential a page reports is not part of any settings section, so its
   // scope publishes nothing when one is written. This is the only signal that
@@ -126,6 +135,9 @@ export function apply(ctx: ClientContext): void {
     [[TELEGRAM_NS], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({
       name: 'plugins.item', id: 'telegram', order: 50, label: () => t('telegramTitle'), locale: NS, inject: () => telegram.inject(),
     }, TelegramCard))],
+    [[SSH_ENVIRONMENTS_NS], () => ctx.slots.inject('plugins.item', () => ctx.slots.register({
+      name: 'plugins.item', id: 'ssh-environments', order: 60, label: () => t('sshEnvironmentsTitle'), locale: NS, inject: () => sshEnvironments.inject(),
+    }, SshEnvironmentsCard))],
   ]
   // The shared SettingsScope mirror updates after document commits and reconnects.
   const describeFace = ctx.settingsScope.describe()

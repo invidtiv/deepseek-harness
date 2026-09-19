@@ -16,7 +16,10 @@ export interface WorkspaceView {
   readonly workspaceId: WorkspaceId
   /** Transport that reaches `path`: the harness host's filesystem, or a named SSH environment's. */
   readonly transport: 'local' | 'ssh'
-  /** Named SSH environment when `transport` is `ssh`; absent for a local workspace. */
+  /**
+   * Named SSH environment when `transport` is `ssh`; absent for a local
+   * workspace or a remote world the deployment reaches without a registry entry.
+   */
   readonly environmentId?: string
   /** Canonical directory path in the workspace's execution world. */
   readonly path: string
@@ -48,6 +51,8 @@ declare module '@deepseek-ai/dsh-typert-protocol' {
     'file-unreadable': { readonly path: string }
     /** The file-explorer listing target is missing, unreadable, or not a directory. */
     'directory-unreadable': { readonly path: string }
+    /** The create request named an SSH environment this deployment composes no connection for. */
+    'workspace/unknown-environment': { readonly environmentId: string }
     /** The file verb was cancelled by the caller's departure. */
     'cancelled': { readonly path?: string }
     /** The verb needs an interaction the composed backend does not serve. */
@@ -71,14 +76,27 @@ export interface WorkspaceEnvironmentView {
   readonly host: string
   /** Explicit TCP port, when the environment declares one. */
   readonly port?: number
+  /**
+   * Whether this deployment composes a connection for the environment. A picker
+   * offers a remote world only while it is reachable, and a create that names an
+   * unreachable one is refused.
+   */
+  readonly reachable: boolean
 }
 
 /** Existing directory requested for Workspace adoption. */
 export interface WorkspaceCreateRequest {
   readonly path: string
-  /** Transport that reaches the directory; defaults to `local`. */
+  /**
+   * Transport that reaches the directory. Omitted adopts the deployment's
+   * execution world — the composed filesystem's transport, and for a named SSH
+   * world its environment.
+   */
   readonly transport?: 'local' | 'ssh'
-  /** Named SSH environment; required with `transport: 'ssh'` and rejected for a local workspace. */
+  /**
+   * Named SSH environment; rejected for a local workspace. An SSH transport
+   * without one records a remote world that carries no registry entry.
+   */
   readonly environmentId?: string
 }
 

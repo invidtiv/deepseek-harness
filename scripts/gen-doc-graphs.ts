@@ -557,6 +557,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Registers the ssh-environments settings namespace and resolves a stable id into validated OpenSSH connection options. It opens no connection, stores no secret, and leaves connection, helper and cleanup ownership with the SSH provider family.',
   },
   {
+    key: 'sshWorlds',
+    pkg: 'ssh',
+    title: 'SSH world router',
+    mode: 'core',
+    consumers: ['fs-ssh', 'subprocess-ssh', 'sandbox-ssh'],
+    note: 'Owns one registered connection per SSH environment and routes a target to the connection that owns its world: the workspace registry locator decides, the longest owner wins, a target no locator claims belongs to the deployment default, and a world with no composed connection fails visibly.',
+  },
+  {
     key: 'subprocess',
     pkg: 'subprocess',
     title: 'Subprocess seam',

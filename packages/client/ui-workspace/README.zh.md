@@ -25,7 +25,7 @@ kind: "package-reference"
 <a id="use-this-package"></a>
 ## 使用本包
 
-用侧边栏浏览 Workspace 及其 Session、重排它们并新建会话；在 Session Intent 主视觉区用选择器为新会话选择 Workspace。打开的 Workspace 默认显示五条非空白 Session，并在首条提示词落地前把当前选中的空白**新会话**作为一条临时额外行。**展开其余**会显示隐藏条目；关闭再打开 Workspace 会恢复该折叠投影。
+用侧边栏浏览 Workspace 及其 Session、重排它们并新建会话；在 Session Intent 主视觉区用选择器为新会话选择 Workspace。打开的 Workspace 默认显示五条非空白 Session，并在首条提示词落地前把当前选中的空白**新会话**作为一条临时额外行。**展开其余**会显示隐藏条目；关闭再打开 Workspace 会恢复该折叠投影。 目录位于具名 SSH 环境上的 Workspace，会在选择器菜单中于标题旁显示该环境声明的标签——已提供的环境列表不含该环境时退回所记录的 id；位于未具名 SSH 世界上的则显示远程服务器标签；位于 Harness 宿主自身文件系统上的两者都不显示。菜单在打开时通过 Workspace Client 服务读取环境列表，因此读取失败时保留所记录的 id。
 
 ### 重排序与视图选项
 

@@ -31,6 +31,8 @@ Open **Built-in plugins** in Settings for the read-only inventory; [ui-settings-
 
 Each page registers into the Plugins page's `plugins.item` slot while the Host serves its settings namespace, so a deployment that does not compose the owning plugin shows no trace of it, and a namespace the Host starts or stops serving adds or withdraws its page on the next settings-document commit or reconnect. The card's one-liner and the page's form are one entry rendered in the two views the Plugins page asks for.
 
+The **SSH environments** card edits the deployment's named SSH environments as rows — one identifier and one OpenSSH destination each — with add and remove. The namespace holds one map, so the card stages the whole set and writes it in a single save; connection options the card does not edit (`identityFile`, `proxyJump`, host-key policy, timeouts) stay in the stored entry and are written back unchanged.
+
 ### Editing and saving
 
 A page stages what the user types and writes it only when they save. Each control renders staged text, so what is on screen is exactly what a save would store. Leaving the page drops the drafts; there is no discard control. A failed save keeps the page as it is, reports the failure, and retains the drafts for correction. A reset stages the composed default rather than writing immediately, and a draft the field does not accept blocks the save instead of being dropped. The Host is the only authority on whether a value was accepted.

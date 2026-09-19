@@ -779,6 +779,7 @@ export function WorkspaceBrowser({
   insertWorkspaceBefore,
   archiveSession,
   createWorkspace,
+  listEnvironments,
   searchSessions,
   searchResultLimit,
   useDirectoryFlow,
@@ -1210,6 +1211,7 @@ export function WorkspaceBrowser({
           anchorRef={wsPlusRef}
           useWorkspaces={useWorkspaces}
           createWorkspace={createWorkspace}
+          listEnvironments={listEnvironments}
           useDirectoryFlow={useDirectoryFlow}
           renderDirectoryFlow={owner => renderSlot('sidebar.workspaces.directoryFlow', owner)}
           addOnly

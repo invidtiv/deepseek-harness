@@ -6,9 +6,9 @@ import type { RemoteFailure, RemoteResult } from '@deepseek-ai/dsh-typert-protoc
 import type { WorkspaceId } from '@deepseek-ai/dsh-workspace/types'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import {
-  ClientWorkspaceModel, FileListError, FileReadError, WorkspaceController, WorkspaceCreateError,
+  ClientWorkspaceModel, EnvironmentListError, FileListError, FileReadError, WorkspaceController, WorkspaceCreateError,
 } from '../src/client/index.ts'
-import type { FileContents, FileListing, WorkspaceView } from '../src/types.ts'
+import type { FileContents, FileListing, WorkspaceEnvironmentView, WorkspaceView } from '../src/types.ts'
 
 const ok = <T>(value: T): RemoteResult<T> => ({ ok: true, value })
 const failed = <T>(code: string): RemoteResult<T> => ({
@@ -37,6 +37,7 @@ function harness() {
     insertSessionBefore: vi.fn(async () => ok({ workspace: view })),
     readFile: vi.fn(async () => ok(contents)),
     listFiles: vi.fn(async () => ok(listing)),
+    environments: vi.fn(async (): Promise<RemoteResult<WorkspaceEnvironmentView[]>> => ok([])),
   }
   const ctx = new Context()
   onTestFinished(() => ctx.fiber.dispose())
@@ -96,5 +97,19 @@ describe('WorkspaceController (Client face)', () => {
     expect(listFailure).toBeInstanceOf(FileListError)
     expect(listFailure).toMatchObject({ name: 'FileListError', rpcError: { code: 'directory-unreadable' } })
     expect((listFailure as Error).message).toContain('file listing failed: directory-unreadable')
+  })
+
+  it('lists the deployment environments and raises their structured failure', async () => {
+    const { controller, model } = harness()
+    const environment = { environmentId: 'build01', label: 'Build 01', host: 'build01.example', reachable: true }
+    model.environments.mockResolvedValueOnce(ok([environment]))
+
+    await expect(controller.environments()).resolves.toEqual([environment])
+
+    model.environments.mockResolvedValueOnce(failed('gateway/bad-request'))
+    const failure = await controller.environments().then(() => undefined, (error: unknown) => error)
+    expect(failure).toBeInstanceOf(EnvironmentListError)
+    expect(failure).toMatchObject({ name: 'EnvironmentListError', rpcError: { code: 'gateway/bad-request' } })
+    expect((failure as Error).message).toContain('environment listing failed: gateway/bad-request')
   })
 })

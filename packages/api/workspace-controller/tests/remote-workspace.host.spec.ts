@@ -28,12 +28,17 @@ const REMOTE_ROOT = '/srv/project'
 /**
  * Boot the controller over an SSH-transport workspace registry whose
  * filesystem is a stub wire, so every path resolves in the remote world.
+ * @param options - named environment the stubbed SSH connection resolved.
  * @returns the controller, its context, and the wire's recorded calls.
  */
-async function harness() {
+async function harness(options: { environmentId?: string } = {}) {
   const dispatch = vi.fn<Dispatch>()
   class WireConnection extends Service {
-    constructor(ctx: Context) { super(ctx, 'ssh') }
+    readonly environmentId: string | undefined
+    constructor(ctx: Context) {
+      super(ctx, 'ssh')
+      this.environmentId = options.environmentId
+    }
     async request<T>(method: string, params: unknown, result: z.ZodType<T>, signal?: AbortSignal): Promise<T> {
       return result.parse(await dispatch(method, params, signal))
     }
@@ -76,7 +81,7 @@ async function harness() {
 
 describe('WorkspaceController over a remote execution world', () => {
   it('records an SSH locator and lists that world through the same provider', async () => {
-    const { controller, dispatch } = await harness()
+    const { controller, dispatch } = await harness({ environmentId: 'build01' })
 
     const created = await controller.create({
       path: REMOTE_ROOT, transport: 'ssh', environmentId: 'build01',
@@ -98,5 +103,25 @@ describe('WorkspaceController over a remote execution world', () => {
       .filter((path): path is string => path !== undefined)
     expect(paths.length).toBeGreaterThan(0)
     expect(paths.every(path => path.startsWith('/'))).toBe(true)
+  })
+
+  it('adopts the composed SSH world when the request omits the transport', async () => {
+    const { controller } = await harness({ environmentId: 'build01' })
+
+    const created = await controller.create({ path: REMOTE_ROOT })
+
+    expect(created).toMatchObject({
+      created: true,
+      workspace: { transport: 'ssh', environmentId: 'build01', path: REMOTE_ROOT },
+    })
+  })
+
+  it('registers an inline SSH destination without a named environment', async () => {
+    const { controller } = await harness()
+
+    const created = await controller.create({ path: REMOTE_ROOT })
+
+    expect(created.workspace).toMatchObject({ transport: 'ssh', path: REMOTE_ROOT })
+    expect(created.workspace.environmentId).toBeUndefined()
   })
 })

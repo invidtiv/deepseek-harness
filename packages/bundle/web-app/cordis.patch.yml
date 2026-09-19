@@ -114,6 +114,12 @@
     - id: settings-controller
       name: '@deepseek-ai/dsh-api-settings-controller'
 
+    # Named POSIX SSH environments: the settings namespace the Plugins page's
+    # SSH environments card edits. The registry opens no connection; an SSH
+    # provider profile names one of its ids for the world it composes.
+    - id: ssh-environments
+      name: '@deepseek-ai/dsh-ssh-environments'
+
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
       name: '@deepseek-ai/dsh-api-workspace-controller'

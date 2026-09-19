@@ -9,6 +9,7 @@ import {
   WorkspaceUnknownSessionError,
 } from '@deepseek-ai/dsh-workspace'
 import { RemoteError, remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
+import { reachableEnvironmentIds } from './environments.ts'
 import { workspaceView } from './feed.ts'
 import type {
   WorkspaceArchiveSessionRequest,
@@ -44,10 +45,7 @@ export class WorkspaceCommands {
         if (existing !== undefined) {
           return { workspace: workspaceView(existing), created: false }
         }
-        const workspace = await this.ctx.workspaceRegistry.create(request.path, {
-          ...(request.transport === undefined ? {} : { transport: request.transport }),
-          ...(request.environmentId === undefined ? {} : { environmentId: request.environmentId }),
-        })
+        const workspace = await this.ctx.workspaceRegistry.create(request.path, this.resolveWorld(request))
         return { workspace: workspaceView(workspace), created: true }
       } catch (error) {
         if (remoteErrorOf(error) !== undefined) throw error
@@ -59,6 +57,42 @@ export class WorkspaceCommands {
         )
       }
     })
+  }
+
+  /**
+   * Resolve the execution world a create request left open. The composed
+   * filesystem and the composed SSH connection own that fact, so the client
+   * never reconstructs it: an omitted transport registers the world whose
+   * directories the path was resolved in, and a caller that names a transport
+   * keeps it.
+   * @param request - Workspace create request.
+   * @returns the transport and, for a named SSH world, the environment id.
+   */
+  private resolveWorld(request: WorkspaceCreateRequest): {
+    transport: 'local' | 'ssh'
+    environmentId?: string
+  } {
+    // A named world with no composed connection would resolve its directory in
+    // another world and record an unreachable environment, so it is refused.
+    if (request.environmentId !== undefined && !reachableEnvironmentIds(this.ctx).has(request.environmentId)) {
+      throw new RemoteError(
+        'workspace/unknown-environment',
+        `no connection is composed for SSH environment "${request.environmentId}"`,
+        { environmentId: request.environmentId },
+      )
+    }
+    if (request.transport !== undefined) {
+      return {
+        transport: request.transport,
+        ...(request.environmentId === undefined ? {} : { environmentId: request.environmentId }),
+      }
+    }
+    if (this.ctx.fs.addressesHostFilesystem) return { transport: 'local' }
+    const ssh = this.ctx.get('ssh') as { readonly environmentId?: string } | undefined
+    return {
+      transport: 'ssh',
+      ...(ssh?.environmentId === undefined ? {} : { environmentId: ssh.environmentId }),
+    }
   }
 
   /**

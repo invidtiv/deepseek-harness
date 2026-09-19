@@ -89,12 +89,16 @@ describe('SSH filesystem provider', () => {
     expect(dispatch.mock.calls[2]).toEqual(['fs.lstat', { path: 'link', cwd: '/remote/work' }, undefined])
   })
 
-  it('creates one remote directory through the helper', async () => {
+  it('creates one remote directory under the deployment policy', async () => {
     const { fs, dispatch } = await setup()
     dispatch.mockResolvedValue(null)
     const signal = new AbortController().signal
     await fs.mkdir(target, signal)
-    expect(dispatch).toHaveBeenCalledWith('fs.mkdir', { target }, signal)
+    expect(dispatch).toHaveBeenCalledWith(
+      'fs.mkdir',
+      { target, policy: { mode: 'read-only', workspaceRoot: '/remote/work' } },
+      signal,
+    )
   })
 
   it('forwards an explicit per-call policy for directory creation', async () => {

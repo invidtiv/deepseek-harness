@@ -21,7 +21,7 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Compose this service with a settings provider (for example [`dsh-settings-file`](../../settings/settings-file/README.md)) and the [SSH provider family](../ssh/README.md). Configure environments in the `ssh-environments` settings section:
+The Web bundle composes this service beside a settings provider, so the Plugins page's **SSH environments** card can define the ids; a deployment that executes on a server also composes the [SSH provider family](../ssh/README.md) and names one of those ids. Configure environments in the `ssh-environments` settings section:
 
 ```yaml
 ssh-environments:
@@ -48,7 +48,7 @@ This registry contributes no request-prefix content.
 
 - **No interactive authentication.** The SSH provider enables `BatchMode`; password and passphrase prompts are unavailable, so a deployment authenticates with a key or an SSH agent.
 - **One flat settings section.** Environments live in a single settings namespace with no secret slot; a future passphrase or token field must use `role('secret')` so settings wire redaction removes it.
-- **No settings card yet.** The namespace is registered and discoverable through `settings.describe()`, but no settings card renders it: edit the `ssh-environments` section in `$DSH_HOME/settings.yaml` directly until a card binds the same namespace through the client settings-scope seam.
+- **The settings card edits two fields per environment.** The [SSH environments card](../../client/ui-settings-plugins/README.md) binds this namespace through the client settings-scope seam and edits each environment's identifier and OpenSSH destination. Every other option — `identityFile`, `identityAgent`, `proxyJump`, `configFile`, host-key policy, and timeouts — is written back unchanged, so it comes from `$DSH_HOME/settings.yaml` or `~/.ssh/config`.
 - **No connection ownership.** The registry resolves options; it never opens, keeps alive, or reconnects a connection.
 - **No invariant companion.** No runtime invariant companion is published because the registry owns no independent runtime state: it reads one settings namespace and returns detached values, and the settings provider's own tests observe every durable relation.
 

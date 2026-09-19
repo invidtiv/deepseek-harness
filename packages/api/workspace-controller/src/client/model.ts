@@ -8,6 +8,7 @@ import type {
   FileContents,
   FileListing,
   WorkspaceArchiveSessionRequest,
+  WorkspaceEnvironmentView,
   WorkspaceArchiveValue,
   WorkspaceBaseline,
   WorkspaceCreateRequest,
@@ -216,6 +217,15 @@ export class ClientWorkspaceModel implements WorkspaceFollowSink {
    */
   async listFiles(path?: string, signal?: AbortSignal): Promise<RemoteResult<FileListing>> {
     return await this.remote.listFiles(path === undefined ? {} : { path }, signal)
+  }
+
+  /**
+   * List the deployment's named SSH environments; the result reaches no
+   * projection state.
+   * @returns generated Remote result.
+   */
+  async environments(): Promise<RemoteResult<WorkspaceEnvironmentView[]>> {
+    return await this.remote.environments()
   }
 
   /**

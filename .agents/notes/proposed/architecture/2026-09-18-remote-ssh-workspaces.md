@@ -49,7 +49,7 @@ SSH credentials, passphrases, and key material never appear in Session events, c
 
 ## Delivery phases
 
-1. Transport-neutral workspace identity and the environment registry, with unit tests for identity, config parsing, and redaction.
+1. Transport-neutral workspace identity and the environment registry — the settings namespace, the Web card that edits it, and the locator every workspace record carries — with unit tests for identity, config parsing, and redaction.
 2. `ctx.ssh` multi-connection resolution and Session-scoped provider selection.
 3. Remote workspace picker, bounded directory browsing, and remote file explorer.
 4. Client connection identity and resume-from-sequence, with replay and concurrent-attach tests.

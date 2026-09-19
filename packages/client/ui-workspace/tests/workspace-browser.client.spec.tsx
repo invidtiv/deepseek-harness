@@ -96,6 +96,7 @@ function mount(overrides: Partial<WorkspaceBrowserProps> = {}) {
     usePanelInfo, useResource,
     useWorkspaces: hook(workspaceState([])),
     useStore: bindSnapshotSelector(store),
+    listEnvironments: vi.fn(async () => []),
     actions: store.actions,
     startSession: vi.fn(),
     open: vi.fn(),
@@ -227,7 +228,7 @@ describe('WorkspaceBrowser', () => {
     expect(b.store.getSnapshot().orderBy).toBe('updated')
   })
 
-  it('moves focus into Workspace controls without selecting a Session while a main panel is active', () => {
+  it('moves focus into Workspace controls without selecting a Session while a main panel is active', async () => {
     const panelInfo = { activePanelId: 'panel-a' as MainPanelId }
     const b = mount({
       usePanelInfo: hook(panelInfo),
@@ -245,7 +246,7 @@ describe('WorkspaceBrowser', () => {
     add.focus()
     fireEvent.click(add)
     expect(document.activeElement).toBe(add)
-    expect(screen.getByTestId('directory-flow')).toBeTruthy()
+    await waitFor(() => { expect(screen.getByTestId('directory-flow')).toBeTruthy() })
     expect(panelInfo.activePanelId).toBe('panel-a')
     expect(b.props.open).not.toHaveBeenCalled()
     expect(b.props.startSession).not.toHaveBeenCalled()
@@ -1295,16 +1296,17 @@ describe('WorkspaceBrowser', () => {
     }
   })
 
-  it('rail add-workspace raises the directory flow in place, with no menu and no expansion', () => {
+  it('rail add-workspace raises the directory flow in place, with no menu and no expansion', async () => {
     const expandSidebar = vi.fn()
     mount({ wide: false, expandSidebar, useWorkspaces: hook(workspaceState([workspace('alpha', [])])) })
     fireEvent.click(screen.getByRole('button', { name: '添加工作区' }))
     expect(expandSidebar).not.toHaveBeenCalled()
-    // Adding is the header's only action, so the gesture IS that action: no
-    // one-row popover, and existing workspaces stay in the tree below.
+    // Adding is the header's only action, so the gesture IS that action once
+    // the served environment list has settled: no one-row popover, and existing
+    // workspaces stay in the tree below.
+    await waitFor(() => { expect(screen.getByTestId('directory-flow')).toBeTruthy() })
     expect(screen.queryByRole('menu')).toBeNull()
     expect(screen.queryByRole('menuitem', { name: 'alpha' })).toBeNull()
-    expect(screen.getByTestId('directory-flow')).toBeTruthy()
   })
 
   it('hides the add button when no directory-flow occupant is composed', () => {
@@ -1710,7 +1712,7 @@ describe('Workspace tree grouping', () => {
         ? <button onClick={() => { owner.onPicked('/projects') }}>Pick directory</button> : null) as WorkspaceBrowserProps['renderSlot'],
     })
     fireEvent.click(screen.getByRole('button', { name: '添加工作区' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Pick directory' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Pick directory' }))
     await waitFor(() => { expect(b.props.startSession).toHaveBeenCalledWith(wid('root')) })
     expect(b.props.createWorkspace).toHaveBeenCalledWith({ path: '/projects' })
     expect(screen.queryByRole('dialog')).toBeNull()
@@ -1846,5 +1848,26 @@ describe('Workspace tree grouping', () => {
     fireEvent.dragEnd(alpha)
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledOnce()
     expect(b.props.insertWorkspaceBefore).toHaveBeenCalledWith(wid('alpha'), wid('gamma'))
+  })
+
+  it('offers one add action per reachable world from the sidebar', async () => {
+    let owner: DirectoryFlowOwnerProps | undefined
+    const listEnvironments = vi.fn(async () => [
+      { environmentId: 'build01', label: 'Build 01', host: 'build01.example', reachable: true },
+      { environmentId: 'build02', label: 'Build 02', host: 'build02.example', reachable: true },
+    ])
+    const b = mount({
+      listEnvironments,
+      renderSlot: ((_name: string, next: DirectoryFlowOwnerProps) => {
+        owner = next
+        return next.open ? <div data-testid="directory-flow" /> : null
+      }) as never,
+    })
+
+    fireEvent.click(screen.getByRole('button', { name: '添加工作区' }))
+    fireEvent.click(await screen.findByRole('menuitem', { name: '在 Build 02 上添加工作区…' }))
+    await act(async () => { owner!.onPicked('/tmp/project') })
+
+    expect(b.props.createWorkspace).toHaveBeenCalledWith({ path: '/tmp/project', environmentId: 'build02' })
   })
 })

@@ -1,7 +1,7 @@
 /** Test-owned workspaces face: the renderer standard-kit observable plus recorded actions. */
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import type {
-  FileContents, FileListing, IWorkspaces, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
+  FileContents, FileListing, IWorkspaces, WorkspaceEnvironmentView, WorkspaceId, WorkspaceSnapshot, WorkspaceView,
 } from '@deepseek-ai/dsh-api-workspace-controller/client'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -107,6 +107,18 @@ export class TestWorkspaces implements IWorkspaces {
     const stub = this.stubs.get('listFiles')
     if (stub !== undefined) return await (stub(path, signal) as Promise<FileListing>)
     return { path: '/home/test', entries: [], truncated: false }
+  }
+
+  /**
+   * Deployment environments for label surfaces (recorded). The default serves
+   * none; stub to name them.
+   * @returns each configured environment.
+   */
+  async environments(): Promise<readonly WorkspaceEnvironmentView[]> {
+    this.calls.push({ method: 'environments', args: [] })
+    const stub = this.stubs.get('environments')
+    if (stub !== undefined) return await (stub() as Promise<readonly WorkspaceEnvironmentView[]>)
+    return []
   }
 
   /**

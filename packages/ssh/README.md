@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-This family runs files, ordinary processes, terminals and sandbox enforcement on one POSIX SSH host while the Harness stays local. A shared OpenSSH connection and installed helper support the existing filesystem, subprocess and sandbox interfaces. Use it in a custom profile that swaps the local providers for this family — the shipped overlay is [`apps/cli/config/examples/ssh-remote/cordis.yml`](../../apps/cli/config/examples/ssh-remote/cordis.yml) — because exactly one row may register each of `ctx.fs`, `ctx.subprocess` and `ctx.sandbox`.
+This family runs files, ordinary processes, terminals and sandbox enforcement on POSIX SSH hosts while the Harness stays local. A shared OpenSSH connection and installed helper support the existing filesystem, subprocess and sandbox interfaces, and a deployment that reaches several hosts composes one connection per environment behind the world router. Use it in a custom profile that swaps the local providers for this family — the shipped overlays are [`ssh-remote`](../../apps/cli/config/examples/ssh-remote/cordis.yml) for one host and [`ssh-multi`](../../apps/cli/config/examples/ssh-multi/cordis.yml) for several — because exactly one row may register each of `ctx.fs`, `ctx.subprocess` and `ctx.sandbox`.
 
 ## Table of Contents
 

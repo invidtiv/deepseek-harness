@@ -34,7 +34,10 @@ export interface WorkspaceCreateOptions {
   title?: string
   /** Transport that reaches the directory; defaults to `local`. */
   transport?: WorkspaceTransport
-  /** Named SSH environment; required with `transport: 'ssh'` and rejected for a local workspace. */
+  /**
+   * Named SSH environment the transport resolved; rejected for a local
+   * workspace. Absent when a remote world carries no registry entry.
+   */
   environmentId?: string
 }
 
@@ -183,8 +186,8 @@ export class WorkspaceRegistry extends Service {
   async create(path: string, options?: WorkspaceCreateOptions): Promise<Workspace> {
     const transport = options?.transport ?? 'local'
     const environmentId = options?.environmentId
-    if (transport === 'ssh' && (environmentId === undefined || environmentId.trim() === '')) {
-      throw new Error('cannot create a remote workspace without a named SSH environment')
+    if (transport === 'ssh' && environmentId !== undefined && environmentId.trim() === '') {
+      throw new Error('an SSH environment id must not be blank')
     }
     if (transport === 'local' && environmentId !== undefined) {
       throw new Error('a local workspace cannot carry an SSH environment')

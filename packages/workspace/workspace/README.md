@@ -89,6 +89,8 @@ This section explains the design decisions behind the feature and points at the 
 
 The API is one small family with two owners: `WorkspaceRegistry` creates, orders, and deletes projects, manages their session accounting, and archives or restores single sessions; the `Workspace` entity exposes the display title, directory status, and the session projection. Per-method contracts live in the code, not this README — see [src/index.ts](src/index.ts) and [src/entity.ts](src/entity.ts).
 
+Project creation takes a transport locator: `transport` (`local` or `ssh`) and, for an SSH world named by the environment registry, `environmentId`. An SSH world the deployment reaches without a registry entry records `transport: 'ssh'` and no id; a local record rejects an id.
+
 ### Source map
 
 | File | Role |

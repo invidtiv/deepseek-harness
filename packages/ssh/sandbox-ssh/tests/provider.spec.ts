@@ -11,8 +11,9 @@ const completeFacts = {
   runnerFailureRules: [{ allowedExitCodes: [1], fatalSignatures: ['bwrap:'], informationalLines: ['notice'] }],
 }
 
-async function setup(raw: unknown = completeFacts) {
+async function setup(raw: unknown = completeFacts, options: { pool?: string } = {}) {
   const dispatch = vi.fn(async (_method: string, _params: unknown, _signal?: AbortSignal) => raw)
+  const poolDispatch = vi.fn(async (_method: string, _params: unknown, _signal?: AbortSignal) => raw)
   class Connection extends Service {
     constructor(ctx: Context) { super(ctx, 'ssh') }
     async request<T>(method: string, params: unknown, result: z.ZodType<T>, signal?: AbortSignal): Promise<T> {
@@ -21,12 +22,31 @@ async function setup(raw: unknown = completeFacts) {
   }
   const ctx = new Context()
   const connection = await ctx.plugin(Connection)
+  if (options.pool !== undefined) {
+    const pooled = {
+      request: async <T>(method: string, params: unknown, result: z.ZodType<T>, signal?: AbortSignal): Promise<T> =>
+        result.parse(await poolDispatch(method, params, signal)),
+    }
+    ctx.provide('sshWorlds', {
+      connectionFor: (path: string) => path === options.pool ? pooled : ctx.ssh,
+    } as never)
+  }
   const fiber = await ctx.plugin(SshSandboxProvider)
   onTestFinished(async () => { await fiber.dispose(); await connection.dispose() })
-  return { ctx, dispatch }
+  return { ctx, dispatch, poolDispatch }
 }
 
 describe('SSH sandbox provider', () => {
+  it('confines through the connection that owns the policy workspace root', async () => {
+    const state = await setup(completeFacts, { pool: '/remote/other' })
+    const policy = { mode: 'workspace-write' as const, workspaceRoot: '/remote/other' }
+
+    await state.ctx.sandbox.confine(['true'], policy)
+
+    expect(state.poolDispatch).toHaveBeenCalledWith('sandbox', { argv: ['true'], policy }, undefined)
+    expect(state.dispatch).not.toHaveBeenCalled()
+  })
+
   it('awaits remote policy resolution and returns the literal enforcing argv', async () => {
     const state = await setup()
     const result = Promise.withResolvers<typeof completeFacts>()

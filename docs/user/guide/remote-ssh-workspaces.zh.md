@@ -32,9 +32,9 @@ ssh-environments:
       identityFile: ~/.ssh/id_ed25519
 ```
 
-把该小节保存到 `$DSH_HOME/settings.yaml`——目前没有 settings 卡片渲染它，请直接编辑文件；其 schema 与 id 到连接的解析由[环境注册表](../../../packages/ssh/ssh-environments/README.zh.md)负责。条目只存储连接引用——密钥路径、agent socket、配置文件路径——绝不存储密钥材料或口令。你省略的字段沿用 OpenSSH 自身的取值，因此其余连接细节可以留在 `~/.ssh/config` 中。
+把该小节保存到 `$DSH_HOME/settings.yaml`，或在插件设置页的 **SSH 环境**卡片中编辑：卡片暂存整张映射，保存时才写入；其 schema 与 id 到连接的解析由[环境注册表](../../../packages/ssh/ssh-environments/README.zh.md)负责。卡片编辑每个环境的标识与 OpenSSH 目标，其余选项仍留在文件中或 `~/.ssh/config` 里。条目只存储连接引用——密钥路径、agent socket、配置文件路径——绝不存储密钥材料或口令。你省略的字段沿用 OpenSSH 自身的取值，因此其余连接细节可以留在 `~/.ssh/config` 中。
 
-注册表注册 `ssh-environments` 命名空间，并把稳定 id 解析为经过校验的连接选项。Web 工作区选择器通过 `workspace.environments` 列出这些 id，远程工作区记录的是该 id 而非地址，因此重命名主机或远程目录不会改变工作区身份。
+注册表注册 `ssh-environments` 命名空间，并把稳定 id 解析为经过校验的连接选项，`workspace.environments` 则把这些 id 列给客户端。远程工作区记录的是该 id 而非地址，因此重命名主机或远程目录不会改变工作区身份；会话的工作区菜单会用该环境的标签标注相应工作区，部署未为其命名时则显示所记录的 id；从 Web UI 新建的工作区会记录其目录所解析到的执行环境。
 
 ## 让 Web UI 面向远程主机启动
 
@@ -61,7 +61,9 @@ dsh web --dump-config --patch /absolute/path/to/ssh-remote/cordis.yml
 
 ## 使用多台服务器
 
-一份组合后的提供方族只服务一个 SSH 环境，因此第二台服务器需要第二份部署，而不是第二个工作区。为该服务器复制覆盖层，填入它自己的 `DSH_SSH_ENVIRONMENT`、`DSH_SSH_WORKSPACE` 与辅助程序坐标，并按环境各在一个独立端口上启动一个 `dsh web` 进程。每个进程拥有自己的会话、工作区与身份；同一份 `ssh-environments` settings 小节可以描述所有服务器，每个进程按 id 选择其中一个条目。
+一份部署可以访问多台 SSH 主机。把具名环境注册表、世界路由器（`@deepseek-ai/dsh-ssh/worlds`）以及每个环境各一个 `ssh` 行组合起来：Loader 未隔离的那一行充当该部署的默认世界，其余每个世界放在只隔离 `ssh` 的分组里，因此其服务身份不会与默认行冲突。[`apps/cli/config/examples/ssh-multi/cordis.yml`](../../../apps/cli/config/examples/ssh-multi/cordis.yml) 就是该覆盖层；它用 `DSH_SSH_ENVIRONMENT` 作为默认世界，用 `DSH_SSH_SECOND_ENVIRONMENT` 与 `DSH_SSH_SECOND_WORKSPACE` 配置第二个世界，两者共用辅助程序坐标。
+
+路由依据的是会话所处的工作区，而不是进程启动时的连接：每个工作区记录其环境与远程目录，每次文件、进程与沙箱调用都会发往拥有该目录的连接。`workspace.environments` 会报告本部署为哪些环境组合了连接；当可访问世界不止一个时，工作区菜单会为每个世界各提供一个添加入口；若 create 指定的环境本部署无法访问，则会被拒绝，而不会注册一个由其他主机服务的工作区。可执行文件解析与终端环境查询不带目标，因此组合了具名世界的部署会拒绝它们，而不是自行猜测。
 
 ## 从另一台电脑继续同一个会话
 

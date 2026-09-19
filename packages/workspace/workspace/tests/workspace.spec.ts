@@ -1065,10 +1065,19 @@ describe('Workspace transport locator', () => {
     expect(workspace.environmentId).toBe('build01')
   })
 
-  it('refuses a remote workspace without a named environment', async () => {
-    const dir = await makeDir('transport-ssh-missing')
+  it('records a remote world without a named environment', async () => {
+    const dir = await makeDir('transport-ssh-unnamed')
     const { registry } = await harness()
-    await expect(registry.create(dir, { transport: 'ssh' })).rejects.toThrow('without a named SSH environment')
+    const workspace = await registry.create(dir, { transport: 'ssh' })
+    expect(workspace.transport).toBe('ssh')
+    expect(workspace.environmentId).toBeUndefined()
+  })
+
+  it('refuses a blank environment id on a remote workspace', async () => {
+    const dir = await makeDir('transport-ssh-blank')
+    const { registry } = await harness()
+    await expect(registry.create(dir, { transport: 'ssh', environmentId: '  ' }))
+      .rejects.toThrow('must not be blank')
   })
 
   it('refuses an environment on a local workspace', async () => {

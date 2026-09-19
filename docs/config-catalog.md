@@ -2626,7 +2626,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/ssh/ssh/src/index.ts:24`](../packages/ssh/ssh/src/index.ts)
+Source: [`packages/ssh/ssh/src/index.ts:26`](../packages/ssh/ssh/src/index.ts)
 
 <a id="deepseek-aidsh-storage-domain"></a>
 
@@ -3851,7 +3851,7 @@ export interface Config {
 export type ToolPresentationMode = 'native' | 'ptc' | 'both'
 ```
 
-Source: [`packages/core/tools/src/index.ts:656`](../packages/core/tools/src/index.ts)
+Source: [`packages/core/tools/src/index.ts:660`](../packages/core/tools/src/index.ts)
 
 <a id="deepseek-aidsh-typert-loader"></a>
 

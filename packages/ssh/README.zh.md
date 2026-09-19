@@ -9,7 +9,7 @@ kind: "package-group"
 
 ## 概述
 
-本家族将文件、普通进程、终端及沙箱执行放在同一台 POSIX SSH 主机上，Harness 保留在本地。共享 OpenSSH 连接与已安装辅助程序支持现有文件系统、子进程及沙箱接口。请在自定义 profile 中用本家族替换本机提供方——随附的覆盖层是 [`apps/cli/config/examples/ssh-remote/cordis.yml`](../../apps/cli/config/examples/ssh-remote/cordis.yml)——因为 `ctx.fs`、`ctx.subprocess` 与 `ctx.sandbox` 各自只能由一行注册。
+本家族将文件、普通进程、终端及沙箱执行放在 POSIX SSH 主机上，Harness 保留在本地。共享 OpenSSH 连接与已安装辅助程序支持现有文件系统、子进程及沙箱接口；需要访问多台主机的部署会在世界路由器之后为每个环境各组合一个连接。请在自定义 profile 中用本家族替换本机提供方——随附的覆盖层有单主机的 [`ssh-remote`](../../apps/cli/config/examples/ssh-remote/cordis.yml) 与多主机的 [`ssh-multi`](../../apps/cli/config/examples/ssh-multi/cordis.yml)——因为 `ctx.fs`、`ctx.subprocess` 与 `ctx.sandbox` 各自只能由一行注册。
 
 ## 目录
 

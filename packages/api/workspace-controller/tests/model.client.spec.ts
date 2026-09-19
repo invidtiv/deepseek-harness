@@ -480,5 +480,8 @@ describe('ClientWorkspaceModel file verbs', () => {
     // An absent path asks the Host for its configured default project root.
     await expect(model.listFiles()).resolves.toMatchObject({ ok: true })
     expect(remote.calls).toContainEqual({ method: 'listFiles', request: {} })
+
+    await expect(model.environments()).resolves.toMatchObject({ ok: true })
+    expect(remote.calls).toContainEqual({ method: 'environments', request: undefined })
   })
 })

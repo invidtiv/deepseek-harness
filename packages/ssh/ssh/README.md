@@ -59,6 +59,12 @@ Provide exactly one of `host` and `environment`: `environment` names an entry in
 
 For PTC, configure both bootstrap fields and pass the verified `ctx.ssh.nodeExecutable` and `ctx.ssh.bootstrapPath` to [`NodePtcRuntime`](../../ptc-runtime/ptc-runtime-node/README.md). Basic filesystem and Bash use may omit the pair. The `bootstrapPath` getter refuses an unconfigured PTC deployment.
 
+### Routing between environments
+
+One `ssh` row serves one world. A deployment that reaches several servers composes the pool row (`@deepseek-ai/dsh-ssh/worlds`) beside one `ssh` row per environment, each carrying its own `environment` or `host`; every row registers its connection with the pool while the pool is composed, and the row the Loader does not isolate serves the deployment default. Routing is by target: the workspace registry's locators — environment plus remote directory — decide which world a path belongs to, the longest owning locator wins, a target no locator claims belongs to the default connection, and two worlds that claim one directory are refused. A target whose world has no composed connection fails visibly.
+
+Every provider routes through the pool: the filesystem sends each operation — including each continuation of an opened text stream — to the connection that owns its target, the subprocess provider spawns a process or terminal on the connection that owns its `cwd`, and the sandbox provider confines on the connection that owns the policy's workspace root. The two lookups that carry no target, executable resolution and the terminal environment, refuse to answer while named worlds are composed.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -106,7 +112,7 @@ This provider contributes no request-prefix content. Its consumers own model-vis
 
 - No Windows endpoint, automatic provisioning, reconnect or replay is supplied.
 - Web workspace UIs read the composed filesystem, so a remote deployment lists, opens and edits remote directories; the adaptive directory chooser mounts its in-app browser rather than an OS-native dialog, which could only return a host path.
-- One composed provider family serves one environment. Addressing several SSH hosts needs one profile per environment.
+- One `ssh` row serves one world, and the Web workspace menus offer one add action per reachable world. Executable resolution and the terminal environment carry no target, so a deployment composing named worlds refuses those lookups.
 - TLS stream keys do not protect against remote OS process-memory inspection or debugging. File-effect policy retains the selected sandbox backend’s limits.
 
 <a id="dev-note"></a>

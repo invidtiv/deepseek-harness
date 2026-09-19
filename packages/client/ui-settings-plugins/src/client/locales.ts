@@ -34,6 +34,11 @@ export type PluginsSettingsLocaleKey =
   | 'subagentModelSelectionPartial' | 'subagentModelSelectionUnavailable'
   | 'subagentModelSelectionUnavailableGroup' | 'subagentModelSelectionEmpty'
   | 'subagentModelSelectionRequired' | 'subagentModelSelectionConflict' | 'subagentModelSelectionOff'
+  | 'sshEnvironmentsTitle' | 'sshEnvironmentsDescription'
+  | 'sshEnvironmentsEmpty' | 'sshEnvironmentsAdd'
+  | 'sshEnvironmentId' | 'sshEnvironmentIdPlaceholder'
+  | 'sshEnvironmentHost' | 'sshEnvironmentHostPlaceholder'
+  | 'sshEnvironmentRemove' | 'sshEnvironmentRowInvalid'
 
 /** English copy. */
 export const en: Record<PluginsSettingsLocaleKey, string> = {
@@ -93,6 +98,16 @@ export const en: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: 'Leave blank to use the provider default.',
   webSearchMaxUses: 'Max searches per request',
   webSearchMaxUsesHint: 'How many times one request may search before it must answer.',
+  sshEnvironmentsTitle: 'SSH environments',
+  sshEnvironmentsDescription: 'Named POSIX SSH servers a remote-execution profile runs on.',
+  sshEnvironmentsEmpty: 'No SSH environments are configured.',
+  sshEnvironmentsAdd: 'Add environment',
+  sshEnvironmentId: 'Identifier',
+  sshEnvironmentIdPlaceholder: 'build01',
+  sshEnvironmentHost: 'Host',
+  sshEnvironmentHostPlaceholder: 'build01.example',
+  sshEnvironmentRemove: 'Remove',
+  sshEnvironmentRowInvalid: 'An environment needs a unique identifier and an OpenSSH destination.',
   subagentTitle: 'Subagent',
   subagentDescription: 'Set Subagent recursion depth, count, and models.',
   subagentLimitsTitle: 'Limits',
@@ -181,6 +196,16 @@ export const zh: Record<PluginsSettingsLocaleKey, string> = {
   webSearchBaseUrlHint: '留空则使用提供方默认地址。',
   webSearchMaxUses: '单次请求最多搜索次数',
   webSearchMaxUsesHint: '一次请求在必须作答前最多可以搜索多少次。',
+  sshEnvironmentsTitle: 'SSH 环境',
+  sshEnvironmentsDescription: '具名 POSIX SSH 服务器；远程执行 profile 会选用其中一个。',
+  sshEnvironmentsEmpty: '尚未配置 SSH 环境。',
+  sshEnvironmentsAdd: '添加环境',
+  sshEnvironmentId: '标识',
+  sshEnvironmentIdPlaceholder: 'build01',
+  sshEnvironmentHost: '主机',
+  sshEnvironmentHostPlaceholder: 'build01.example',
+  sshEnvironmentRemove: '移除',
+  sshEnvironmentRowInvalid: '每个环境都需要唯一的标识和 OpenSSH 目标。',
   subagentTitle: 'Subagent',
   subagentDescription: '设置 Subagent 的递归层级、数量和模型。',
   subagentLimitsTitle: '运行限制',

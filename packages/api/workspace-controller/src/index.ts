@@ -4,6 +4,7 @@ import { Context } from '@deepseek-ai/cordis'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { WorkspaceCommands } from './commands.ts'
 import { DirectoryPickerController } from './directory-picker.ts'
+import { reachableEnvironmentIds } from './environments.ts'
 import { WorkspaceFileBrowse } from './file-browse.ts'
 import { WorkspaceFeed } from './feed.ts'
 import type {
@@ -82,11 +83,13 @@ export class WorkspaceController extends TypertRemoteService {
   @Remote('environments')
   environments(): WorkspaceEnvironmentView[] {
     const registry = this.ctx.get('sshEnvironments') as SshEnvironmentLister | undefined
+    const reachable = reachableEnvironmentIds(this.ctx)
     return registry?.list().map(environment => ({
       environmentId: environment.id,
       label: environment.label,
       host: environment.host,
       ...(environment.port === undefined ? {} : { port: environment.port }),
+      reachable: reachable.has(environment.id),
     })) ?? []
   }
 

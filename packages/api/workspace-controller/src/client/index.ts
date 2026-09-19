@@ -15,9 +15,11 @@ export { ClientWorkspaceModel } from './model.ts'
 export type {
   WorkspaceFollowSink, WorkspaceListPhase, WorkspaceRemote, WorkspaceSnapshot,
 } from './model.ts'
-export { WorkspaceController, WorkspaceCreateError, FileReadError, FileListError } from './service.ts'
+export { WorkspaceController, WorkspaceCreateError, EnvironmentListError, FileReadError, FileListError } from './service.ts'
 export type { IWorkspaces, WorkspaceSource } from './service.ts'
-export type { FileContents, FileListing, FileListingEntry, WorkspaceId, WorkspaceView } from '../types.ts'
+export type {
+  FileContents, FileListing, FileListingEntry, WorkspaceEnvironmentView, WorkspaceId, WorkspaceView,
+} from '../types.ts'
 
 type WorkspaceBaselineFrame = Extract<WorkspaceFollowFrame, { type: 'baseline' }>
 

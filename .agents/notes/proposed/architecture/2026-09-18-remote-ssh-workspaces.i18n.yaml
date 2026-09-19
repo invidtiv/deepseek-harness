@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/proposed/architecture/2026-09-18-remote-ssh-workspaces.md
-2026-09-18-remote-ssh-workspaces.md: 2122d7428998a1a6acaa20414a2dd0df94afcb4f
-2026-09-18-remote-ssh-workspaces.zh.md: 87e6be2474db078b22c847397ee7c67c6705dad5
+2026-09-18-remote-ssh-workspaces.md: d2629fb7045dc28c13249a43940ec5115b963dd5
+2026-09-18-remote-ssh-workspaces.zh.md: f9cf606aa93f495dfcf1f17b9b7b7348f5dd1a73

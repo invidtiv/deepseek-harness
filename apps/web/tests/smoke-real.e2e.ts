@@ -309,7 +309,7 @@ const notReady = UI_PLUGIN_DIRS.filter((dir) => {
 if (notReady.length > 0) console.warn(`[smoke-real] skipped — client bundles not ready: ${notReady.join(', ')}`)
 
 describe('dsh web keyless CLI smoke', () => {
-  it('serves a usable app from two immutable plugin batches', async () => {
+  it('serves a usable app from merged immutable plugin batches', async () => {
     requireDist()
     const sessionsDir = mkdtempSync(join(tmpdir(), 'dsh-web-keyless-'))
     const tsxLoader = pathToFileURL(createRequire(join(REPO_ROOT, 'package.json')).resolve('tsx')).href
@@ -356,18 +356,23 @@ describe('dsh web keyless CLI smoke', () => {
       await page.goto(readyUrl)
       await page.getByRole('button', { name: 'New session', exact: true }).first().waitFor({ timeout: 30_000 })
       const batchPaths = [...new Set(pluginScripts)].sort()
-      expect(batchPaths).toHaveLength(2)
-      expect(batchPaths).toContainEqual(expect.stringMatching(
-        /^\/plugins\/\?\?.+\/client\.js,.+\/client\.js&rev=[a-f\d]{12}$/,
-      ))
-      expect(batchPaths).toContainEqual(expect.stringMatching(
-        /^\/plugins\/\?\?@deepseek-ai\/dsh-client-modules\/client\.js&rev=[a-f\d]{12}$/,
-      ))
-      const readyOrigin = new URL(readyUrl).origin
-      expect([...cacheHeaders.values()]).toEqual([
-        'public, max-age=31536000, immutable',
-        'public, max-age=31536000, immutable',
+      // Application rows merge greedily under the 3 KiB request-target budget, so the
+      // batch count follows the composed client row set: the modules bootstrap stays
+      // its own single-entry batch and a trailing application batch may hold one row.
+      const bootstrapBatches = batchPaths.filter(path => path.includes('/dsh-client-modules/client.js'))
+      const applicationBatches = batchPaths.filter(path => !path.includes('/dsh-client-modules/client.js'))
+      expect(bootstrapBatches).toEqual([
+        expect.stringMatching(/^\/plugins\/\?\?@deepseek-ai\/dsh-client-modules\/client\.js&rev=[a-f\d]{12}$/),
       ])
+      expect(applicationBatches.length).toBeGreaterThanOrEqual(1)
+      for (const path of applicationBatches) {
+        expect(path).toMatch(/^\/plugins\/\?\?.+\/client\.js&rev=[a-f\d]{12}$/)
+      }
+      expect(applicationBatches.some(path => path.includes(','))).toBe(true)
+      const readyOrigin = new URL(readyUrl).origin
+      for (const path of batchPaths) {
+        expect(cacheHeaders.get(path)).toBe('public, max-age=31536000, immutable')
+      }
       for (const path of batchPaths) {
         const [scriptResponse, mapResponse] = await Promise.all([
           fetch(`${readyOrigin}${path}`),

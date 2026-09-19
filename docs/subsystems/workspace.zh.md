@@ -33,10 +33,13 @@ interface Workspace {
   /** Stable record id (generated uuid). */
   readonly id: WorkspaceId
 
-  /** Transport that reaches {@link path}: the harness host's filesystem, or a named SSH environment's. */
+  /** Transport that reaches {@link path}: the harness host's filesystem, or an SSH world. */
   readonly transport: WorkspaceTransport
 
-  /** Named SSH environment when {@link transport} is `ssh`; absent for a local workspace. */
+  /**
+   * Named SSH environment when {@link transport} is `ssh`; absent for a local
+   * workspace or a remote world the deployment reaches without a registry entry.
+   */
   readonly environmentId?: string | undefined
 
   /**

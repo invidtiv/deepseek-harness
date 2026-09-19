@@ -88,6 +88,8 @@ function mount(
   items: readonly WorkspaceView[] = [workspace('alpha', 'Alpha')],
   createWorkspace = vi.fn(),
   occupancy = occupancySource(),
+  listEnvironments: WorkspacePickerProps['listEnvironments'] = vi.fn(async () => []),
+  open = true,
 ) {
   const onPick = vi.fn()
   const onClose = vi.fn()
@@ -95,7 +97,7 @@ function mount(
   const { probe, renderSlot } = flowProbe()
   const renderPicker = (nextItems: readonly WorkspaceView[]) => (
     <WorkspacePicker
-      open
+      open={open}
       anchorRef={anchorRef}
       useSessions={hook(sessions)}
       useSessionStatus={hook(noPendingInteraction)}
@@ -105,6 +107,7 @@ function mount(
       onPick={onPick}
       onClose={onClose}
       createWorkspace={createWorkspace}
+      listEnvironments={listEnvironments}
       useDirectoryFlow={occupancy.useDirectoryFlow}
       renderSlot={renderSlot}
       t={t}
@@ -132,6 +135,76 @@ describe('WorkspacePicker', () => {
     expect(b.onPick).toHaveBeenCalledWith(wid('beta'))
   })
 
+  it('labels an SSH Workspace row with its server and leaves a local row unlabelled', () => {
+    mount([
+      workspace('alpha', 'Alpha'),
+      { ...workspace('beta', 'Beta'), transport: 'ssh', environmentId: 'build01' },
+      { ...workspace('gamma', 'Gamma'), transport: 'ssh' },
+    ])
+    expect(screen.getByRole('menuitem', { name: /Alpha/ }).textContent).toBe('Alpha')
+    expect(screen.getByRole('menuitem', { name: /Beta/ }).textContent).toBe('Betabuild01')
+    expect(screen.getByRole('menuitem', { name: /Gamma/ }).textContent).toBe('Gamma远程服务器')
+  })
+
+  it('labels a remote Workspace with the served environment label', async () => {
+    const listEnvironments = vi.fn(async () => [
+      { environmentId: 'build01', label: 'Build 01', host: 'build01.example', reachable: true },
+    ])
+    mount(
+      [{ ...workspace('beta', 'Beta'), transport: 'ssh', environmentId: 'build01' }],
+      vi.fn(), occupancySource(), listEnvironments,
+    )
+
+    await waitFor(() => {
+      expect(screen.getByRole('menuitem', { name: /Beta/ }).textContent).toBe('BetaBuild 01')
+    })
+  })
+
+  it('leaves the recorded id when the environment list cannot be read', async () => {
+    const listEnvironments = vi.fn(async () => { throw new Error('environment listing failed') })
+    mount(
+      [{ ...workspace('beta', 'Beta'), transport: 'ssh', environmentId: 'build01' }],
+      vi.fn(), occupancySource(), listEnvironments,
+    )
+
+    await waitFor(() => { expect(listEnvironments).toHaveBeenCalled() })
+    expect(screen.getByRole('menuitem', { name: /Beta/ }).textContent).toBe('Betabuild01')
+  })
+
+  it('offers one add action per reachable world and creates in the chosen one', async () => {
+    const listEnvironments = vi.fn(async () => [
+      { environmentId: 'build01', label: 'Build 01', host: 'build01.example', reachable: true },
+      { environmentId: 'build02', label: 'Build 02', host: 'build02.example', reachable: true },
+    ])
+    const created = { ...workspace('adopted'), path: '/tmp/project', title: 'project' }
+    const createWorkspace = vi.fn(async () => created)
+    const b = mount([workspace('alpha', 'Alpha')], createWorkspace, occupancySource(), listEnvironments)
+
+    const entry = await screen.findByRole('menuitem', { name: '在 Build 02 上添加工作区…' })
+    fireEvent.click(entry)
+    await act(async () => { b.probe.owner!.onPicked('/tmp/project') })
+
+    expect(createWorkspace).toHaveBeenCalledWith({ path: '/tmp/project', environmentId: 'build02' })
+  })
+
+  it('offers no world choice for an environment the deployment cannot reach', async () => {
+    const listEnvironments = vi.fn(async () => [
+      { environmentId: 'build09', label: 'Build 09', host: 'build09.example', reachable: false },
+    ])
+    mount([workspace('alpha', 'Alpha')], vi.fn(), occupancySource(), listEnvironments)
+
+    await waitFor(() => { expect(listEnvironments).toHaveBeenCalled() })
+    expect(screen.queryByRole('menuitem', { name: /Build 09/ })).toBeNull()
+    expect(screen.getByRole('menuitem', { name: '添加工作区…' })).toBeTruthy()
+  })
+
+  it('reads the environment list only while the picker is open', () => {
+    const listEnvironments = vi.fn(async () => [])
+    mount([workspace('alpha', 'Alpha')], vi.fn(), occupancySource(), listEnvironments, false)
+
+    expect(listEnvironments).not.toHaveBeenCalled()
+  })
+
   it('opens the composed directory flow, adopts its picked path, and selects the returned Workspace', async () => {
     const created = { ...workspace('adopted'), path: '/tmp/project', title: 'project' }
     const createWorkspace = vi.fn(async () => created)
@@ -147,14 +220,15 @@ describe('WorkspacePicker', () => {
     expect(screen.queryByTestId('directory-flow')).toBeNull()
   })
 
-  it('raises the flow straight from the anchor gesture when adding is the only entry', () => {
+  it('raises the flow straight from the anchor gesture when adding is the only entry', async () => {
     // Nothing to list and one action left: a one-row menu would offer no
-    // choice, so the owner's open request lands in the flow itself.
+    // choice, so the owner's open request lands in the flow itself once the
+    // served environment list has settled.
     const b = mount([])
+    await waitFor(() => { expect(screen.getByTestId('directory-flow')).toBeTruthy() })
     expect(screen.queryByRole('menu')).toBeNull()
     expect(screen.queryByRole('menuitem', { name: '添加工作区…' })).toBeNull()
     expect(b.onClose).toHaveBeenCalled()
-    expect(screen.getByTestId('directory-flow')).toBeTruthy()
   })
 
   it('treats flow cancellation as a silent no-op', () => {
@@ -225,6 +299,7 @@ describe('WorkspacePicker', () => {
         useSessionRetainInfo={() => undefined}
         usePanelInfo={usePanelInfo} useResource={useResource}
         onPick={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
+        listEnvironments={vi.fn(async () => [])}
         useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
       />,
     )
@@ -243,6 +318,7 @@ describe('WorkspacePicker', () => {
         useSessionRetainInfo={() => undefined}
         usePanelInfo={usePanelInfo} useResource={useResource}
         onPick={vi.fn()} onClose={vi.fn()} createWorkspace={vi.fn()}
+        listEnvironments={vi.fn(async () => [])}
         useDirectoryFlow={occupancySource().useDirectoryFlow} renderSlot={renderSlot} t={t}
       />,
     )

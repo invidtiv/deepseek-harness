@@ -32,9 +32,9 @@ ssh-environments:
       identityFile: ~/.ssh/id_ed25519
 ```
 
-Save that section in your `$DSH_HOME/settings.yaml` — no settings card renders it yet, so edit the file directly; the [environment registry](../../../packages/ssh/ssh-environments/README.md) owns its schema and the id-to-connection lookup. An entry stores only connection references — a key path, an agent socket, a config file path — and never key material or a passphrase. Fields you omit keep OpenSSH's own values, so the rest of the connection can stay in `~/.ssh/config`.
+Save that section in your `$DSH_HOME/settings.yaml`, or edit it on the Plugins settings page's **SSH environments** card, which stages the whole map and writes it on save; the [environment registry](../../../packages/ssh/ssh-environments/README.md) owns its schema and the id-to-connection lookup. The card edits each environment's identifier and OpenSSH destination; every other option stays in the file or in `~/.ssh/config`. An entry stores only connection references — a key path, an agent socket, a config file path — and never key material or a passphrase. Fields you omit keep OpenSSH's own values, so the rest of the connection can stay in `~/.ssh/config`.
 
-The registry registers the `ssh-environments` namespace and resolves a stable id into validated connection options. The Web workspace picker lists those ids through `workspace.environments`, and a remote workspace records the id rather than the address, so renaming the host or the remote directory does not change the workspace identity.
+The registry registers the `ssh-environments` namespace and resolves a stable id into validated connection options, and `workspace.environments` lists those ids for a client. A remote workspace records the id rather than the address, so renaming the host or the remote directory does not change the workspace identity; the conversation's workspace menu labels each workspace with that environment's label, or with the recorded id when the deployment does not name it, and a workspace created from the Web UI records the world its directory was resolved in.
 
 ## Start the Web UI against the remote host
 
@@ -61,7 +61,9 @@ Open the Web UI and choose a workspace. The picker lists directories through the
 
 ## Use more than one server
 
-One composed provider family serves one SSH environment, so a second server needs a second deployment rather than a second workspace. Give the profile its own copy of the overlay with that server's `DSH_SSH_ENVIRONMENT`, `DSH_SSH_WORKSPACE` and helper coordinates, and start one `dsh web` process per environment on its own port. Each process owns its Sessions, workspaces and identities; a single `ssh-environments` settings section can describe every server, and each process selects one entry by id.
+One deployment can reach several SSH hosts. Compose the named-environment registry, the world router (`@deepseek-ai/dsh-ssh/worlds`) and one `ssh` row per environment: the row the Loader does not isolate serves the deployment default, and each additional world sits in a group that isolates only `ssh`, so its service identity cannot collide with the default row. [`apps/cli/config/examples/ssh-multi/cordis.yml`](../../../apps/cli/config/examples/ssh-multi/cordis.yml) is that overlay; it takes `DSH_SSH_ENVIRONMENT` for the default world, `DSH_SSH_SECOND_ENVIRONMENT` and `DSH_SSH_SECOND_WORKSPACE` for the second, and the helper coordinates shared by both.
+
+Routing follows the workspace a Session runs in, not the connection the process started with: every workspace records its environment and remote directory, and each file, process and sandbox call goes to the connection that owns that directory. `workspace.environments` reports which environments this deployment composes a connection for, the workspace menus offer one add action per reachable world once there is more than one, and a create naming an environment the deployment cannot reach is refused rather than registering a workspace another host would serve. Executable resolution and the terminal-environment lookup carry no target, so a deployment composing named worlds refuses them instead of guessing.
 
 ## Resume the same Session from another computer
 

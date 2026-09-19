@@ -89,6 +89,8 @@ ctx.workspaceRegistry.list() // shows the project, newest first
 
 该 API 是一个由两个所有者构成的小家族：`WorkspaceRegistry` 负责创建、排序与删除项目、管理其会话记账，以及归档或恢复单个会话；`Workspace` 实体暴露显示标题、目录状态与会话投影。各方法的精确约定在代码中，而非本 README——参见 [src/index.ts](src/index.ts) 与 [src/entity.ts](src/entity.ts)。
 
+项目创建会带上传输定位符：`transport`（`local` 或 `ssh`），以及由环境注册表命名的 SSH 世界的 `environmentId`。若部署无需注册表条目即可访问某个 SSH 世界，则记录 `transport: 'ssh'` 且不带 id；本地记录则拒绝携带 id。
+
 ### 源码地图
 
 | 文件 | 职责 |
