@@ -1,0 +1,75 @@
+{
+  "$comment": "Node descriptors for the mesh cross-machine suite. Every probe target - scheme, host, listen target, published port, path - is derived from these fields, never hardcoded.",
+  "$listenKinds": "unix (T1, default: a unix socket on POSIX, a named pipe on Windows), loopback (T2), tailscale (T3).",
+  "$publishedPortNote": "8444, not 8443: this machine already runs 'tailscale serve --https=8443' mapping to 127.0.0.1:8765, verified with 'tailscale serve status'.",
+  "$sshNote": "Only W -> L is authorized. 'ssh bsa-contabo' from big succeeds with the default key; 'ssh 100.122.125.15' FROM bsa-contabo is refused. The driver must therefore stay pull-based: W drives L, never the reverse.",
+  "nodes": {
+    "W": {
+      "role": "driver-and-peer",
+      "topology": "serve-unix",
+      "ssh": null,
+      "tailscaleName": "big.tail652dda.ts.net",
+      "ip": "100.122.125.15",
+      "ipv6": "fd7a:115c:a1e0::b001:7d8c",
+      "os": "windows",
+      "listen": { "kind": "unix", "path": "\\\\.\\pipe\\dsh-mesh" },
+      "published": { "scheme": "https", "port": 8444, "path": "/mesh/v1" },
+      "web": { "port": 3080 },
+      "repoDir": "C:/Users/tiaz/Desktop/Github/deepseek-harness",
+      "dshHome": "C:/Users/tiaz/.dsh"
+    },
+
+    "L": {
+      "role": "peer",
+      "topology": "serve-unix",
+      "ssh": "bsa-contabo",
+      "sshHost": "vmi2916953",
+      "tailscaleName": "vmi2916953.tail652dda.ts.net",
+      "ip": "100.115.155.120",
+      "publicIp": "212.47.64.174",
+      "os": "linux",
+      "kernel": "6.8.0-139-generic",
+      "runtime": { "node": "v22.22.2", "pnpm": "12.4.2" },
+      "listen": { "kind": "unix", "path": "/run/user/1000/dsh-mesh.sock" },
+      "published": { "scheme": "https", "port": 8444, "path": "/mesh/v1" },
+      "web": { "port": 3081 },
+      "repoDir": "/home/bsdev/dsh-mesh-clones/current",
+      "dshHome": "/home/bsdev/dsh-mesh-home",
+      "pending": false,
+      "publicHostWarning": "This node has a public IP and offers a tailnet exit node. Nothing below may ever be published with 'tailscale funnel': the mesh endpoint is tailnet-only, and the GUI stays on loopback."
+    },
+
+    "X": {
+      "role": "attacker-unpaired",
+      "topology": "local-second-home",
+      "ssh": null,
+      "sameMachineAs": "W",
+      "tailscaleName": "big.tail652dda.ts.net",
+      "ip": "100.122.125.15",
+      "os": "windows",
+      "listen": { "kind": "unix", "path": "\\\\.\\pipe\\dsh-mesh-x" },
+      "published": { "scheme": "https", "port": 8444, "path": "/mesh/v1" },
+      "web": { "port": 3082 },
+      "repoDir": "C:/Users/tiaz/Desktop/Github/deepseek-harness",
+      "dshHome": "C:/Users/tiaz/.dsh-mesh-x",
+      "pending": false,
+      "note": "No third machine on this tailnet accepts a key: kimi, tigs-pi, and ai reject every user tried. The unpaired and cloned-identity roles are therefore played by a SECOND HARNESS HOME on W, which is a genuinely different node identity, grant store, and pair of credentials. It is not a different operating system, and the cases that need one are the macOS-dependent ones, which stay unrun."
+    },
+
+    "M": {
+      "role": "peer-macos",
+      "topology": "serve-unix",
+      "ssh": null,
+      "tailscaleName": null,
+      "ip": null,
+      "os": "macos",
+      "listen": { "kind": "unix", "path": "/tmp/dsh-mesh.sock" },
+      "published": { "scheme": "https", "port": 8444, "path": "/mesh/v1" },
+      "web": { "port": 3083 },
+      "repoDir": "~/dsh-mesh-clones/current",
+      "dshHome": "~/.dsh",
+      "pending": true,
+      "pendingReason": "no macOS device is present on tailnet tail652dda.ts.net; verified with 'tailscale status'"
+    }
+  }
+}

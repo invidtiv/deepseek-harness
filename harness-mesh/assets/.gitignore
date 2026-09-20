@@ -1,0 +1,3 @@
+# Generated run artifacts. The plans reference only results.csv, tailscale-status.json,
+# and tailscale-serve.txt from a run; the directories themselves are not kept.
+runs/
