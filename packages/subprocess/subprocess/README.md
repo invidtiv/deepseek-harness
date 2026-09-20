@@ -129,7 +129,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 -----
 
-Terminal consumers use `terminalEnvironment()` to read the provider platform and preferred shell, and `resolveExecutable()` to verify candidates. A completed lookup miss throws `SubprocessExecutableNotFoundError`; transport failures remain distinct. `spawnTerminal` requires `terminalType` and initial dimensions, and its handle supports `resize(cols, rows)` without reallocating the process.
+Terminal consumers use `terminalEnvironment()` to read the provider platform and preferred shell, and `resolveExecutable()` to verify candidates in an execution world: a lookup naming a `cwd` resolves in the world that owns it, exactly as `spawn` routes, while a target-less lookup uses the provider's default world. A completed lookup miss throws `SubprocessExecutableNotFoundError`; transport failures remain distinct. `spawnTerminal` requires `terminalType` and initial dimensions, and its handle supports `resize(cols, rows)` without reallocating the process.
 
 <a id="model-experience"></a>
 ## Model Experience

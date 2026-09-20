@@ -102,6 +102,8 @@ declare class SshConnection extends Service {
   async [Service.init](): Promise<void>;
   /** Verified remote Node executable for the paired PTC runtime. */
   get nodeExecutable(): string;
+  /** Verified remote PTC bootstrap entry; absent when the deployment configured none. */
+  get launchBootstrap(): string | undefined;
   /** Verified preinstalled PTC entry; unconfigured runtimes fail before program execution. */
   get bootstrapPath(): string;
   /**
@@ -166,13 +168,62 @@ dispose(): Promise<void>
 
 Source: [`packages/ssh/ssh/src/index.ts`](../../packages/ssh/ssh/src/index.ts)
 
+<a id="ctxsshbroker--sshbroker"></a>
+
+### `ctx.sshBroker` — `SshBroker`
+
+Opens one connection per configured environment on first use and releases them together.
+
+```ts cordis-catalog
+/**
+ * Environment ids this deployment can connect to: the configured entries
+ * that declare every remote runtime coordinate a connection needs.
+ * @returns the connectable environment ids, in declaration order.
+ */
+list(): readonly string[]
+
+/**
+ * Connect to one environment, composing the connection on first use.
+ * Concurrent callers share one attempt.
+ * @param id - stable environment identity.
+ * @returns the live connection providers route to.
+ * @throws {SshEnvironmentUnknownError} when the id is not configured.
+ * @throws {SshEnvironmentIncompleteError} when its runtime coordinates are incomplete.
+ */
+connect(id: string): Promise<SshWorldConnection>
+
+/**
+ * List one directory level in a named environment, composing its connection
+ * on first use. The remote host's own POSIX spelling is preserved, so a
+ * caller on any host platform sees canonical remote paths.
+ * @param id - stable environment identity.
+ * @param path - absolute remote directory; absent lists the environment's workspace.
+ * @param signal - caller lifetime, which stops the remote scan.
+ * @returns the listed level with its ancestry and the environment's workspace.
+ */
+async listDirectory(id: string, path?: string, signal?: AbortSignal): Promise<SshRemoteDirectory>
+
+/**
+ * Create one child directory in a named environment.
+ * @param id - stable environment identity.
+ * @param path - absolute remote parent that already exists.
+ * @param name - single child segment.
+ * @param policy - file-effect policy the creation runs under.
+ * @param signal - caller lifetime.
+ * @returns the created directory's canonical absolute remote path.
+ */
+async createDirectory(id: string, path: string, name: string, policy: SshRemoteDirectoryPolicy, signal?: AbortSignal): Promise<string>
+```
+
+Source: [`packages/ssh/ssh/src/broker.ts`](../../packages/ssh/ssh/src/broker.ts)
+
 <a id="ctxsshenvironments--sshenvironments"></a>
 
 ### `ctx.sshEnvironments` — `SshEnvironments`
 
 Registry over the deployment's named SSH environments.
 
-The service registers the SSH_ENVIRONMENTS_NAMESPACE settings namespace during activation and resolves a stable id into validated OpenSSH connection options. It never opens a connection and never stores a secret; the SSH provider family owns both.
+The service registers the SSH_ENVIRONMENTS_NAMESPACE settings namespace during activation and resolves a stable id into validated OpenSSH connection options (resolve) or into those options plus the remote runtime coordinates a helper launch needs (resolveRuntime). It never opens a connection and never stores a secret; the SSH provider family owns both.
 
 ```ts cordis-catalog
 /**
@@ -196,6 +247,18 @@ get(id: SshEnvironmentId): SshEnvironmentEntry | undefined
  * @throws {SshEnvironmentUnknownError} when the id is not configured.
  */
 resolve(id: SshEnvironmentId): SshEnvironment
+
+/**
+ * Resolve one environment into everything a connection needs: the OpenSSH
+ * options plus the remote runtime coordinates (Node, helper entry, helper
+ * digest, and default workspace) the helper is launched with. An entry that
+ * omits `workspace` resolves to {@link SSH_ENVIRONMENT_DEFAULT_WORKSPACE}.
+ * @param id - stable environment identity.
+ * @returns the resolved connection and remote runtime coordinates.
+ * @throws {SshEnvironmentUnknownError} when the id is not configured.
+ * @throws {SshEnvironmentIncompleteError} when a required runtime coordinate is absent.
+ */
+resolveRuntime(id: SshEnvironmentId): SshEnvironmentRuntime
 ```
 
 Source: [`packages/ssh/ssh-environments/src/index.ts`](../../packages/ssh/ssh-environments/src/index.ts)
@@ -220,6 +283,16 @@ register(environmentId: string | undefined, connection: SshWorldConnection): () 
  * @returns the environment ids in registration order; the default connection contributes none.
  */
 list(): readonly string[]
+
+/**
+ * Resolve one named world's connection explicitly, without consulting the
+ * workspace locators: a caller that already knows the world it addresses
+ * (an operator-chosen environment, a target that records it) needs no claim.
+ * @param environmentId - world to resolve.
+ * @returns the connection serving that world.
+ * @throws {SshWorldUnavailableError} when no connection is composed for it.
+ */
+connectionForEnvironment(environmentId: string): SshWorldConnection
 
 /**
  * Refuse an operation that carries no target while named worlds are composed.

@@ -129,7 +129,7 @@ spawn 会立即返回活动句柄，而不公开目标身份。`done` 独立报�
 
 -----
 
-终端消费者通过 `terminalEnvironment()` 读取 provider 平台和首选 shell，通过 `resolveExecutable()` 验证候选。确定未找到可执行文件时抛出 `SubprocessExecutableNotFoundError`，传输故障仍单独报告。`spawnTerminal` 要求 `terminalType` 和初始尺寸，返回的 handle 通过 `resize(cols, rows)` 调整尺寸，不重新分配进程。
+终端消费者通过 `terminalEnvironment()` 读取 provider 平台和首选 shell，通过 `resolveExecutable()` 在执行世界中验证候选：指明 `cwd` 的查找在该 cwd 所属的世界中解析，与 `spawn` 的路由一致；不带目标的查找则使用 provider 的默认世界。确定未找到可执行文件时抛出 `SubprocessExecutableNotFoundError`，传输故障仍单独报告。`spawnTerminal` 要求 `terminalType` 和初始尺寸，返回的 handle 通过 `resize(cols, rows)` 调整尺寸，不重新分配进程。
 
 <a id="model-experience"></a>
 ## 模型体验

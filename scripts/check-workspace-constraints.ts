@@ -186,7 +186,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   // between that helper and the connection owner.
   '@deepseek-ai/dsh-ssh': [
     'lib/helper.js', 'lib/protocol.js', 'lib/schemas.js', 'lib/worlds.js',
+    'lib/broker.js', 'lib/local-world.js',
     'lib/protocol-*.js', 'lib/schemas-*.js', 'lib/stream-security-*.js', 'lib/worlds-*.js',
+    'lib/broker-*.js', 'lib/local-world-*.js', 'lib/types-*.js',
   ],
   // Ordinary native containment ships a path-loaded runner and its shared
   // runner chunk beside the existing node-pty permission repair.

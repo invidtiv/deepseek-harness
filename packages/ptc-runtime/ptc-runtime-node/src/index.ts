@@ -8,7 +8,7 @@ import type { PtcBindingNamespace, PtcJsonValue, PtcRunFailure, PtcRunRequest, P
 import { MAX_TIMER_DELAY_MS, clampTimeout } from '@deepseek-ai/dsh-timeout'
 import { SandboxUnavailableError, classifyRunnerFailure, isRunnerSpawnFailure } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv, SandboxExecutionPolicy, SandboxMode } from '@deepseek-ai/dsh-sandbox'
-import type { SubprocessHandle, SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
+import { SubprocessExecutableNotFoundError, type SubprocessHandle, type SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
 import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import type {} from '@deepseek-ai/dsh-fs'
 import { snapshotJsonValue } from '@deepseek-ai/dsh-util-values'
@@ -68,11 +68,18 @@ export class NodePtcRuntime extends PtcRuntime {
     return 'Each call runs in a fresh Node process. Node APIs are available through await import(...). Relative paths use the supplied working directory; process.env starts empty. Direct filesystem access follows this execution\'s sandbox policy.'
   }
   private readonly config: ResolvedConfig
+  /** Whether `nodeExecutable` came from the deployment or from this process. */
+  private readonly implicitNode: boolean
   private readonly live = new Set<LiveRun>()
   private disposed = false
 
+  /**
+   * @param ctx - Cordis context this provider registers on.
+   * @param config - deployment bounds and launch choices.
+   */
   constructor(ctx: Context, config: Config) {
     super(ctx)
+    this.implicitNode = config.nodeExecutable === undefined
     this.config = { ...config, nodeExecutable: config.nodeExecutable ?? process.execPath } as ResolvedConfig
     for (const [key, value] of Object.entries(this.config)) {
       if (typeof value === 'number' && (!Number.isFinite(value) || value <= 0)) throw new Error(`ptc-runtime-node: ${key} must be positive and finite`)
@@ -95,6 +102,24 @@ export class NodePtcRuntime extends PtcRuntime {
   }
 
   override get sandboxMode(): SandboxMode { return this.ctx.sandboxPolicy.defaultMode }
+
+  /**
+   * Resolve the Node executable in the run's execution world. The implicit
+   * default is this process's own executable, which exists only in the local
+   * world, so a world that cannot resolve it falls back to the bare `node`
+   * name; an explicitly configured executable is used as given.
+   * @param cwd - run directory whose world answers the lookup.
+   * @param signal - cancellation of the lookup.
+   * @returns the canonical Node executable in that world.
+   */
+  private async resolveNodeExecutable(cwd: string, signal: AbortSignal): Promise<string> {
+    try {
+      return await this.ctx.subprocess.resolveExecutable(this.config.nodeExecutable, undefined, signal, cwd)
+    } catch (error) {
+      if (!this.implicitNode || !(error instanceof SubprocessExecutableNotFoundError)) throw error
+      return await this.ctx.subprocess.resolveExecutable('node', undefined, signal, cwd)
+    }
+  }
 
   override get timeout(): { defaultMs: number; maxMs: number } {
     return { defaultMs: Math.min(this.config.timeoutMs, this.config.maxTimeoutMs), maxMs: this.config.maxTimeoutMs }
@@ -214,13 +239,15 @@ export class NodePtcRuntime extends PtcRuntime {
         })),
         maxOutputBytes: this.config.maxOutputBytes,
       }
-      const executable = await this.ctx.subprocess.resolveExecutable(this.config.nodeExecutable, undefined, signal)
+      const executable = await this.resolveNodeExecutable(spec.cwd, signal)
       // Abort callbacks can settle execution before or during an awaited operation.
       // oxlint-disable-next-line typescript/no-unnecessary-condition
       if (settled) return await result.promise
       const packaged = 'pkg' in process && this.config.bootstrapPath === undefined
       const heapFlag = `--max-old-space-size=${this.config.maxOldGenerationSizeMb}`
-      const argv = [executable, ...packaged ? [] : [heapFlag], ...bootstrapArgs(this.ctx.fs, this.config, this.config.maxMessageBytes)]
+      const worldBootstrap = this.ctx.subprocess.launchBootstrap(spec.cwd)
+      const bootstrapArgv = bootstrapArgs(this.ctx.fs, this.config, this.config.maxMessageBytes, worldBootstrap)
+      const argv = [executable, ...packaged ? [] : [heapFlag], ...bootstrapArgv]
       confined = policy.mode === 'danger-full-access' ? undefined : await this.ctx.sandbox.confine(argv, { ...policy, mode: policy.mode }, signal)
       // oxlint-disable-next-line typescript/no-unnecessary-condition -- Cancellation can settle during awaited confinement.
       if (settled) return await result.promise

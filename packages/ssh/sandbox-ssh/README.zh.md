@@ -29,6 +29,8 @@ kind: "package-reference"
 
 传入完整的 `read-only` 或 `workspace-write` 策略。工作区路径在远端主机解释并规范化。消费方在 `danger-full-access` 模式下绕过 `confine()`；连接不额外引入本地／远端策略标记。
 
+组合了[世界池](../ssh/README.zh.md)时，`confine()` 将策略的工作区根解析到拥有它的连接。若部署同时组合了本地执行世界（`localSandbox`），任何 SSH 世界都未认领的根由该委托施加限制，因此混合部署绝不会把远端规则套用到主机路径上。
+
 -----
 
 <a id="understand-the-implementation"></a>

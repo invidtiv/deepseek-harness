@@ -79,6 +79,34 @@ export interface Config {
   maxEntries: number
 }
 
+/** One remote directory level as the composed SSH broker reports it. */
+interface RemoteDirectory {
+  /** Canonical absolute remote path of the listed directory. */
+  readonly path: string
+  /** The connection's remote workspace, used as the listing's home anchor. */
+  readonly home: string
+  /** Ancestor chain from the remote root to `path` inclusive. */
+  readonly crumbs: readonly { readonly name: string; readonly path: string }[]
+  /** Direct child directories, name-sorted. */
+  readonly entries: readonly { readonly name: string; readonly path: string }[]
+}
+
+/**
+ * Structural face of the lazy SSH connection broker (`ctx.sshBroker`),
+ * implemented by `@deepseek-ai/dsh-ssh/broker` and read by service name so
+ * this package keeps no dependency on the SSH provider family.
+ */
+interface RemoteDirectorySource {
+  listDirectory(environmentId: string, path?: string, signal?: AbortSignal): Promise<RemoteDirectory>
+  createDirectory(
+    environmentId: string,
+    path: string,
+    name: string,
+    policy: { readonly mode: 'read-only' | 'workspace-write' | 'danger-full-access'; readonly workspaceRoot: string },
+    signal?: AbortSignal,
+  ): Promise<string>
+}
+
 /** The `ctx.directoryPicker` browse implementation (stable capability object per service life). */
 export default class BrowseDirectoryPicker extends DirectoryPicker {
   static inject = ['fs']
@@ -98,6 +126,8 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
     kind: 'browse',
     list: (path, signal) => this.list(path, signal),
     createDirectory: (path, name) => this.createDirectory(path, name),
+    listIn: (environmentId, path, signal) => this.listRemote(environmentId, path, signal),
+    createDirectoryIn: (environmentId, path, name) => this.createRemote(environmentId, path, name),
   }
 
   constructor(ctx: Context, private readonly config: Config) {
@@ -147,6 +177,60 @@ export default class BrowseDirectoryPicker extends DirectoryPicker {
       signal?.throwIfAborted()
       throw new DirectoryPickerError('directory-unreadable', requested, `cannot list ${requested}: ${messageOf(error)}`)
     }
+  }
+
+  /**
+   * List one level in a named SSH environment through the composed broker.
+   * The remote host reports canonical POSIX paths, so the host platform never
+   * influences the level's spelling or its ancestry.
+   */
+  private async listRemote(environmentId: string, path: string | undefined, signal?: AbortSignal): Promise<DirectoryListing> {
+    const source = this.remoteSource(path ?? environmentId)
+    let remote: RemoteDirectory
+    try {
+      remote = await source.listDirectory(environmentId, path, signal)
+    } catch (error: unknown) {
+      signal?.throwIfAborted()
+      throw new DirectoryPickerError('directory-unreadable', path ?? environmentId, `cannot list ${path ?? environmentId}: ${messageOf(error)}`)
+    }
+    const entries: DirectoryEntry[] = []
+    let truncated = false
+    for (const entry of remote.entries) {
+      if (entries.length === this.config.maxEntries) {
+        truncated = true
+        break
+      }
+      entries.push({ name: entry.name, path: entry.path, hidden: entry.name.startsWith('.') })
+    }
+    return {
+      path: remote.path,
+      home: remote.home,
+      crumbs: remote.crumbs.map(crumb => ({ name: crumb.name, path: crumb.path, hidden: false })),
+      entries,
+      truncated,
+    }
+  }
+
+  /** Create one child directory in a named SSH environment through the composed broker. */
+  private async createRemote(environmentId: string, path: string, name: string): Promise<string> {
+    const source = this.remoteSource(path)
+    // The operator's own directory choice is not an agent file effect, so it is
+    // created unfenced, exactly as the composed filesystem's own picker creates it.
+    const policy = { mode: 'danger-full-access' as const, workspaceRoot: path }
+    try {
+      return await source.createDirectory(environmentId, path, name, policy)
+    } catch (error: unknown) {
+      throw new DirectoryPickerError('directory-create-failed', join(path, name), `cannot create ${join(path, name)}: ${messageOf(error)}`)
+    }
+  }
+
+  /** The composed broker, or a listing failure when the deployment has none. */
+  private remoteSource(path: string): RemoteDirectorySource {
+    const source = this.ctx.get('sshBroker') as RemoteDirectorySource | undefined
+    if (source === undefined) {
+      throw new DirectoryPickerError('directory-unreadable', path, 'this deployment composes no SSH environment broker')
+    }
+    return source
   }
 
   private async createDirectory(path: string, name: string): Promise<string> {

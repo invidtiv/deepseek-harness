@@ -15,8 +15,12 @@ import { DirectoryBrowser } from './DirectoryBrowser.tsx'
 export interface BrowseFlowInjected {
   /** List one directory level (absent path = the Host home directory); the signal aborts a superseded scan. */
   listDirectory: (path?: string, signal?: AbortSignal) => Promise<DirectoryListing>
+  /** List one directory level inside a named SSH environment. */
+  listDirectoryIn: (environmentId: string, path?: string, signal?: AbortSignal) => Promise<DirectoryListing>
   /** Create one child directory under an existing parent. */
   createDirectory: (path: string, name: string) => Promise<string>
+  /** Create one child directory inside a named SSH environment. */
+  createDirectoryIn: (environmentId: string, path: string, name: string) => Promise<string>
   /** Localized dialog copy (this package's namespace). */
   t: Translate
 }
@@ -31,11 +35,19 @@ export interface BrowseFlowInjected {
  * @returns the dialog element (renders nothing while closed).
  */
 export function BrowseDirectoryFlow(props: DirectoryFlowOwnerProps & BrowseFlowInjected): ReactElement {
+  // One dialog browses one world: an environment-scoped pick binds every
+  // request of this open to that environment, so a level and its children can
+  // never be mixed across execution worlds.
+  const { environmentId } = props
   return createElement(DirectoryBrowser, {
     open: props.open,
     busy: props.busy,
-    listDirectory: props.listDirectory,
-    createDirectory: props.createDirectory,
+    listDirectory: environmentId === undefined
+      ? props.listDirectory
+      : (path, signal) => props.listDirectoryIn(environmentId, path, signal),
+    createDirectory: environmentId === undefined
+      ? props.createDirectory
+      : (path, name) => props.createDirectoryIn(environmentId, path, name),
     t: props.t,
     onOpen: props.onPicked,
     onClose: props.onCancel,

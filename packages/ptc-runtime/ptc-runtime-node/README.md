@@ -52,7 +52,7 @@ Configure the provider row after its required services are available:
 | `maxMessageBytes` | `134,217,728` | Limit for a control frame, outstanding argument bytes and queued control writes |
 | `maxPendingCalls` | `128` | Maximum simultaneous host binding calls |
 | `graceMs` | `3,000` | Managed termination and output-drain grace |
-| `nodeExecutable` | Current Node executable | Executable resolved in the subprocess execution world |
+| `nodeExecutable` | Current Node executable | Executable resolved in the run's execution world; the implicit default falls back to the bare `node` name in a world that cannot resolve the current executable |
 | `bootstrapPath` | Package bootstrap | Optional absolute path to a preinstalled built bootstrap in that world |
 
 The [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-ptc-runtime-node) defines accepted config fields. `resolve(request)` supplies cwd, the numeric or null deadline choice and the execution policy; `run(spec)` accepts those resolved inputs and does not fill missing values.

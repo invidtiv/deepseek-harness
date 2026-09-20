@@ -146,6 +146,26 @@ describe('WorkspaceController commands', () => {
       .rejects.toMatchObject({ code: 'workspace/not-found' })
   })
 
+  it('resolves a named environment create in that world, not the composed default', async () => {
+    const { controller, ctx, root } = await harness({ reachableEnvironment: 'bsdev' })
+    const path = stageDir(root, 'named-world')
+    const resolveByPath = vi.spyOn(ctx.workspaceRegistry, 'resolveByPath')
+    const create = vi.spyOn(ctx.workspaceRegistry, 'create')
+    // The composed default cannot reach the named world, so a create that
+    // resolved through it would fail before ever naming the environment.
+    vi.spyOn(ctx.fs, 'resolve').mockImplementation(async (candidate, options) => {
+      if (options?.environmentId === undefined) {
+        throw Object.assign(new Error(`cannot resolve '${candidate}': no such directory`), { code: 'FS_NOT_FOUND' })
+      }
+      return { targetKey: candidate, displayPath: candidate } as never
+    })
+
+    const result = await controller.create({ path, environmentId: 'bsdev' })
+    expect(resolveByPath).toHaveBeenCalledWith(path, 'bsdev')
+    expect(create).toHaveBeenCalledWith(path, { transport: 'ssh', environmentId: 'bsdev' })
+    expect(result.created).toBe(true)
+  })
+
   it('preserves Remote failures and propagates unexpected registry failures', async () => {
     const { controller, ctx, root } = await harness()
     const remoteFailure = new RemoteError('fixture/failure', 'already mapped', {})
@@ -460,6 +480,27 @@ describe('WorkspaceController environments', () => {
       { environmentId: 'build01', label: 'Build 01', host: 'build01.example', reachable: true },
       { environmentId: 'dev', label: 'dev', host: 'dev.example', reachable: false },
     ])
+  })
+
+  it('marks an environment the broker connects on demand', async () => {
+    const { controller, ctx } = await harness()
+    ctx.provide('sshEnvironments', {
+      list: () => [{ id: 'bsdev', label: 'BSD dev', host: 'dsh-bsdev' }],
+    } as never)
+    ctx.provide('sshBroker', { list: () => ['bsdev'] } as never)
+
+    expect(controller.environments()).toEqual([
+      { environmentId: 'bsdev', label: 'BSD dev', host: 'dsh-bsdev', reachable: true },
+    ])
+  })
+
+  it('records the named environment as the transport when the request omits one', async () => {
+    const { controller, ctx, root } = await harness()
+    ctx.provide('sshBroker', { list: () => ['build01'] } as never)
+
+    const created = await controller.create({ path: stageDir(root, 'named-environment'), environmentId: 'build01' })
+
+    expect(created.workspace).toMatchObject({ transport: 'ssh', environmentId: 'build01' })
   })
 
   it('refuses a workspace naming an environment this deployment cannot reach', async () => {

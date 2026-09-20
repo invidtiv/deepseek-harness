@@ -133,17 +133,20 @@ export function WorkspacePickFlow({
   const reachableEnvironments = servedEnvironments
     .filter(environment => environment.reachable)
     .map(environment => ({ environmentId: environment.environmentId, label: environment.label }))
-  // A deployment that reaches several worlds offers one add action per world,
-  // so the entry the operator picks decides where the directory is created.
+  // A deployment that reaches a named world offers one add action per world,
+  // so the operator decides where the directory is created; the plain entry
+  // stays for the composed execution world (the Harness host, or the
+  // deployment's default world). A deployment that reaches none offers only it.
   const addEntries: MenuEntry[] = flowAvailable
-    ? reachableEnvironments.length > 1
-      ? reachableEnvironments.map(environment => ({
+    ? [
+      ...reachableEnvironments.map(environment => ({
         id: `${ADD_WORKSPACE}:${environment.environmentId}`,
         label: t('menu.addWorkspaceOn', { name: environment.label }),
         icon: <IconPlusOutline16 size={16} />,
         disabled: flowBusy,
-      }))
-      : [{ id: ADD_WORKSPACE, label: t('menu.addWorkspace'), icon: <IconPlusOutline16 size={16} />, disabled: flowBusy }]
+      })),
+      { id: ADD_WORKSPACE, label: t('menu.addWorkspace'), icon: <IconPlusOutline16 size={16} />, disabled: flowBusy },
+    ]
     : []
   // With workspaces listed, the add action pins below the scroll region
   // (divider + always visible); otherwise it IS the menu.
@@ -216,6 +219,7 @@ export function WorkspacePickFlow({
   const flowOwner: DirectoryFlowOwnerProps = {
     open: flowOpen,
     busy: pickingFolder,
+    ...(targetEnvironment === undefined ? {} : { environmentId: targetEnvironment }),
     onPicked: (path) => {
       setPickingFolder(true)
       void adoptDirectory(path).finally(() => { setPickingFolder(false) })

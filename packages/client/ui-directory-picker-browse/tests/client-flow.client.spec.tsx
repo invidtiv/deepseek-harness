@@ -33,14 +33,16 @@ async function bench() {
   await ctx.plugin(SlotRegistry).await()
   ctx.provide('locale', new LocaleRuntime(ctx))
   const listDirectory = vi.fn(async (): Promise<DirectoryListing> => homeListing)
+  const listDirectoryIn = vi.fn(async (_environmentId: string, _path?: string): Promise<DirectoryListing> => homeListing)
   const createDirectory = vi.fn(async (path: string, name: string) => `${path}/${name}`)
-  ctx.provide('uiWorkspace', { listDirectory, createDirectory } as never)
+  const createDirectoryIn = vi.fn(async (_environmentId: string, path: string, name: string) => `${path}/${name}`)
+  ctx.provide('uiWorkspace', { listDirectory, listDirectoryIn, createDirectory, createDirectoryIn } as never)
   const slots = ctx.get('slots') as SlotRegistry
   const declare = () => slots.register({
     name: 'root',
     children: Object.fromEntries(HOLES.map(name => [name, { kind: 'single', scope: 'root' }])),
   } as never, () => null)
-  return { ctx, slots, listDirectory, createDirectory, declare }
+  return { ctx, slots, listDirectory, listDirectoryIn, createDirectory, createDirectoryIn, declare }
 }
 
 function owner(overrides: Partial<DirectoryFlowOwnerProps> = {}): DirectoryFlowOwnerProps {
@@ -180,12 +182,45 @@ describe('directory-picker-browse client half', () => {
     const entry = b.slots.entries(HOLES[1])[0]!
     const injected = (entry.inject as () => {
       listDirectory: (path?: string) => Promise<DirectoryListing>
+      listDirectoryIn: (environmentId: string, path?: string) => Promise<DirectoryListing>
       createDirectory: (path: string, name: string) => Promise<string>
+      createDirectoryIn: (environmentId: string, path: string, name: string) => Promise<string>
     })()
     await expect(injected.listDirectory()).resolves.toBe(homeListing)
+    await expect(injected.listDirectoryIn('bsdev', '/srv')).resolves.toBe(homeListing)
     await expect(injected.createDirectory(HOME, 'fresh')).resolves.toBe(`${HOME}/fresh`)
+    await expect(injected.createDirectoryIn('bsdev', '/srv', 'fresh')).resolves.toBe('/srv/fresh')
     expect(b.listDirectory).toHaveBeenCalledOnce()
+    expect(b.listDirectoryIn).toHaveBeenCalledWith('bsdev', '/srv', undefined)
     expect(b.createDirectory).toHaveBeenCalledWith(HOME, 'fresh')
+    expect(b.createDirectoryIn).toHaveBeenCalledWith('bsdev', '/srv', 'fresh')
+  })
+
+  it('binds every dialog request to the chosen environment', async () => {
+    const props = owner({ environmentId: 'bsdev' })
+    const listDirectory = vi.fn(async (): Promise<DirectoryListing> => homeListing)
+    const listDirectoryIn = vi.fn(async (): Promise<DirectoryListing> => homeListing)
+    const createDirectory = vi.fn(async (): Promise<string> => '')
+    const createDirectoryIn = vi.fn(async (path: string, name: string) => `${path}/${name}`)
+    render(
+      <BrowseDirectoryFlow
+        {...props}
+        listDirectory={listDirectory}
+        listDirectoryIn={listDirectoryIn}
+        createDirectory={createDirectory}
+        createDirectoryIn={createDirectoryIn}
+        t={key => key}
+      />,
+    )
+    await waitFor(() => { expect(listDirectoryIn).toHaveBeenCalledWith('bsdev', undefined, expect.anything()) })
+    expect(listDirectory).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'browser.newFolder' }))
+    const input = screen.getByRole('textbox', { name: 'browser.folderName' })
+    fireEvent.change(input, { target: { value: 'fresh' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => { expect(createDirectoryIn).toHaveBeenCalledWith('bsdev', HOME, 'fresh') })
+    expect(createDirectory).not.toHaveBeenCalled()
   })
 
   it('adapts the owner conversation onto the dialog: confirm picks, dismissal cancels', async () => {
@@ -196,7 +231,9 @@ describe('directory-picker-browse client half', () => {
       <BrowseDirectoryFlow
         {...props}
         listDirectory={listDirectory}
+        listDirectoryIn={vi.fn(async () => homeListing)}
         createDirectory={vi.fn(async () => '')}
+        createDirectoryIn={vi.fn(async () => '')}
         t={t}
       />,
     )
@@ -215,7 +252,9 @@ describe('directory-picker-browse client half', () => {
       <BrowseDirectoryFlow
         {...owner({ open: false })}
         listDirectory={vi.fn(async () => homeListing)}
+        listDirectoryIn={vi.fn(async () => homeListing)}
         createDirectory={vi.fn(async () => '')}
+        createDirectoryIn={vi.fn(async () => '')}
         t={key => key}
       />,
     )

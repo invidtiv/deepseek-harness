@@ -3,7 +3,7 @@ import { setImmediate } from 'node:timers/promises'
 import { Context } from '@deepseek-ai/cordis'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import type { PtcBindingFunction, PtcRunRequest } from '@deepseek-ai/dsh-ptc-runtime'
-import type { SubprocessHandle, SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
+import { SubprocessExecutableNotFoundError, type SubprocessHandle, type SubprocessOutcome } from '@deepseek-ai/dsh-subprocess'
 import { SandboxUnavailableError } from '@deepseek-ai/dsh-sandbox'
 import type { ConfinedArgv } from '@deepseek-ai/dsh-sandbox'
 import { MAX_TIMER_DELAY_MS } from '@deepseek-ai/dsh-timeout'
@@ -259,6 +259,49 @@ describe('Node runtime host failures', () => {
       response.resolve(confinement([process.execPath]))
       await pending
     }
+  })
+
+  it('resolves the implicit Node in the run world, falling back to the bare name', async () => {
+    const h = await setup()
+    h.resolveExecutable
+      .mockRejectedValueOnce(new SubprocessExecutableNotFoundError('executable "C:\\node.exe" was not found'))
+      .mockResolvedValueOnce('/usr/bin/node')
+    h.spawn.mockImplementation(() => {
+      queueMicrotask(() => {
+        h.control.push(null)
+        h.direct.resolve({ exitCode: 7, signal: null })
+      })
+      return h.handle
+    })
+
+    await h.start(request, NO_INITIAL_FRAME)
+
+    expect(h.resolveExecutable.mock.calls[0]?.slice(0, 2)).toEqual([process.execPath, undefined])
+    expect(h.resolveExecutable.mock.calls[0]?.[3]).toBe(process.cwd())
+    expect(h.resolveExecutable.mock.calls[1]?.slice(0, 2)).toEqual(['node', undefined])
+    expect(h.resolveExecutable.mock.calls[1]?.[3]).toBe(process.cwd())
+    expect(h.spawn).toHaveBeenCalled()
+  })
+
+  it('keeps an explicitly configured Node executable and reports its miss', async () => {
+    const h = await setup({ nodeExecutable: '/remote/bin/node' })
+    h.resolveExecutable.mockRejectedValueOnce(new SubprocessExecutableNotFoundError('missing'))
+
+    await h.start(request, NO_INITIAL_FRAME)
+
+    expect(h.resolveExecutable).toHaveBeenCalledTimes(1)
+    expect(h.resolveExecutable.mock.calls[0]?.slice(0, 2)).toEqual(['/remote/bin/node', undefined])
+    expect(h.spawn).not.toHaveBeenCalled()
+  })
+
+  it('propagates a lookup failure that is not a typed miss', async () => {
+    const h = await setup()
+    h.resolveExecutable.mockRejectedValueOnce(new Error('lookup exploded'))
+
+    await h.start(request, NO_INITIAL_FRAME)
+
+    expect(h.resolveExecutable).toHaveBeenCalledTimes(1)
+    expect(h.spawn).not.toHaveBeenCalled()
   })
 
   it('reports an early control EOF using the direct process result', async () => {

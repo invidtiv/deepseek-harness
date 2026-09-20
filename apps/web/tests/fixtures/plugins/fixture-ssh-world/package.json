@@ -1,0 +1,8 @@
+{
+  "name": "@fixture/ssh-world",
+  "version": "0.0.1",
+  "private": true,
+  "description": "Web e2e fixture: a named SSH environment with an in-memory remote world.",
+  "type": "module",
+  "main": "index.js"
+}

@@ -148,4 +148,34 @@ describe('Web bundle SSH environment registry', () => {
     expect(rowOf(rows, 'ssh-environments')?.name).toBe('@deepseek-ai/dsh-ssh-environments')
     expect(rowOf(rows, 'ssh-environments')?.disabled).toBeUndefined()
   })
+
+  it('pins the in-app directory picker for the Web surface', () => {
+    const { rows } = composeWeb()
+
+    // An OS chooser cannot serve a remote canvas or a page the operator does
+    // not sit at, so the Web surface always mounts the in-app browser.
+    expect((rowOf(rows, 'directory-picker')?.config as { interaction?: unknown } | undefined)?.interaction)
+      .toBe('browse')
+  })
+
+  it('composes the mixed execution world in place of the local providers', () => {
+    const { rows, warnings } = composeWeb()
+
+    expect(warnings).toEqual([])
+    // Exactly one row owns each execution seam: the local providers step aside
+    // for the SSH composites, which fall back to the local world composed
+    // beneath them.
+    for (const id of ['fs-sandbox', 'subprocess', 'sandbox']) {
+      expect(rowOf(rows, id)?.disabled).toBe(true)
+    }
+    expect(rows.filter(row => row.disabled === true && localProviders.includes(row.name))).toHaveLength(3)
+
+    expect(rowOf(rows, 'ssh-worlds')?.name).toBe('@deepseek-ai/dsh-ssh/worlds')
+    expect(rowOf(rows, 'ssh-local-world')?.name).toBe('@deepseek-ai/dsh-ssh/local-world')
+    expect(rowOf(rows, 'ssh-broker')?.name).toBe('@deepseek-ai/dsh-ssh/broker')
+    for (const id of ['fs-ssh', 'subprocess-ssh', 'sandbox-ssh']) {
+      expect(rowOf(rows, id)?.name).toBe(`@deepseek-ai/dsh-${id}`)
+      expect(rowOf(rows, id)?.disabled).toBeUndefined()
+    }
+  })
 })

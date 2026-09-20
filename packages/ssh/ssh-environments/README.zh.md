@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-ssh-environments` 拥有部署中的具名 SSH 环境。它注册一个以稳定环境 id 为键的 `ssh-environments` settings 命名空间，并在 `ctx.sshEnvironments` 上暴露 `list`、`get` 和 `resolve`。每个条目提供某次 [SSH 提供方族](../README.zh.md) 部署所需的 OpenSSH 连接选项；注册表不打开连接、不存储密钥，也不贡献任何模型可见内容。
+`dsh-ssh-environments` 拥有部署中的具名 SSH 环境。它注册一个以稳定环境 id 为键的 `ssh-environments` settings 命名空间，并在 `ctx.sshEnvironments` 上暴露 `list`、`get`、`resolve` 和 `resolveRuntime`。每个条目提供某次 [SSH 提供方族](../README.zh.md) 部署所需的 OpenSSH 连接选项，并提供 helper 启动所需的远程运行时坐标——Node 可执行文件、已安装的 helper 入口、其摘要与远程默认工作区（条目省略时默认使用远程根目录）——使部署可以仅凭 settings 组合出该连接。注册表不打开连接、不存储密钥，也不贡献任何模型可见内容。
 
 ## 目录
 
@@ -32,9 +32,12 @@ ssh-environments:
       user: alice
       identityFile: ~/.ssh/id_ed25519
       proxyJump: bastion
+      node: /usr/bin/node
+      helper: /opt/dsh-ssh/helper.js
+      helperHash: <lowercase sha256 of that file>
 ```
 
-[SSH 连接](../ssh/README.zh.md) 通过其 `environment` 配置字段按服务名读取该注册表，因此部署无需重复选项即可选择具名环境。`ctx.sshEnvironments.resolve(id)` 返回经过校验、已应用严格主机密钥检查与 10 秒、3 次探测保活的 `SshEnvironment` 连接选项。未知 id 抛出 `SshEnvironmentUnknownError`；注册表绝不回退到默认主机。
+[SSH 连接](../ssh/README.zh.md) 通过其 `environment` 配置字段按服务名读取该注册表，因此部署无需重复选项即可选择具名环境。`ctx.sshEnvironments.resolve(id)` 返回经过校验、已应用严格主机密钥检查与 10 秒、3 次探测保活的 `SshEnvironment` 连接选项。`ctx.sshEnvironments.resolveRuntime(id)` 在其之外还返回远程运行时坐标；OpenSSH schema 永远看不到这些运行时字段，条目缺少三个必需坐标之一都会抛出 `SshEnvironmentIncompleteError` 并列出缺失项，使部署在解析阶段失败而不是连接到猜测的位置；省略 `workspace` 的条目解析为远程根目录，选择器在那里打开以供操作者选择。未知 id 抛出 `SshEnvironmentUnknownError`；注册表绝不回退到默认主机。
 
 <a id="model-experience"></a>
 ## 模型体验
@@ -50,7 +53,7 @@ ssh-environments:
 
 - **不支持交互式认证。** SSH 提供方启用 `BatchMode`；密码与口令提示不可用，因此部署须使用密钥或 SSH agent 认证。
 - **单一扁平 settings 小节。** 环境存放在一个 settings 命名空间中，没有密钥槽位；未来的口令或令牌字段必须使用 `role('secret')`，让 settings 的 wire 脱敏将其移除。
-- **settings 卡片每个环境只编辑两个字段。**[SSH 环境卡片](../../client/ui-settings-plugins/README.zh.md)通过客户端 settings-scope seam 绑定该命名空间，编辑每个环境的标识与 OpenSSH 目标；其余选项——`identityFile`、`identityAgent`、`proxyJump`、`configFile`、host-key 策略与超时——均原样写回，因此仍需来自 `$DSH_HOME/settings.yaml` 或 `~/.ssh/config`。
+- **settings 卡片每个环境只编辑两个字段。**[SSH 环境卡片](../../client/ui-settings-plugins/README.zh.md)通过客户端 settings-scope seam 绑定该命名空间，编辑每个环境的标识与 OpenSSH 目标；其余选项——`identityFile`、`identityAgent`、`proxyJump`、`configFile`、host-key 策略、超时，以及 `node`／`helper`／`helperHash`／`workspace` 运行时坐标——均原样写回，因此仍需来自 `$DSH_HOME/settings.yaml` 或 `~/.ssh/config`。
 - **不拥有连接。** 注册表只解析选项；它从不打开、保活或重连连接。
 - **无不变式伴随包。** 不发布运行时不变量伴随包，因为注册表不拥有独立的运行时状态：它读取一个 settings 命名空间并返回分离的值，所有持久关系由 settings 提供方自身的测试观察。
 

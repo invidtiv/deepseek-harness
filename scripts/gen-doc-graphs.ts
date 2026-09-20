@@ -565,6 +565,13 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Owns one registered connection per SSH environment and routes a target to the connection that owns its world: the workspace registry locator decides, the longest owner wins, a target no locator claims belongs to the deployment default, and a world with no composed connection fails visibly.',
   },
   {
+    key: 'sshBroker',
+    pkg: 'ssh',
+    title: 'Lazy SSH connection broker',
+    mode: 'core',
+    note: 'Opens one connection per configured environment on first use and reuses it until the broker unloads. Each connection keeps its own ssh realm and registers with the world router, so providers reach a world without a boot-time connection row.',
+  },
+  {
     key: 'subprocess',
     pkg: 'subprocess',
     title: 'Subprocess seam',

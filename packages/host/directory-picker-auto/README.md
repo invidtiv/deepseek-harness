@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-host-directory-picker-auto` picks the right directory-picking interaction for every boot: it resolves the host's situation once at boot and mounts the matching backend — [native](../directory-picker-native/README.md) or [browse](../directory-picker-browse/README.md) — together with its browser half, as real Loader entries in the in-memory root tree. The resolution is one pure boot-time sample: `native` requires a loopback-only bind, a host-filesystem execution world, a non-SSH launch, and a servable display session; anything ambiguous resolves to `browse`, which works everywhere. Pinning an interaction means composing that backend directly. The mounted capability stays stable for the service lifetime, as the seam requires.
+`dsh-host-directory-picker-auto` picks the right directory-picking interaction for every boot: it resolves the host's situation once at boot and mounts the matching backend — [native](../directory-picker-native/README.md) or [browse](../directory-picker-browse/README.md) — together with its browser half, as real Loader entries in the in-memory root tree. `native` requires a loopback-only bind, a host-filesystem execution world, a non-SSH launch, and a servable display session; anything ambiguous resolves to `browse`, which works everywhere. The `interaction` config field pins the choice outright; composing that backend directly is equivalent. The mounted capability stays stable for the service lifetime, as the seam requires.
 
 ## Table of Contents
 
@@ -37,7 +37,7 @@ The resolved interaction arrives as an ordinary Loader entry: the backend regist
 
 ### Pinning an interaction
 
-Pinning is not a config field here: compose the `-native` or `-browse` row directly instead of this one — that is the seam's documented swap point. Mounting the chooser and a backend row together fails loud (duplicate `directoryPicker` service, duplicate client flow in the `single` holes).
+`interaction: native` or `interaction: browse` pins the choice for every boot and skips the host sample; the default `auto` keeps the boot-time resolution. The shipped Web bundle pins `browse`, because an OS chooser cannot serve a remote browser and a workspace whose execution world is elsewhere must stay listable. Composing the `-native` or `-browse` row directly instead of this one is the equivalent without the mount machinery. Mounting the chooser and a backend row together fails loud (duplicate `directoryPicker` service, duplicate client flow in the `single` holes).
 
 ### Observable failures
 

@@ -227,7 +227,9 @@ class RemoteProcess implements SubprocessHandle {
 
 /** SSH provider paired with the SSH filesystem; the remote helper selects POSIX process ownership. */
 export class SshSubprocessRuntime extends SubprocessRuntime {
-  static inject = ['ssh']
+  // The connection is read by service name rather than injected: a mixed
+  // deployment composes connections inside the world pool and has no single
+  // root `ssh` service, while a single-world deployment still does.
   private readonly live = new Set<RemoteProcess>()
   private readonly terminals = new Set<SubprocessTerminalHandle>()
   private readonly terminalAllocations = new Set<Promise<SubprocessTerminalHandle>>()
@@ -252,12 +254,32 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
     })
   }
 
-  override async resolveExecutable(command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal): Promise<string> {
-    // The seam carries no target for this lookup, so a multi-world deployment
-    // refuses it instead of resolving on whichever world happens to be default.
+  override async resolveExecutable(
+    command: string,
+    env?: Readonly<Record<string, string>>,
+    signal?: AbortSignal,
+    cwd?: string,
+  ): Promise<string> {
+    // A named target selects the execution world exactly as spawn does: a cwd
+    // no SSH world claims is served by the composed local world, a claimed cwd
+    // by its connection. A target-less lookup keeps the default-world rule, so
+    // a deployment composing worlds it cannot choose between still refuses.
+    const local = cwd === undefined ? this.local() : this.localFor(cwd)
+    if (local !== undefined) return await local.resolveExecutable(command, env, signal)
+    if (cwd !== undefined) return await this.resolveRemoteExecutable(this.connectionFor(cwd), command, env, signal)
     this.requireDefaultWorld('executable resolution')
+    return await this.resolveRemoteExecutable(this.requireOwnConnection(), command, env, signal)
+  }
+
+  /** Resolve one executable on a remote connection, preserving its typed miss. */
+  private async resolveRemoteExecutable(
+    connection: SshWorldConnection,
+    command: string,
+    env?: Readonly<Record<string, string>>,
+    signal?: AbortSignal,
+  ): Promise<string> {
     try {
-      return await this.ctx.ssh.request('executable', { command, env }, remotePath, signal)
+      return await connection.request('executable', { command, env }, remotePath, signal)
     } catch (error) {
       if (error instanceof RemoteOperationError && error.code === 'SUBPROCESS_EXECUTABLE_NOT_FOUND') {
         throw new SubprocessExecutableNotFoundError(error.message, { cause: error })
@@ -266,9 +288,17 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
     }
   }
 
+  override launchBootstrap(cwd: string): string | undefined {
+    const worlds = this.ctx.get('sshWorlds')
+    if (worlds === undefined || worlds.worldFor(cwd) === undefined) return undefined
+    return worlds.connectionFor(cwd).launchBootstrap
+  }
+
   override terminalEnvironment(signal?: AbortSignal): Promise<SubprocessTerminalEnvironment> {
+    const local = this.local()
+    if (local !== undefined) return local.terminalEnvironment(signal)
     this.requireDefaultWorld('terminal environment resolution')
-    return this.ctx.ssh.request('terminal.environment', {}, z.object({
+    return this.requireOwnConnection().request('terminal.environment', {}, z.object({
       platform: z.enum(['posix', 'windows']), defaultShell: z.string().optional(),
     }).strict().transform(value => ({ platform: value.platform,
       ...(value.defaultShell === undefined ? {} : { defaultShell: value.defaultShell }),
@@ -278,7 +308,26 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
   /** The connection that owns one remote path: the composed pool's routing, or the deployment's own connection. */
   private connectionFor(path: string): SshWorldConnection {
     const worlds = this.ctx.get('sshWorlds')
-    return worlds === undefined ? this.ctx.ssh : worlds.connectionFor(path)
+    return worlds === undefined ? this.requireOwnConnection() : worlds.connectionFor(path)
+  }
+
+  /** The deployment's own single connection; a mixed deployment reads it from its pool instead. */
+  private requireOwnConnection(): SshWorldConnection {
+    const own = this.ctx.get('ssh', false) as SshWorldConnection | undefined
+    if (own === undefined) throw new Error('ssh: no default world connection is composed')
+    return own
+  }
+
+  /** The composed local execution world, or undefined for a remote-only deployment. */
+  private local(): SubprocessRuntime | undefined {
+    return this.ctx.get('localSubprocess') as SubprocessRuntime | undefined
+  }
+
+  /** The local delegate for a cwd no SSH world claims, or undefined for a remote target. */
+  private localFor(cwd: string): SubprocessRuntime | undefined {
+    const local = this.local()
+    if (local === undefined) return undefined
+    return this.ctx.get('sshWorlds')?.worldFor(cwd) === undefined ? local : undefined
   }
 
   /** Refuse a target-less lookup while the deployment composes worlds it cannot select between. */
@@ -289,6 +338,8 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
   override spawn(spec: SubprocessSpawnSpec): SubprocessHandle {
     this.lifetime.signal.throwIfAborted()
     spec.signal?.throwIfAborted()
+    const local = this.localFor(spec.cwd)
+    if (local !== undefined) return local.spawn(spec)
     const handle = new RemoteProcess(this.connectionFor(spec.cwd), spec)
     this.live.add(handle)
     void handle.done.then(() => handle.waitForExit()).then(() => handle.streamsClosed)
@@ -298,6 +349,8 @@ export class SshSubprocessRuntime extends SubprocessRuntime {
 
   override async spawnTerminal(spec: SubprocessTerminalSpawnSpec): Promise<SubprocessTerminalHandle> {
     this.lifetime.signal.throwIfAborted()
+    const local = this.localFor(spec.cwd)
+    if (local !== undefined) return await local.spawnTerminal(spec)
     const signal = spec.signal === undefined ? this.lifetime.signal : AbortSignal.any([spec.signal, this.lifetime.signal])
     signal.throwIfAborted()
     const allocation = this.createTerminal(spec, signal)

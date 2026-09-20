@@ -29,6 +29,8 @@ Mount this provider with the shared [`SSH connection`](../ssh/README.md), SSH fi
 
 Pass a complete `read-only` or `workspace-write` policy. The workspace is interpreted and canonicalized on the remote host. Consumers bypass `confine()` for `danger-full-access`; the connection does not invent an additional local/remote policy flag.
 
+With the [world pool](../ssh/README.md) composed, `confine()` resolves the policy's workspace root to the connection that owns it. A deployment that also composes a local execution world (`localSandbox`) confines a root no SSH world claims through that delegate, so a mixed deployment never applies remote rules to a host path.
+
 -----
 
 <a id="understand-the-implementation"></a>

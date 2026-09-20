@@ -1,4 +1,4 @@
-/** Behavior of the browse backend over the composed filesystem. */
+/** Behavior of the browse backend over the composed filesystem and a named SSH environment. */
 
 import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { homedir, tmpdir } from 'node:os'
@@ -30,6 +30,44 @@ async function browsePlugin(maxEntries?: number): Promise<{ capability: Director
   const picked = ctx.get('directoryPicker')!.capability()
   if (picked.kind !== 'browse') throw new Error('browse backend must advertise the browse capability')
   return { capability: picked, dispose: () => fiber.dispose() }
+}
+
+/** One remote level the fake broker answers, in the broker's own vocabulary. */
+const REMOTE_LEVEL = {
+  path: '/srv/app',
+  home: '/home/alice',
+  crumbs: [{ name: '/', path: '/' }, { name: 'srv', path: '/srv' }, { name: 'app', path: '/srv/app' }],
+  entries: [{ name: 'src', path: '/srv/app/src' }, { name: '.secret', path: '/srv/app/.secret' }],
+}
+
+/** Boot the browse backend over a fake SSH broker that records each request. */
+async function brokerPlugin(options: { maxEntries?: number; failList?: boolean; failCreate?: boolean } = {}): Promise<{
+  capability: DirectoryPickerBrowseCapability
+  dispose: () => Promise<void>
+  calls: Array<{ method: string; environmentId: string; path?: string; name?: string }>
+}> {
+  const calls: Array<{ method: string; environmentId: string; path?: string; name?: string }> = []
+  const ctx = new Context()
+  await ctx.plugin(LocalFileSystem)
+  ctx.provide('sshBroker', {
+    listDirectory: (environmentId: string, path?: string) => {
+      calls.push({ method: 'list', environmentId, ...(path === undefined ? {} : { path }) })
+      if (options.failList === true) return Promise.reject(new Error('remote scan failed'))
+      return Promise.resolve(REMOTE_LEVEL)
+    },
+    createDirectory: (environmentId: string, path: string, name: string) => {
+      calls.push({ method: 'create', environmentId, path, name })
+      if (options.failCreate === true) return Promise.reject(new Error('remote create failed'))
+      return Promise.resolve(`${path}/${name}`)
+    },
+  })
+  const fiber = options.maxEntries === undefined
+    ? ctx.plugin(BrowseDirectoryPicker)
+    : ctx.plugin(BrowseDirectoryPicker, { maxEntries: options.maxEntries })
+  await fiber
+  const picked = ctx.get('directoryPicker')!.capability()
+  if (picked.kind !== 'browse') throw new Error('browse backend must advertise the browse capability')
+  return { capability: picked, dispose: () => fiber.dispose(), calls }
 }
 
 beforeAll(async () => {
@@ -206,6 +244,88 @@ describe('BrowseDirectoryPicker', () => {
       await rm(join(root, 'remote-child'), { recursive: true, force: true })
     } finally {
       await fiber.dispose()
+    }
+  })
+})
+
+describe('BrowseDirectoryPicker over a named SSH environment', () => {
+  it('lists through the broker and keeps the remote host spelling', async () => {
+    const remote = await brokerPlugin()
+    try {
+      const listing = await remote.capability.listIn!('bsdev', '/srv/app')
+      expect(listing).toMatchObject({ path: '/srv/app', home: '/home/alice', truncated: false })
+      expect(listing.entries).toEqual([
+        { name: 'src', path: '/srv/app/src', hidden: false },
+        { name: '.secret', path: '/srv/app/.secret', hidden: true },
+      ])
+      expect(listing.crumbs.map(crumb => crumb.path)).toEqual(['/', '/srv', '/srv/app'])
+      expect(remote.calls).toEqual([{ method: 'list', environmentId: 'bsdev', path: '/srv/app' }])
+    } finally {
+      await remote.dispose()
+    }
+  })
+
+  it('lists the environment workspace when the request carries no path', async () => {
+    const remote = await brokerPlugin()
+    try {
+      await remote.capability.listIn!('bsdev')
+      expect(remote.calls).toEqual([{ method: 'list', environmentId: 'bsdev' }])
+    } finally {
+      await remote.dispose()
+    }
+  })
+
+  it('bounds a remote level at maxEntries', async () => {
+    const remote = await brokerPlugin({ maxEntries: 1 })
+    try {
+      const listing = await remote.capability.listIn!('bsdev', '/srv/app')
+      expect(listing.entries).toEqual([{ name: 'src', path: '/srv/app/src', hidden: false }])
+      expect(listing.truncated).toBe(true)
+    } finally {
+      await remote.dispose()
+    }
+  })
+
+  it('creates in the environment through the broker', async () => {
+    const remote = await brokerPlugin()
+    try {
+      expect(await remote.capability.createDirectoryIn!('bsdev', '/srv/app', 'new')).toBe('/srv/app/new')
+    } finally {
+      await remote.dispose()
+    }
+  })
+
+  it('reports remote listing and creation failures with the shared codes', async () => {
+    const listing = await brokerPlugin({ failList: true })
+    try {
+      const failure = await listing.capability.listIn!('bsdev', '/srv/app').catch((error: unknown) => error)
+      expect(failure).toBeInstanceOf(DirectoryPickerError)
+      expect((failure as DirectoryPickerError).code).toBe('directory-unreadable')
+      expect((failure as DirectoryPickerError).path).toBe('/srv/app')
+    } finally {
+      await listing.dispose()
+    }
+
+    const creating = await brokerPlugin({ failCreate: true })
+    try {
+      const failure = await creating.capability.createDirectoryIn!('bsdev', '/srv/app', 'new')
+        .catch((error: unknown) => error)
+      expect(failure).toBeInstanceOf(DirectoryPickerError)
+      expect((failure as DirectoryPickerError).code).toBe('directory-create-failed')
+      expect((failure as DirectoryPickerError).path).toBe(join('/srv/app', 'new'))
+    } finally {
+      await creating.dispose()
+    }
+  })
+
+  it('refuses an environment when the deployment composes no broker', async () => {
+    const booted = await browsePlugin()
+    try {
+      const failure = await booted.capability.listIn!('bsdev', '/srv/app').catch((error: unknown) => error)
+      expect(failure).toBeInstanceOf(DirectoryPickerError)
+      expect((failure as DirectoryPickerError).code).toBe('directory-unreadable')
+    } finally {
+      await booted.dispose()
     }
   })
 })

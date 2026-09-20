@@ -77,7 +77,9 @@ export function apply(ctx: ClientContext): void {
 
   const injected = (): BrowseFlowInjected => ({
     listDirectory: (path, signal) => ctx.uiWorkspace.listDirectory(path, signal),
+    listDirectoryIn: (environmentId, path, signal) => ctx.uiWorkspace.listDirectoryIn(environmentId, path, signal),
     createDirectory: (path, name) => ctx.uiWorkspace.createDirectory(path, name),
+    createDirectoryIn: (environmentId, path, name) => ctx.uiWorkspace.createDirectoryIn(environmentId, path, name),
     t: ctx.locale.bind(LOCALE_NS),
   })
   // Both declaration lifetimes must be live before the pair installs; the

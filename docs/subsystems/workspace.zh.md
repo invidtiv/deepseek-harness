@@ -128,7 +128,7 @@ interface Workspace {
 
 ## 注册表：`ctx.workspaceRegistry`
 
-`WorkspaceRegistry`（[签名](#ctxworkspaceregistry--workspaceregistry)）拥有注册与解析。`create(path, options?)` 要求完全限定路径并通过 `ctx.fs` 规范化，拒绝不存在的路径（`FS_NOT_FOUND`）或非目录；当规范路径已被拥有时原样返回既有实体；否则创建一条标题为 `title ?? defaultWorkspaceTitle(path)` 的记录并前插到持久的注册表顺序中（不同规范路径可以共享同一显示标题，没有最终路径段时使用根路径拼写）。`get(id)` 与有序的 `list()` 是同步缓存读取；`resolveByPath(path)` 应用同一套完全限定 `ctx.fs` 规范但不创建。`delete(id)` 只移除注册记录、顺序条目和会话账本——目录、用户文件、实时会话和已持久化日志一概不动，因此这些会话变为 Ungrouped（[决策](../../.agents/notes/implemented/feature/2026-07-27-workspace-registration-deletion.zh.md)）；未知 id 返回 `false`。create 与 delete 会在其两次写入（记录 + 顺序）可能分叉之前先持久写入一个待定变更标记；启动时恰好解决被标记的那次变更——通过删除被标记的表行：这会补完被中断的 delete，并回滚被中断的 create（注册可以重建，因此回滚是安全方向）——而没有标记的顺序/表不一致则作为损坏大声失败。
+`WorkspaceRegistry`（[签名](#ctxworkspaceregistry--workspaceregistry)）拥有注册与解析。`create(path, options?)` 要求完全限定路径并通过 `ctx.fs` 规范化，拒绝不存在的路径（`FS_NOT_FOUND`）或非目录；当规范路径已被拥有时原样返回既有实体；否则创建一条标题为 `title ?? defaultWorkspaceTitle(path)` 的记录并前插到持久的注册表顺序中（不同规范路径可以共享同一显示标题，没有最终路径段时使用根路径拼写）。`get(id)` 与有序的 `list()` 是同步缓存读取；`resolveByPath(path, environmentId?)` 在具名环境的世界中应用同一套完全限定 `ctx.fs` 规范但不创建。`delete(id)` 只移除注册记录、顺序条目和会话账本——目录、用户文件、实时会话和已持久化日志一概不动，因此这些会话变为 Ungrouped（[决策](../../.agents/notes/implemented/feature/2026-07-27-workspace-registration-deletion.zh.md)）；未知 id 返回 `false`。create 与 delete 会在其两次写入（记录 + 顺序）可能分叉之前先持久写入一个待定变更标记；启动时恰好解决被标记的那次变更——通过删除被标记的表行：这会补完被中断的 delete，并回滚被中断的 create（注册可以重建，因此回滚是安全方向）——而没有标记的顺序/表不一致则作为损坏大声失败。
 
 会话的 cwd 在创建时由创建者赋予，而不是由本注册表赋予——API 网关从所选工作区的 `path` 解析新会话的 cwd（回退到显式或默认 cwd），先创建会话使 cwd 落入其不可变的 [`SessionHeader`](persistence.zh.md#sessionheader--metadata-beside-the-log)，再调用 `attachSession`，后者会把已存储的 header cwd 与工作区路径重新校验一遍。首次成功启动时，注册表仅凭已持久化的 header（`id`、`cwd`、`createdAt`——绝不读事件正文）引导历史：把规范 cwd 有效的会话按目录分组为工作区，最新的排在最前；「已初始化」标记最后写入，因此被中断的引导可以安全续跑。引导只发生这一次：没有 cwd 的历史遗留会话保持 Ungrouped，此后创建的会话只能通过 `attachSession` 加入工作区。
 
@@ -184,12 +184,32 @@ Host service backing the generated `ctx.remote.directoryPicker` namespace. The s
 @Remote('list') async list(path: string | undefined, signal: AbortSignal): Promise<DirectoryListing>
 
 /**
+ * List one directory level inside a named SSH environment, before any
+ * workspace exists in that world.
+ * @param environmentId - configured environment whose world holds the path.
+ * @param path - absolute directory in that world; absent lists the
+ *   environment's configured workspace.
+ * @param signal - caller lifetime.
+ * @returns the level's listing in the remote host's own path spelling.
+ */
+@Remote('listIn') async listIn(environmentId: string, path: string | undefined, signal: AbortSignal): Promise<DirectoryListing>
+
+/**
  * Create one child directory for a Remote caller's in-app browser.
  * @param path - absolute existing parent directory.
  * @param name - single non-blank path segment.
  * @returns the created directory's absolute path.
  */
 @Remote('createDirectory') async createDirectory(path: string, name: string): Promise<string>
+
+/**
+ * Create one child directory inside a named SSH environment.
+ * @param environmentId - configured environment whose world holds the parent.
+ * @param path - absolute existing parent directory in that world.
+ * @param name - single non-blank path segment.
+ * @returns the created directory's absolute remote path.
+ */
+@Remote('createDirectoryIn') async createDirectoryIn(environmentId: string, path: string, name: string): Promise<string>
 ```
 
 Source: [`packages/api/workspace-controller/src/directory-picker.ts`](../../packages/api/workspace-controller/src/directory-picker.ts)
@@ -550,9 +570,11 @@ unarchiveSession(sessionId: SessionId): Promise<void>
  * workspace. A missing path rejects during `realpath`; an existing unowned
  * directory returns `undefined`.
  * @param path - Existing directory path in a fully qualified spelling.
+ * @param environmentId - Named SSH environment whose world holds the path;
+ *   omitted resolves through the composed world.
  * @returns the workspace owning the canonical path, when one exists.
  */
-async resolveByPath(path: string): Promise<Workspace | undefined>
+async resolveByPath(path: string, environmentId?: string): Promise<Workspace | undefined>
 ```
 
 Types: [SessionId](core.zh.md)

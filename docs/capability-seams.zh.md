@@ -173,6 +173,7 @@ flowchart LR
   pkg_ssh_environments["ssh-environments"]
   svc_sshEnvironments["ctx.sshEnvironments<br/>Named SSH environment registry"]
   svc_sshWorlds["ctx.sshWorlds<br/>SSH world router"]
+  svc_sshBroker["ctx.sshBroker<br/>Lazy SSH connection broker"]
   pkg_subprocess["subprocess"]
   svc_subprocess["ctx.subprocess<br/>Subprocess seam"]
   pkg_subprocess_local["subprocess-local"]
@@ -369,6 +370,7 @@ flowchart LR
   pkg_spill --> svc_spillStore
   pkg_spill_local --> svc_spillStore
   pkg_ssh --> svc_ssh
+  pkg_ssh --> svc_sshBroker
   pkg_ssh --> svc_sshWorlds
   pkg_ssh_environments --> svc_sshEnvironments
   pkg_storage --> svc_storage
@@ -613,6 +615,7 @@ flowchart LR
 | `ctx.ssh` | `core` | [`ssh`](../packages/ssh/ssh) | - | [`fs-ssh`](../packages/ssh/fs-ssh), [`subprocess-ssh`](../packages/ssh/subprocess-ssh), [`sandbox-ssh`](../packages/ssh/sandbox-ssh) | - | 负责一条经过认证的 OpenSSH 连接、已安装辅助程序身份、独立程序流，以及配套远端提供方的断连清理。 |
 | `ctx.sshEnvironments` | `core` | [`ssh-environments`](../packages/ssh/ssh-environments) | - | - | - | 注册 ssh-environments settings 命名空间，并把稳定 id 解析为经过校验的 OpenSSH 连接选项。它不打开连接、不存储密钥，连接、辅助程序与清理的所有权仍属于 SSH 提供方族。 |
 | `ctx.sshWorlds` | `core` | [`ssh`](../packages/ssh/ssh) | - | [`fs-ssh`](../packages/ssh/fs-ssh), [`subprocess-ssh`](../packages/ssh/subprocess-ssh), [`sandbox-ssh`](../packages/ssh/sandbox-ssh) | - | 为每个 SSH 环境持有一个已注册连接，并把目标路由到拥有其世界的连接：工作区注册表的定位符决定所属世界，拥有路径最长的定位符胜出，没有定位符认领的目标归部署默认连接，所属世界没有已组合连接时明确失败。 |
+| `ctx.sshBroker` | `core` | [`ssh`](../packages/ssh/ssh) | - | - | - | 为每个已配置环境在首次使用时打开一条连接，并在 broker 卸载前复用。每条连接保留自己的 ssh realm 并注册进世界路由器，因此各提供方无需启动期连接行就能到达某个世界。 |
 | `ctx.subprocess` | `seam` | [`subprocess`](../packages/subprocess/subprocess) | [`subprocess-local`](../packages/subprocess/subprocess-local), [`subprocess-ssh`](../packages/ssh/subprocess-ssh) | [`bash-local`](../packages/shell/bash-local), [`bash-sandbox`](../packages/shell/bash-sandbox), [`terminal-bash`](../packages/terminal/terminal-bash), [`lsp-stdio`](../packages/lsp/lsp-stdio), [`subagent-acp`](../packages/subagent/subagent-acp), [`subagent-codex`](../packages/subagent/subagent-codex), [`subagent-claude-code`](../packages/subagent/subagent-claude-code) | - | Bash 执行器、PTY shell 后端、LSP Host，以及进程外 ACP、Codex 和 Claude Code subagent 后端都通过 ctx.subprocess 执行 spawn；该服务负责进程坐标、进程树／会话生命周期、stdio 处置、终端机制和 kill 升级。 |
 | `ctx.shell` | `seam` | [`shell`](../packages/shell/shell) | [`bash-local`](../packages/shell/bash-local), [`bash-sandbox`](../packages/shell/bash-sandbox), [`pwsh-local`](../packages/shell/pwsh-local) | [`tool-bash`](../packages/shell/tool-bash), [`tool-pwsh`](../packages/shell/tool-pwsh), [`hooks-claude-code`](../packages/hooks/hooks-claude-code), [`hooks-codex`](../packages/hooks/hooks-codex) | - | 面向模型的 shell 工具和钩子桥接消费此 seam；沙箱、远程或 PowerShell 执行器可以替换 bash-local，而无需改动这些消费方。 |
 | `ctx.shellEnv` | `core` | [`shell-env`](../packages/shell/shell-env) | - | [`tool-bash`](../packages/shell/tool-bash), [`tool-pwsh`](../packages/shell/tool-pwsh) | - | 插件声明限定于 effect 作用域的 DSH_* 事实；每个 shell 工具在每次执行时收集一份可信快照，其执行器据此重建命名空间。 |

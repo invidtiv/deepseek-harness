@@ -107,7 +107,12 @@ afterEach(async () => {
 /** Write a three-row cordis.yml (filesystem + webserver + chooser), then boot it through the real Loader. */
 async function loadComposition(
   bindHost: '127.0.0.1' | '0.0.0.0',
-  options: { failSurface?: boolean; launchEnvironment?: LaunchEnvironmentSnapshot; remoteFilesystem?: boolean } = {},
+  options: {
+    failSurface?: boolean
+    launchEnvironment?: LaunchEnvironmentSnapshot
+    remoteFilesystem?: boolean
+    interaction?: 'auto' | 'native' | 'browse'
+  } = {},
 ): Promise<{ ctx: Context; configPath: string }> {
   root = await mkdtemp(join(tmpdir(), 'dsh-directory-picker-auto-'))
   const configPath = join(root, 'cordis.yml')
@@ -119,6 +124,7 @@ async function loadComposition(
     `    host: '${bindHost}'`,
     '    port: 0',
     `- name: '${AUTO}'`,
+    ...options.interaction === undefined ? [] : ['  config:', `    interaction: ${options.interaction}`],
     '',
   ].join('\n'))
 
@@ -275,6 +281,31 @@ describe('real Loader composition', () => {
     expect(entryNames(ctx)).not.toContain(NATIVE_SURFACE)
     const picker = ctx.get('directoryPicker') as DirectoryPicker
     expect(picker.capability().kind).toBe('browse')
+  })
+
+  it('pins the browse backend on an attended loopback host', { timeout: 60_000 }, async () => {
+    stubAttendedHost()
+    const { ctx } = await loadComposition('127.0.0.1', { interaction: 'browse' })
+
+    expect(entryNames(ctx)).toContain(BROWSE)
+    expect(entryNames(ctx)).toContain(BROWSE_SURFACE)
+    expect(entryNames(ctx)).not.toContain(NATIVE)
+    expect(entryNames(ctx)).not.toContain(NATIVE_SURFACE)
+    const picker = ctx.get('directoryPicker') as DirectoryPicker
+    expect(picker.capability().kind).toBe('browse')
+  })
+
+  it('pins the native backend against every signal the sample would browse on', { timeout: 60_000 }, async () => {
+    stubAttendedHost()
+    vi.stubEnv('SSH_CONNECTION', '10.0.0.2 55 10.0.0.9 22')
+    const { ctx } = await loadComposition('0.0.0.0', { interaction: 'native', remoteFilesystem: true })
+
+    expect(entryNames(ctx)).toContain(NATIVE)
+    expect(entryNames(ctx)).toContain(NATIVE_SURFACE)
+    expect(entryNames(ctx)).not.toContain(BROWSE)
+    expect(entryNames(ctx)).not.toContain(BROWSE_SURFACE)
+    const picker = ctx.get('directoryPicker') as DirectoryPicker
+    expect(picker.capability().kind).toBe('native')
   })
 
   it('mounts the browse backend for an all-interfaces bind even on an attended host', { timeout: 60_000 }, async () => {

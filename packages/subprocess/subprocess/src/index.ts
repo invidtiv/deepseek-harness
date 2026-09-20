@@ -120,7 +120,7 @@ export abstract class SubprocessRuntime extends Service {
   }
 
   /**
-   * Resolve one configured executable in this provider's execution world.
+   * Resolve one configured executable in an execution world.
    * Absolute paths are verified; bare names use the provider's scrubbed PATH
    * plus explicit environment overrides. Relative paths containing separators
    * are rejected: the resolution base is undefined, so providers fail loud
@@ -128,13 +128,30 @@ export abstract class SubprocessRuntime extends Service {
    * @param command - absolute executable path or bare PATH name.
    * @param env - explicit environment entries used for lookup.
    * @param signal - aborts remote or local lookup.
+   * @param cwd - directory whose execution world answers the lookup, selecting
+   *   the world exactly as it does for {@link spawn}; omitted resolves in the
+   *   provider's default world.
    * @returns a canonical executable path.
    */
   abstract resolveExecutable(
     command: string,
     env?: Readonly<Record<string, string>>,
     signal?: AbortSignal,
+    cwd?: string,
   ): Promise<string>
+
+  /**
+   * The installed harness bootstrap that runs this harness's own code in the
+   * execution world owning `cwd`, when that world reads its own assets instead
+   * of this harness's. A world that projects the harness's assets answers
+   * undefined.
+   * @param cwd - directory whose execution world answers the lookup.
+   * @returns the world's installed launch bootstrap entry, when it has one.
+   */
+  launchBootstrap(cwd: string): string | undefined {
+    void cwd
+    return undefined
+  }
 
   /**
    * Inspect shell-selection facts in the provider's execution environment.

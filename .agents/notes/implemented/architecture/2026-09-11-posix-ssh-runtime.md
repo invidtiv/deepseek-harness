@@ -12,7 +12,7 @@ SSH supplies authenticated byte channels and per-channel flow control, but an or
 
 ## Decision
 
-A deployment-owned OpenSSH alias connects the local Harness to an installed POSIX helper. Filesystem, subprocess and sandbox providers share that helper; the Harness retains Cordis objects, model transport, permissions, callbacks and Session persistence. Terminal methods remain asynchronous. Provider paths describe the execution world without a separate local/remote flag.
+A deployment-owned OpenSSH alias connects the local Harness to an installed POSIX helper. Filesystem, subprocess and sandbox providers share that helper; the Harness retains Cordis objects, model transport, permissions, callbacks and Session persistence. Terminal methods remain asynchronous. Provider paths describe the execution world without a separate local/remote flag. A Windows Harness client reaches the same helper through a [direct client transport](2026-09-19-windows-ssh-client-transport.md) that replaces the control master with a loopback OpenSSH session per stream.
 
 Confinement is asynchronous and cancellable: the running helper resolves each policy through its loaded sandbox provider before the subprocess provider receives literal argv. `ShellExecutor.start()` resolves a `Promise<ShellProcess>` after preparation. Generic job admission remains synchronous; tool-owned `JobHooks` begin asynchronous shell preparation after preflight, cancel pending preparation and join any late process handle.
 
@@ -42,7 +42,7 @@ A lost connection invalidates pending operations without reconnect or replay. He
 
 Remote providers add transport, reservation and disconnection responsibilities even though they reuse local file and process mechanisms. Raw streams, collected tails and remote spill files retain distinct lifetimes. Consumers must release their streams and handles; a helper’s cleanup result cannot be reconstructed after transport loss.
 
-The initial composition scope is POSIX headless and custom profiles. Web workspace consumers with host-filesystem assumptions require their own integration. Network restrictions, process-visibility isolation, hostile-host attestation, persistent remote handles and automatic artifact provisioning are outside this provider family.
+The initial composition scope is headless and custom profiles on Linux, macOS or Windows Harness hosts. Web workspace consumers with host-filesystem assumptions require their own integration. Network restrictions, process-visibility isolation, hostile-host attestation, persistent remote handles and automatic artifact provisioning are outside this provider family.
 
 The portable-consumer decision remains active; this note supplies its SSH realization. The E2B retirement remains active for the removed integration and its maintenance tradeoff. Neither note is fully superseded.
 

@@ -45,6 +45,11 @@ export interface DirectoryFlowOwnerProps {
   open: boolean
   /** True while the owner adopts a picked path (`createWorkspace` in flight); occupants disable their commit affordances. */
   busy: boolean
+  /**
+   * Named SSH environment the operator chose for this pick; absent uses the
+   * composed execution world. The occupant lists and creates in that world.
+   */
+  environmentId?: string
   /** The operator picked a directory (absolute host path); the owner adopts it. */
   onPicked: (path: string) => void
   /** The operator dismissed the interaction; the owner just closes the flow. */

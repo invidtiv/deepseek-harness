@@ -89,10 +89,14 @@
       name: '@deepseek-ai/dsh-session-turn-outline'
 
     # Resolve bind host, SSH launch, and display once at boot, then mount the
-    # matching dual-face directory picker. Mount -native or -browse directly in
-    # an overlay to pin the interaction.
+    # matching dual-face directory picker. The Web surface pins the in-app
+    # browser so a workspace add never opens an OS dialog the page cannot drive
+    # and a remote execution world can always be listed. A deployment that
+    # wants the OS chooser sets interaction: native here or in its own overlay.
     - id: directory-picker
       name: '@deepseek-ai/dsh-host-directory-picker-auto'
+      config:
+        interaction: browse
 
     # Read-only projection of current Loader entries for trusted client RPCs.
     - id: plugin-inventory
@@ -119,6 +123,39 @@
     # provider profile names one of its ids for the world it composes.
     - id: ssh-environments
       name: '@deepseek-ai/dsh-ssh-environments'
+
+    # Execution-world awareness: a session whose workspace lives in an SSH
+    # world gets one prompt line naming that environment, so the agent knows
+    # its files and processes are remote. A local workspace contributes none.
+    - id: execution-world-context
+      name: '@deepseek-ai/dsh-execution-world-context'
+
+    # Lazy SSH connections: the broker opens a configured environment's
+    # connection on first use, so the workspace picker can offer and browse a
+    # named environment without a boot-time ssh row and without replacing the
+    # local execution providers in this process.
+    - id: ssh-broker
+      name: '@deepseek-ai/dsh-ssh/broker'
+
+    # The mixed execution world. The SSH providers ARE this composition's
+    # ctx.fs / ctx.subprocess / ctx.sandbox: each serves a target an SSH world
+    # owns and falls back to the local execution world composed beneath it. The
+    # local-only base rows are disabled below, because two rows may not register
+    # one service.
+    - id: ssh-worlds
+      name: '@deepseek-ai/dsh-ssh/worlds'
+
+    - id: ssh-local-world
+      name: '@deepseek-ai/dsh-ssh/local-world'
+
+    - id: fs-ssh
+      name: '@deepseek-ai/dsh-fs-ssh'
+
+    - id: subprocess-ssh
+      name: '@deepseek-ai/dsh-subprocess-ssh'
+
+    - id: sandbox-ssh
+      name: '@deepseek-ai/dsh-sandbox-ssh'
 
     # Workspace commands and reconnect-safe projection over Typert Remote.
     - id: workspace-controller
@@ -391,6 +428,18 @@
 
     - id: ui-trajectory
       name: '@deepseek-ai/dsh-client-ui-trajectory'
+
+# The mixed execution world replaces the local-only providers: the SSH rows
+# above register ctx.fs / ctx.subprocess / ctx.sandbox and fall back to the
+# local world composed beneath them, so exactly one row owns each service.
+- id: fs-sandbox
+  disabled: true
+
+- id: subprocess
+  disabled: true
+
+- id: sandbox
+  disabled: true
 
 # ── the agent plane moves behind agent presets ─────────────────────────────
 #

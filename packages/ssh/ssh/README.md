@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-ssh` connects a POSIX Harness host to an installed helper on a POSIX SSH host. One deployment-owned OpenSSH alias supplies authentication and host identity; the paired filesystem, subprocess and sandbox providers use that connection. The connection verifies installed artifact digests before readiness; the helper owns remote cleanup when the connection closes or its lease expires.
+`dsh-ssh` connects a Harness host — Linux, macOS, or Windows — to an installed helper on a POSIX SSH host. One deployment-owned OpenSSH alias supplies authentication and host identity; the paired filesystem, subprocess and sandbox providers use that connection. The connection verifies installed artifact digests before readiness; the helper owns remote cleanup when the connection closes or its lease expires.
 
 ## Table of Contents
 
@@ -29,7 +29,7 @@ Compose this service with [`fs-ssh`](../fs-ssh/README.md), [`subprocess-ssh`](..
 
 ### Deployment prerequisites
 
-Both endpoints require Linux or macOS. The local `ssh` command must support connection multiplexing and Unix-socket forwarding; the server must permit that forwarding. Configure the alias, credentials and known-host entry before startup: the service enables `BatchMode`, checks host keys (strictly by default), disables agent forwarding and adds no interactive authentication flow.
+The remote helper host requires Linux or macOS. A Linux or macOS Harness host reaches it through OpenSSH control-master multiplexing and Unix-socket forwarding, so its `ssh` command must support both and the server must permit the forwarding; a Windows Harness host has neither, so each stream opens a dedicated loopback `ssh -L` session instead. Configure the alias, credentials and known-host entry before startup: the service enables `BatchMode`, checks host keys (strictly by default), disables agent forwarding and adds no interactive authentication flow.
 
 Install the built helper and its matching runtime dependencies on the remote host. Keep Node, helper, bootstrap and their dependencies outside the workspace and writable temporary roots. They must also remain outside a backend’s replaced temporary tree, such as bwrap’s private `/tmp`; the workspace may still be under `/tmp`. Digest verification detects an unexpected installed artifact after helper startup; it does not make writable deployment files safe to execute or authenticate a malicious SSH host.
 
@@ -37,7 +37,8 @@ Install the built helper and its matching runtime dependencies on the remote hos
 |---|---|---|
 | `host` | one of `host`/`environment` | OpenSSH destination: a config-file alias, a host name, or an address |
 | `environment` | one of `host`/`environment` | Named environment resolved through the `ssh-environments` settings registry |
-| `node`, `helper`, `workspace` | required | Absolute remote Node executable, bundled helper entry and default workspace |
+| `node`, `helper` | required | Absolute remote Node executable and bundled helper entry |
+| `workspace` | `/` | Absolute remote default workspace; absent opens the directory picker at the remote root |
 | `helperHash` | required | Lowercase SHA-256 of the installed helper entry |
 | `bootstrapPath`, `bootstrapHash` | omitted | Paired remote PTC entry and its lowercase SHA-256 |
 | `requestTimeoutMs` | `30000` | Connection and administrative-request deadline, from 1 through 2,147,483,647 ms |
@@ -65,6 +66,18 @@ One `ssh` row serves one world. A deployment that reaches several servers compos
 
 Every provider routes through the pool: the filesystem sends each operation — including each continuation of an opened text stream — to the connection that owns its target, the subprocess provider spawns a process or terminal on the connection that owns its `cwd`, and the sandbox provider confines on the connection that owns the policy's workspace root. The two lookups that carry no target, executable resolution and the terminal environment, refuse to answer while named worlds are composed.
 
+### Lazy connections from the settings registry
+
+Composing `@deepseek-ai/dsh-ssh/broker` instead of one `ssh` row per environment opens connections from the `ssh-environments` registry on demand. `ctx.sshBroker.list()` returns the environments that declare every required runtime coordinate — `node`, `helper` and `helperHash` — and `ctx.sshBroker.connect(id)` composes that environment's connection on first use in its own `ssh` realm, exactly as one isolated `ssh` row would, then reuses it until the broker unloads. Every connection registers itself with the pool while `@deepseek-ai/dsh-ssh/worlds` is composed, so the providers route to it by workspace exactly as they route to a composed row.
+
+A connection that fails to start is discarded, so the next `connect` tries again; a connection that drops after startup is never reconnected. Unloading the broker disposes every connection it opened and joins their remote cleanup.
+
+`ctx.sshBroker.listDirectory(id, path?)` and `ctx.sshBroker.createDirectory(id, path, name, policy)` serve the in-app directory picker: they resolve and list one remote level, or create one child directory, through that environment's connection, so an operator can browse and choose a remote project before any workspace exists. Both carry the remote host's own POSIX spelling; the picker's browse backend reads this service by name.
+
+### A local execution world beside the SSH providers
+
+`@deepseek-ai/dsh-ssh/local-world` composes the local filesystem, subprocess and sandbox providers in their own service realms and publishes them as `localFs`, `localSubprocess` and `localSandbox`. Compose it when the SSH providers are the deployment's `ctx.fs`, `ctx.subprocess` and `ctx.sandbox` and must serve host paths as well: each then delegates a target no SSH world claims to that local world, so one process serves local and remote workspaces together. The local-only provider rows are disabled in such a composition, because two rows may not register one execution seam.
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -73,7 +86,7 @@ Every provider routes through the pool: the filesystem sends each operation — 
 <details>
 <summary>Implementation internals — click to expand</summary>
 
-The OpenSSH master carries private administrative RPC. Each program stream uses a separate forwarded Unix socket and an independent SSH channel. Program stdout cannot forge administrative replies or occupy the control stream’s channel window. SSH transport congestion still affects the shared connection.
+The OpenSSH master carries private administrative RPC. Each program stream uses a separate forwarded socket and an independent SSH channel; a Windows host, which has no control master, opens a dedicated loopback session per stream. Program stdout cannot forge administrative replies or occupy the control stream’s channel window. SSH transport congestion still affects the shared connection.
 
 Each stream reservation has a random 256-bit TLS pre-shared key carried only by administrative RPC. TLS authenticates both endpoints and protects every stream byte; the key is never sent as a stream preface. Socket directories are private (`0700`) and sockets use `0600`. Replacing a writable socket path cannot impersonate an endpoint or reveal the stream key; an attacker can still interrupt service or relay opaque TLS records.
 
@@ -94,6 +107,7 @@ The helper starts with `--disable-sigusr1`, so a same-user process signal cannot
 
 - [SSH subsystem](../../../docs/subsystems/ssh.md) — execution coordinates, transport semantics and lifecycle ownership.
 - [POSIX SSH decision](../../../.agents/notes/implemented/architecture/2026-09-11-posix-ssh-runtime.md) — rationale, alternatives and required verification.
+- [Windows client transport](../../../.agents/notes/implemented/architecture/2026-09-19-windows-ssh-client-transport.md) — why Windows needs a loopback OpenSSH session per stream.
 
 -----
 
@@ -110,7 +124,7 @@ This provider contributes no request-prefix content. Its consumers own model-vis
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- No Windows endpoint, automatic provisioning, reconnect or replay is supplied.
+- No automatic provisioning, reconnect or replay is supplied.
 - Web workspace UIs read the composed filesystem, so a remote deployment lists, opens and edits remote directories; the adaptive directory chooser mounts its in-app browser rather than an OS-native dialog, which could only return a host path.
 - One `ssh` row serves one world, and the Web workspace menus offer one add action per reachable world. Executable resolution and the terminal environment carry no target, so a deployment composing named worlds refuses those lookups.
 - TLS stream keys do not protect against remote OS process-memory inspection or debugging. File-effect policy retains the selected sandbox backend’s limits.

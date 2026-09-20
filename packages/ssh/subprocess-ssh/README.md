@@ -25,7 +25,9 @@ English | [中文](README.zh.md)
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount this provider with [`dsh-ssh`](../ssh/README.md) and its filesystem provider. It has no deployment configuration of its own. `resolveExecutable()` checks the remote executable namespace; fully specified spawn requests supply the remote cwd, environment, stream dispositions and cleanup grace.
+Mount this provider with [`dsh-ssh`](../ssh/README.md) and its filesystem provider. It has no deployment configuration of its own. `resolveExecutable()` checks the remote executable namespace, resolving on the connection that owns a named `cwd` exactly as spawn routes; fully specified spawn requests supply the remote cwd, environment, stream dispositions and cleanup grace.
+
+When the deployment composes the [world pool](../ssh/README.md), spawn and terminal allocation run on the connection that owns the request's `cwd`. A deployment that also composes a local execution world (`localSubprocess`) runs a `cwd` no SSH world claims on that delegate and answers a target-less executable lookup and terminal-environment inspection from it, so one process serves local and remote workspaces together.
 
 Ordinary spawn returns a handle while remote allocation proceeds. Piped stdin and the optional duplex control endpoint accept writes during allocation. Terminal allocation, writes, foreground inspection, signals and termination retain their asynchronous interfaces.
 

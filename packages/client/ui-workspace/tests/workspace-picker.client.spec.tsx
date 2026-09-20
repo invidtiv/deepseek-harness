@@ -187,6 +187,37 @@ describe('WorkspacePicker', () => {
     expect(createWorkspace).toHaveBeenCalledWith({ path: '/tmp/project', environmentId: 'build02' })
   })
 
+  it('offers the single reachable world beside the composed one', async () => {
+    const listEnvironments = vi.fn(async () => [
+      { environmentId: 'bsdev', label: 'BSD dev', host: 'dsh-bsdev', reachable: true },
+    ])
+    const created = { ...workspace('adopted'), path: '/srv/app', title: 'app' }
+    const createWorkspace = vi.fn(async () => created)
+    const b = mount([workspace('alpha', 'Alpha')], createWorkspace, occupancySource(), listEnvironments)
+
+    const entry = await screen.findByRole('menuitem', { name: '在 BSD dev 上添加工作区…' })
+    expect(screen.getByRole('menuitem', { name: '添加工作区…' })).toBeTruthy()
+    fireEvent.click(entry)
+    await act(async () => { b.probe.owner!.onPicked('/srv/app') })
+
+    expect(createWorkspace).toHaveBeenCalledWith({ path: '/srv/app', environmentId: 'bsdev' })
+  })
+
+  it('adopts the composed world when the operator picks the plain entry', async () => {
+    const listEnvironments = vi.fn(async () => [
+      { environmentId: 'bsdev', label: 'BSD dev', host: 'dsh-bsdev', reachable: true },
+    ])
+    const created = { ...workspace('adopted'), path: '/local/app', title: 'app' }
+    const createWorkspace = vi.fn(async () => created)
+    const b = mount([workspace('alpha', 'Alpha')], createWorkspace, occupancySource(), listEnvironments)
+
+    const entry = await screen.findByRole('menuitem', { name: '添加工作区…' })
+    fireEvent.click(entry)
+    await act(async () => { b.probe.owner!.onPicked('/local/app') })
+
+    expect(createWorkspace).toHaveBeenCalledWith({ path: '/local/app' })
+  })
+
   it('offers no world choice for an environment the deployment cannot reach', async () => {
     const listEnvironments = vi.fn(async () => [
       { environmentId: 'build09', label: 'Build 09', host: 'build09.example', reachable: false },

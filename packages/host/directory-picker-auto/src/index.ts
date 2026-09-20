@@ -6,8 +6,9 @@
  * pair: the Host backend serving the seam capability and the client surface
  * occupying ui-workspace's directory-flow holes. Both arrive as ordinary
  * entries, so the surface is discovered exactly as a config-row's would be
- * and one resolved choice still swaps both faces; pinning an interaction
- * remains composing that pair directly instead of this row.
+ * and one resolved choice still swaps both faces. Config `interaction`
+ * pins a choice outright; composing the pair directly, without this row,
+ * remains the other way to pin one.
  * @module @deepseek-ai/dsh-host-directory-picker-auto
  */
 
@@ -16,6 +17,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/cordis-plugin-loader'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-fs'
+import z from '@deepseek-ai/schemastery'
 import { launchedThroughSsh, launchEnvironmentOf } from '@deepseek-ai/dsh-launch-environment'
 import { canExecute, hasLinuxChooserBinary } from './probe.ts'
 import type { DirectoryPickerBackendKind } from './resolve.ts'
@@ -33,6 +35,22 @@ export const name = 'directory-picker-auto'
  * entry tree the backend mounts into (`loader`).
  */
 export const inject = ['webServer', 'fs', 'loader']
+
+/**
+ * Interaction this composition mounts. `auto` samples the host facts once at
+ * boot through {@link resolveDirectoryPickerBackend}; `native` and `browse`
+ * pin the interaction for every boot regardless of that sample, so a
+ * deployment that only ever serves the in-app browser does not rely on the
+ * probe's inference.
+ */
+export interface Config {
+  /** Interaction to mount; `auto` keeps the boot-time resolution. */
+  readonly interaction: 'auto' | 'native' | 'browse'
+}
+
+export const Config: z<Config> = z.object({
+  interaction: z.union(['auto', 'native', 'browse'] as const).default('auto'),
+})
 
 /**
  * Host backend package per resolved kind — fixed composition vocabulary, not a
@@ -63,16 +81,19 @@ export const SURFACE_PACKAGES: Record<DirectoryPickerBackendKind, string> = {
  * joins their fibers' teardown, so unloading this plugin returns only after
  * both faces of the mounted interaction (and their dependents) quiesced.
  * @param ctx - cordis context carrying the injected `webServer` and `loader`.
+ * @param config - configured interaction; `auto` samples the host at boot.
  */
-export async function apply(ctx: Context): Promise<void> {
-  const backend = resolveDirectoryPickerBackend({
-    bindHost: ctx.webServer.host,
-    platform: process.platform,
-    ssh: launchedThroughSsh(launchEnvironmentOf(ctx)),
-    hostFilesystem: ctx.fs.addressesHostFilesystem,
-    env: process.env,
-    linuxChooser: hasLinuxChooserBinary(process.env.PATH, canExecute),
-  })
+export async function apply(ctx: Context, config: Config): Promise<void> {
+  const backend = config.interaction === 'auto'
+    ? resolveDirectoryPickerBackend({
+      bindHost: ctx.webServer.host,
+      platform: process.platform,
+      ssh: launchedThroughSsh(launchEnvironmentOf(ctx)),
+      hostFilesystem: ctx.fs.addressesHostFilesystem,
+      env: process.env,
+      linuxChooser: hasLinuxChooserBinary(process.env.PATH, canExecute),
+    })
+    : config.interaction
   await ctx.effect(async () => {
     // Root-tree create: the Loader root is in-memory (write() is a no-op), so
     // the mounted rows can never be persisted back into a config file. The

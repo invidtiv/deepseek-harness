@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-ssh` 将 POSIX Harness 主机连接到 POSIX SSH 主机上已安装的辅助程序。部署方持有的 OpenSSH 主机别名提供认证与主机身份；配套的文件系统、子进程和沙箱提供方共享该连接。连接在就绪前验证已安装产物的摘要；辅助程序在连接关闭或租期到期时负责远端清理。
+`dsh-ssh` 将 Harness 主机（Linux、macOS 或 Windows）连接到 POSIX SSH 主机上已安装的辅助程序。部署方持有的 OpenSSH 主机别名提供认证与主机身份；配套的文件系统、子进程和沙箱提供方共享该连接。连接在就绪前验证已安装产物的摘要；辅助程序在连接关闭或租期到期时负责远端清理。
 
 ## 目录
 
@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 部署前提
 
-两端均需运行 Linux 或 macOS。本地 `ssh` 命令必须支持连接复用与 Unix 套接字转发，服务器也必须允许该转发。启动前配置主机别名、凭据与已知主机记录：本服务启用 `BatchMode`、检查主机密钥（默认严格）、禁用认证代理转发，且不提供交互认证流程。
+远端辅助程序主机需运行 Linux 或 macOS。Linux 或 macOS Harness 主机通过 OpenSSH 控制主连接复用与 Unix 套接字转发访问它，因此其 `ssh` 命令必须支持这两者，服务器也必须允许该转发；Windows Harness 主机不具备这两者，因此每条流改为建立专用的本地回环 `ssh -L` 会话。启动前配置主机别名、凭据与已知主机记录：本服务启用 `BatchMode`、检查主机密钥（默认严格）、禁用认证代理转发，且不提供交互认证流程。
 
 在远端主机安装已构建的辅助程序及其匹配的运行依赖。Node、辅助程序、引导程序及其依赖必须位于工作区和可写临时目录之外，也必须位于后端会替换的临时目录树之外，例如 bwrap 的私有 `/tmp`；工作区仍可位于 `/tmp` 下。摘要校验在辅助程序启动后发现非预期的已安装产物；它不能保证可写部署文件的执行安全，也不能认证恶意 SSH 主机。
 
@@ -37,7 +37,8 @@ kind: "package-reference"
 |---|---|---|
 | `host` | `host`/`environment` 二选一 | OpenSSH 目标：配置文件中的别名、主机名或地址 |
 | `environment` | `host`/`environment` 二选一 | 通过 `ssh-environments` settings 注册表解析的具名环境 |
-| `node`、`helper`、`workspace` | 必填 | 远端 Node 可执行文件、辅助程序打包入口和默认工作区的绝对路径 |
+| `node`、`helper` | 必填 | 远端 Node 可执行文件与辅助程序打包入口的绝对路径 |
+| `workspace` | `/` | 远端默认工作区的绝对路径；省略时目录选择器在远端根目录打开 |
 | `helperHash` | 必填 | 已安装辅助程序入口的小写 SHA-256 |
 | `bootstrapPath`、`bootstrapHash` | 省略 | 成对提供的远端 PTC 入口及其小写 SHA-256 |
 | `requestTimeoutMs` | `30000` | 连接与管理请求的截止时限，范围为 1 至 2,147,483,647 毫秒 |
@@ -65,6 +66,18 @@ kind: "package-reference"
 
 每个提供方都经由池路由：文件系统把每个操作——包括已打开文本流的后续读取——发给拥有其目标的连接，子进程提供方在拥有 `cwd` 的连接上启动进程或终端，沙箱提供方在拥有策略工作区根目录的连接上施加限制。两个不带目标的操作，即可执行文件解析与终端环境，在组合了具名世界时会拒绝作答。
 
+### 由 settings 注册表按需建立连接
+
+不为每个环境各组合一个 `ssh` 行，而是组合 `@deepseek-ai/dsh-ssh/broker`，即可按需从 `ssh-environments` 注册表建立连接。`ctx.sshBroker.list()` 返回声明了全部必需运行时坐标——`node`、`helper` 与 `helperHash`——的环境；`ctx.sshBroker.connect(id)` 在首次使用时于该环境自己的 `ssh` realm 中组合连接（与一个被隔离的 `ssh` 行完全相同），并复用它直到 broker 卸载。组合了 `@deepseek-ai/dsh-ssh/worlds` 时，每个连接都会把自己注册进池，因此各提供方按工作区路由到它的方式与路由到已组合行完全相同。
+
+启动失败的连接会被丢弃，因此下一次 `connect` 会重试；启动后掉线的连接绝不重连。卸载 broker 会释放它打开的所有连接并汇合其远端清理。
+
+`ctx.sshBroker.listDirectory(id, path?)` 与 `ctx.sshBroker.createDirectory(id, path, name, policy)` 为应用内目录选择器服务：它们通过该环境的连接解析并列出某一远端目录层，或在其中创建一个子目录，使操作者能在任何工作区存在之前浏览并选择远端项目。两者都沿用远端主机自己的 POSIX 拼写；选择器的浏览后端按服务名读取该服务。
+
+### SSH 提供方旁的本地执行世界
+
+`@deepseek-ai/dsh-ssh/local-world` 在各自的服务 realm 中组合本地文件系统、子进程与沙箱提供方，并把它们发布为 `localFs`、`localSubprocess` 与 `localSandbox`。当 SSH 提供方本身就是该部署的 `ctx.fs`、`ctx.subprocess` 与 `ctx.sandbox`，且还必须服务主机路径时，组合本入口：此时每个提供方会把没有任何 SSH 世界认领的目标委托给该本地世界，于是一个进程同时服务本地与远端工作区。这类组合中必须禁用纯本地的提供方行，因为两行不得注册同一个执行 seam。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -73,7 +86,7 @@ kind: "package-reference"
 <details>
 <summary>实现细节 — 点击展开</summary>
 
-OpenSSH 主连接承载私有管理 RPC。每条程序流使用独立转发的 Unix 套接字和独立 SSH 通道。程序 stdout 无法伪造管理回复，也不会占用控制流的通道窗口；SSH 传输拥塞仍会影响共享连接。
+OpenSSH 主连接承载私有管理 RPC。每条程序流使用独立转发的套接字和独立 SSH 通道；没有控制主连接的 Windows 主机则为每条流各开一条专用回环会话。程序 stdout 无法伪造管理回复，也不会占用控制流的通道窗口；SSH 传输拥塞仍会影响共享连接。
 
 每个流预留项都有一个随机 256 位 TLS 预共享密钥，仅由管理 RPC 传递。TLS 认证两端并保护流中的每个字节；密钥绝不作为流前缀发送。套接字目录为私有目录（`0700`），套接字使用 `0600` 权限。替换可写套接字路径无法冒充端点或获知流密钥；攻击者仍可中断服务或转发不透明的 TLS 记录。
 
@@ -94,6 +107,7 @@ OpenSSH 主连接承载私有管理 RPC。每条程序流使用独立转发的 U
 
 - [SSH 子系统](../../../docs/subsystems/ssh.zh.md) — 执行坐标、传输语义及生命周期归属。
 - [POSIX SSH 决策](../../../.agents/notes/implemented/architecture/2026-09-11-posix-ssh-runtime.zh.md) — 理由、替代方案及必要验证。
+- [Windows 客户端传输](../../../.agents/notes/implemented/architecture/2026-09-19-windows-ssh-client-transport.zh.md) — 说明 Windows 为何需要每条流各一个回环 OpenSSH 会话。
 
 -----
 
@@ -110,7 +124,7 @@ OpenSSH 主连接承载私有管理 RPC。每条程序流使用独立转发的 U
 
 <a id="known-limitations-and-deferred-work"></a>
 
-- 不提供 Windows 端点、自动配置远端环境、重连或重放。
+- 不提供自动配置远端环境、重连或重放。
 - Web 工作区界面读取组合后的文件系统，因此远程部署会列出、打开并编辑远程目录；自适应目录选择器挂载应用内浏览器，而不是只能返回主机路径的 OS 原生对话框。
 - 一个 `ssh` 行服务一个世界，Web 工作区菜单会为每个可访问世界各提供一个添加入口。可执行文件解析与终端环境不带目标，因此组合了具名世界的部署会拒绝这两个查询。
 - TLS 流密钥不防御远端操作系统级进程内存检查或调试。文件效果策略保留所选沙箱后端的限制。

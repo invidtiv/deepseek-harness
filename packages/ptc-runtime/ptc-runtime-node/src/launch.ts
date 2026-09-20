@@ -13,13 +13,20 @@ export interface LaunchConfig {
 
 /**
  * Select explicit arguments without inheriting host loader or inspector flags.
+ * The world that owns the run decides the entry: a world that installs its own
+ * bootstrap runs that, and a world that reads this harness's assets runs the
+ * projected bootstrap.
  * @param fs - Filesystem mapping host bootstrap assets into the process world.
  * @param config - Optional preinstalled built bootstrap.
  * @param maxMessageBytes - Validated frame and queued-write limit.
+ * @param installed - The run world's own installed bootstrap entry, when it has one.
  * @returns Arguments following the resolved Node executable.
  */
-export function bootstrapArgs(fs: FileSystem, config: LaunchConfig, maxMessageBytes: number): string[] {
+export function bootstrapArgs(fs: FileSystem, config: LaunchConfig, maxMessageBytes: number, installed?: string): string[] {
   if (config.bootstrapPath !== undefined) return [config.bootstrapPath, String(maxMessageBytes)]
+  // A world that installs its own entry runs that instead of this harness's
+  // assets, which it cannot read.
+  if (installed !== undefined) return [installed, String(maxMessageBytes)]
   if ('pkg' in process) return [String(maxMessageBytes)]
   const mapped = (path: string): string => {
     const result = fs.processPathFromHostPath(path)

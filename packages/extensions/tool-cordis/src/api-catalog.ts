@@ -908,10 +908,22 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the level\'s listing with its ancestry.',
       },
       {
+        signature: '@Remote(\'listIn\') async listIn(environmentId: string, path: string | undefined, signal: AbortSignal): Promise<DirectoryListing>',
+        description: 'List one directory level inside a named SSH environment, before any workspace exists in that world.',
+        parameters: [{ name: 'environmentId', description: 'configured environment whose world holds the path.' }, { name: 'path', description: 'absolute directory in that world; absent lists the environment\'s configured workspace.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'the level\'s listing in the remote host\'s own path spelling.',
+      },
+      {
         signature: '@Remote(\'createDirectory\') async createDirectory(path: string, name: string): Promise<string>',
         description: 'Create one child directory for a Remote caller\'s in-app browser.',
         parameters: [{ name: 'path', description: 'absolute existing parent directory.' }, { name: 'name', description: 'single non-blank path segment.' }],
         returns: 'the created directory\'s absolute path.',
+      },
+      {
+        signature: '@Remote(\'createDirectoryIn\') async createDirectoryIn(environmentId: string, path: string, name: string): Promise<string>',
+        description: 'Create one child directory inside a named SSH environment.',
+        parameters: [{ name: 'environmentId', description: 'configured environment whose world holds the parent.' }, { name: 'path', description: 'absolute existing parent directory in that world.' }, { name: 'name', description: 'single non-blank path segment.' }],
+        returns: 'the created directory\'s absolute remote path.',
       },
     ],
   },
@@ -976,9 +988,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Abstract filesystem provider. Targets must preserve identity across aliases; reads expose regular UTF-8 text or typed errors, listings are stable and content-free, and mutations are atomic. Optional guards add stale protection without changing the unguarded provider contract.',
     methods: [
       {
-        signature: 'abstract resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal }): Promise<FsTarget>',
+        signature: 'abstract resolve(path: string, opts?: { cwd?: string; signal?: AbortSignal; environmentId?: string }): Promise<FsTarget>',
         description: 'Resolve a model/plugin-supplied path into a stable FsTarget. May perform I/O (a remote/sandboxed backend may need a round-trip to map a path to a stable identity), hence async even though the local backend only normalizes + realpaths.',
-        parameters: [{ name: 'path', description: 'the path to resolve; relative paths resolve against `opts.cwd`.' }, { name: 'opts', description: 'optional cwd override and cancellation signal.' }],
+        parameters: [{ name: 'path', description: 'the path to resolve; relative paths resolve against `opts.cwd`.' }, { name: 'opts', description: 'optional cwd override, cancellation signal, and the named execution world to resolve in. `environmentId` names a composed world explicitly, so a path can be canonicalized in a world no registered workspace claims yet; a backend that serves only its own world ignores it.' }],
         returns: 'the stable target; the same file yields the same `targetKey`.',
       },
       {
@@ -2519,9 +2531,41 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'sshBroker',
+    summary: 'Opens one connection per configured environment on first use and releases them together.',
+    description: 'Opens one connection per configured environment on first use and releases them together.',
+    methods: [
+      {
+        signature: 'list(): readonly string[]',
+        description: 'Environment ids this deployment can connect to: the configured entries that declare every remote runtime coordinate a connection needs.',
+        parameters: [],
+        returns: 'the connectable environment ids, in declaration order.',
+      },
+      {
+        signature: 'connect(id: string): Promise<SshWorldConnection>',
+        description: 'Connect to one environment, composing the connection on first use. Concurrent callers share one attempt.',
+        parameters: [{ name: 'id', description: 'stable environment identity.' }],
+        returns: 'the live connection providers route to.',
+        throws: ['{SshEnvironmentUnknownError} when the id is not configured.', '{SshEnvironmentIncompleteError} when its runtime coordinates are incomplete.'],
+      },
+      {
+        signature: 'async listDirectory(id: string, path?: string, signal?: AbortSignal): Promise<SshRemoteDirectory>',
+        description: 'List one directory level in a named environment, composing its connection on first use. The remote host\'s own POSIX spelling is preserved, so a caller on any host platform sees canonical remote paths.',
+        parameters: [{ name: 'id', description: 'stable environment identity.' }, { name: 'path', description: 'absolute remote directory; absent lists the environment\'s workspace.' }, { name: 'signal', description: 'caller lifetime, which stops the remote scan.' }],
+        returns: 'the listed level with its ancestry and the environment\'s workspace.',
+      },
+      {
+        signature: 'async createDirectory(id: string, path: string, name: string, policy: SshRemoteDirectoryPolicy, signal?: AbortSignal): Promise<string>',
+        description: 'Create one child directory in a named environment.',
+        parameters: [{ name: 'id', description: 'stable environment identity.' }, { name: 'path', description: 'absolute remote parent that already exists.' }, { name: 'name', description: 'single child segment.' }, { name: 'policy', description: 'file-effect policy the creation runs under.' }, { name: 'signal', description: 'caller lifetime.' }],
+        returns: 'the created directory\'s canonical absolute remote path.',
+      },
+    ],
+  },
+  {
     key: 'sshEnvironments',
     summary: 'Registry over the deployment\'s named SSH environments.',
-    description: 'Registry over the deployment\'s named SSH environments.\n\nThe service registers the SSH_ENVIRONMENTS_NAMESPACE settings namespace during activation and resolves a stable id into validated OpenSSH connection options. It never opens a connection and never stores a secret; the SSH provider family owns both.',
+    description: 'Registry over the deployment\'s named SSH environments.\n\nThe service registers the SSH_ENVIRONMENTS_NAMESPACE settings namespace during activation and resolves a stable id into validated OpenSSH connection options (resolve) or into those options plus the remote runtime coordinates a helper launch needs (resolveRuntime). It never opens a connection and never stores a secret; the SSH provider family owns both.',
     methods: [
       {
         signature: 'list(): readonly SshEnvironmentSummary[]',
@@ -2542,6 +2586,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'the resolved connection options.',
         throws: ['{SshEnvironmentUnknownError} when the id is not configured.'],
       },
+      {
+        signature: 'resolveRuntime(id: SshEnvironmentId): SshEnvironmentRuntime',
+        description: 'Resolve one environment into everything a connection needs: the OpenSSH options plus the remote runtime coordinates (Node, helper entry, helper digest, and default workspace) the helper is launched with. An entry that omits `workspace` resolves to SSH_ENVIRONMENT_DEFAULT_WORKSPACE.',
+        parameters: [{ name: 'id', description: 'stable environment identity.' }],
+        returns: 'the resolved connection and remote runtime coordinates.',
+        throws: ['{SshEnvironmentUnknownError} when the id is not configured.', '{SshEnvironmentIncompleteError} when a required runtime coordinate is absent.'],
+      },
     ],
   },
   {
@@ -2560,6 +2611,13 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         description: 'List the worlds with a composed connection.',
         parameters: [],
         returns: 'the environment ids in registration order; the default connection contributes none.',
+      },
+      {
+        signature: 'connectionForEnvironment(environmentId: string): SshWorldConnection',
+        description: 'Resolve one named world\'s connection explicitly, without consulting the workspace locators: a caller that already knows the world it addresses (an operator-chosen environment, a target that records it) needs no claim.',
+        parameters: [{ name: 'environmentId', description: 'world to resolve.' }],
+        returns: 'the connection serving that world.',
+        throws: ['{SshWorldUnavailableError} when no connection is composed for it.'],
       },
       {
         signature: 'requireDefaultWorld(operation: string): void',
@@ -2757,10 +2815,16 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     description: 'Abstract subprocess service. Subclass, implement spawn, and load the subclass as a plugin — it registers as `ctx.subprocess` (one implementation per context; loading a second throws, which is cordis\' standard duplicate-service behavior).\n\nImplementations must honor these semantics:\n\n- Executable paths belong to one execution world shared with the mounted filesystem provider.\n- spawn returns a live handle synchronously. Target identity remains provider-private; `done` resolves with the spawned command\'s exit facts and may reject for spawn or provider failures.\n- Collect-mode readers are offset-based and non-consuming, so independent readers never consume one another\'s output; lossy reads report truncation and the spill file holding the complete stream when one exists. Piped streams are handed to the caller raw and never buffered here.\n- SubprocessHandle.terminate (and the spec\'s abort signal) starts the provider\'s documented procedure against its managed range. SubprocessHandle.waitForExit observes that same range so a consumer-owned teardown ladder can hold each tier on real quiescence; each provider documents its signalling and observability limits.\n- Disposal of the service terminates all still-running managed processes and awaits their exit.\n- spawnTerminal owns terminal allocation, text transport, foreground groups, signalling, and whole-session quiescence behind one awaited termination method; readiness and persistent-shell policy stay in the PTY consumer. Its output stream ends after queued terminal output when the top-level process exits.',
     methods: [
       {
-        signature: 'abstract resolveExecutable( command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal, ): Promise<string>',
-        description: 'Resolve one configured executable in this provider\'s execution world. Absolute paths are verified; bare names use the provider\'s scrubbed PATH plus explicit environment overrides. Relative paths containing separators are rejected: the resolution base is undefined, so providers fail loud instead of guessing.',
-        parameters: [{ name: 'command', description: 'absolute executable path or bare PATH name.' }, { name: 'env', description: 'explicit environment entries used for lookup.' }, { name: 'signal', description: 'aborts remote or local lookup.' }],
+        signature: 'abstract resolveExecutable( command: string, env?: Readonly<Record<string, string>>, signal?: AbortSignal, cwd?: string, ): Promise<string>',
+        description: 'Resolve one configured executable in an execution world. Absolute paths are verified; bare names use the provider\'s scrubbed PATH plus explicit environment overrides. Relative paths containing separators are rejected: the resolution base is undefined, so providers fail loud instead of guessing.',
+        parameters: [{ name: 'command', description: 'absolute executable path or bare PATH name.' }, { name: 'env', description: 'explicit environment entries used for lookup.' }, { name: 'signal', description: 'aborts remote or local lookup.' }, { name: 'cwd', description: 'directory whose execution world answers the lookup, selecting the world exactly as it does for {@link spawn}; omitted resolves in the provider\'s default world.' }],
         returns: 'a canonical executable path.',
+      },
+      {
+        signature: 'launchBootstrap(cwd: string): string | undefined',
+        description: 'The installed harness bootstrap that runs this harness\'s own code in the execution world owning `cwd`, when that world reads its own assets instead of this harness\'s. A world that projects the harness\'s assets answers undefined.',
+        parameters: [{ name: 'cwd', description: 'directory whose execution world answers the lookup.' }],
+        returns: 'the world\'s installed launch bootstrap entry, when it has one.',
       },
       {
         signature: 'abstract terminalEnvironment(signal?: AbortSignal): Promise<SubprocessTerminalEnvironment>',
@@ -3504,9 +3568,9 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
         returns: 'resolution after durability.',
       },
       {
-        signature: 'async resolveByPath(path: string): Promise<Workspace | undefined>',
+        signature: 'async resolveByPath(path: string, environmentId?: string): Promise<Workspace | undefined>',
         description: 'Resolve by canonical directory path without creating or mutating a workspace. A missing path rejects during `realpath`; an existing unowned directory returns `undefined`.',
-        parameters: [{ name: 'path', description: 'Existing directory path in a fully qualified spelling.' }],
+        parameters: [{ name: 'path', description: 'Existing directory path in a fully qualified spelling.' }, { name: 'environmentId', description: 'Named SSH environment whose world holds the path; omitted resolves through the composed world.' }],
         returns: 'the workspace owning the canonical path, when one exists.',
       },
     ],
@@ -4689,7 +4753,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'DirectoryPickerBrowseCapability',
-    declaration: 'export interface DirectoryPickerBrowseCapability {\n    kind: \'browse\';\n    list(path?: string, signal?: AbortSignal): Promise<DirectoryListing>;\n    createDirectory(path: string, name: string): Promise<string>;\n}',
+    declaration: 'export interface DirectoryPickerBrowseCapability {\n    kind: \'browse\';\n    list(path?: string, signal?: AbortSignal): Promise<DirectoryListing>;\n    createDirectory(path: string, name: string): Promise<string>;\n    listIn?(environmentId: string, path?: string, signal?: AbortSignal): Promise<DirectoryListing>;\n    createDirectoryIn?(environmentId: string, path: string, name: string): Promise<string>;\n}',
   },
   {
     name: 'DirectoryPickerCapabilities',
@@ -6517,15 +6581,27 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SshEnvironmentEntry',
-    declaration: 'export interface SshEnvironmentEntry extends SshEnvironment {\n    label?: string;\n}',
+    declaration: 'export interface SshEnvironmentEntry extends SshEnvironment {\n    label?: string;\n    node?: string;\n    helper?: string;\n    helperHash?: string;\n    workspace?: string;\n    bootstrapPath?: string;\n    bootstrapHash?: string;\n}',
   },
   {
     name: 'SshEnvironmentId',
     declaration: 'export type SshEnvironmentId = Branded<\'SshEnvironmentId\'>;',
   },
   {
+    name: 'SshEnvironmentRuntime',
+    declaration: 'export interface SshEnvironmentRuntime {\n    readonly environmentId: SshEnvironmentId;\n    readonly connection: SshEnvironment;\n    readonly node: string;\n    readonly helper: string;\n    readonly helperHash: string;\n    readonly workspace: string;\n    readonly bootstrapPath?: string;\n    readonly bootstrapHash?: string;\n}',
+  },
+  {
     name: 'SshEnvironmentSummary',
     declaration: 'export interface SshEnvironmentSummary {\n    readonly id: SshEnvironmentId;\n    readonly label: string;\n    readonly host: string;\n    readonly port?: number;\n}',
+  },
+  {
+    name: 'SshRemoteDirectory',
+    declaration: 'export interface SshRemoteDirectory {\n    readonly path: string;\n    readonly home: string;\n    readonly crumbs: readonly {\n        readonly name: string;\n        readonly path: string;\n    }[];\n    readonly entries: readonly {\n        readonly name: string;\n        readonly path: string;\n    }[];\n}',
+  },
+  {
+    name: 'SshRemoteDirectoryPolicy',
+    declaration: 'export interface SshRemoteDirectoryPolicy {\n    readonly mode: \'read-only\' | \'workspace-write\' | \'danger-full-access\';\n    readonly workspaceRoot: string;\n}',
   },
   {
     name: 'SshStreamEndpoint',
@@ -6533,7 +6609,7 @@ export const TYPE_API: readonly TypeApiEntry[] = [
   },
   {
     name: 'SshWorldConnection',
-    declaration: 'export interface SshWorldConnection {\n    request<T>(method: string, params: unknown, result: z.ZodType<T>, signal?: AbortSignal, wait?: boolean): Promise<T>;\n    connectStream(endpoint: SshStreamEndpoint, signal?: AbortSignal): Promise<Socket>;\n    dispose(): Promise<void>;\n}',
+    declaration: 'export interface SshWorldConnection {\n    request<T>(method: string, params: unknown, result: z.ZodType<T>, signal?: AbortSignal, wait?: boolean): Promise<T>;\n    connectStream(endpoint: SshStreamEndpoint, signal?: AbortSignal): Promise<Socket>;\n    dispose(): Promise<void>;\n    readonly launchBootstrap?: string | undefined;\n}',
   },
   {
     name: 'StorageBackend',

@@ -2,7 +2,9 @@ import { Context } from '@deepseek-ai/cordis'
 import { SettingsProvider, type SettingsNamespace } from '@deepseek-ai/dsh-settings'
 import { afterEach, describe, expect, it } from 'vitest'
 import SshEnvironments, {
+  SSH_ENVIRONMENT_DEFAULT_WORKSPACE,
   SSH_ENVIRONMENTS_NAMESPACE,
+  SshEnvironmentIncompleteError,
   SshEnvironmentUnknownError,
   type SshEnvironmentId,
 } from '../src/index.ts'
@@ -112,10 +114,103 @@ describe('SshEnvironments', () => {
     })
   })
 
+  it('resolves the remote runtime coordinates beside the connection', async () => {
+    const ctx = await boot(true)
+    await ctx.settings.replace(namespace, {
+      environments: {
+        build01: {
+          host: 'build01.example', label: 'Build 01', port: 2222,
+          node: '/usr/bin/node', helper: '/opt/dsh-ssh/helper.js',
+          helperHash: 'a'.repeat(64), workspace: '/home/alice/project',
+        },
+      },
+    })
+
+    expect(ctx.sshEnvironments.resolveRuntime('build01' as SshEnvironmentId)).toEqual({
+      environmentId: 'build01',
+      connection: {
+        host: 'build01.example',
+        port: 2222,
+        hostKeyChecking: 'yes',
+        serverAliveIntervalMs: 10_000,
+        serverAliveCountMax: 3,
+      },
+      node: '/usr/bin/node',
+      helper: '/opt/dsh-ssh/helper.js',
+      helperHash: 'a'.repeat(64),
+      workspace: '/home/alice/project',
+    })
+    // The runtime coordinates never leak into the connection options the
+    // strict OpenSSH schema validates.
+    expect(ctx.sshEnvironments.resolve('build01' as SshEnvironmentId)).not.toHaveProperty('helper')
+  })
+
+  it('carries a paired PTC bootstrap and refuses a lone half', async () => {
+    const ctx = await boot(true)
+    const base = { host: 'build01.example', node: '/usr/bin/node', helper: '/opt/dsh-ssh/helper.js', helperHash: 'a'.repeat(64) }
+    await ctx.settings.replace(namespace, {
+      environments: { build01: { ...base, bootstrapPath: '/opt/dsh-ssh/process.js', bootstrapHash: 'b'.repeat(64) } },
+    })
+    expect(ctx.sshEnvironments.resolveRuntime('build01' as SshEnvironmentId)).toMatchObject({
+      bootstrapPath: '/opt/dsh-ssh/process.js', bootstrapHash: 'b'.repeat(64),
+    })
+    // The pair is verified together, so one half alone cannot connect.
+    await ctx.settings.replace(namespace, { environments: { build01: { ...base, bootstrapPath: '/opt/dsh-ssh/process.js' } } })
+    const failure = (() => {
+      try { ctx.sshEnvironments.resolveRuntime('build01' as SshEnvironmentId); return undefined }
+      catch (error: unknown) { return error }
+    })()
+    expect(failure).toBeInstanceOf(SshEnvironmentIncompleteError)
+    expect((failure as SshEnvironmentIncompleteError).fields).toEqual(['bootstrapHash'])
+  })
+
+  it('defaults an omitted workspace to the remote root', async () => {
+    const ctx = await boot(true)
+    await ctx.settings.replace(namespace, {
+      environments: {
+        build01: {
+          host: 'build01.example', node: '/usr/bin/node', helper: '/opt/dsh-ssh/helper.js',
+          helperHash: 'a'.repeat(64),
+        },
+      },
+    })
+
+    expect(ctx.sshEnvironments.resolveRuntime('build01' as SshEnvironmentId).workspace)
+      .toBe(SSH_ENVIRONMENT_DEFAULT_WORKSPACE)
+    expect(SSH_ENVIRONMENT_DEFAULT_WORKSPACE).toBe('/')
+  })
+
+  it('refuses a connection whose runtime coordinates are incomplete', async () => {
+    const ctx = await boot(true)
+    await ctx.settings.replace(namespace, {
+      environments: { build01: { host: 'build01.example' } },
+    })
+
+    const failure = (() => {
+      try {
+        ctx.sshEnvironments.resolveRuntime('build01' as SshEnvironmentId)
+        return undefined
+      } catch (error: unknown) { return error }
+    })()
+    expect(failure).toBeInstanceOf(SshEnvironmentIncompleteError)
+    expect((failure as SshEnvironmentIncompleteError).fields).toEqual(['node', 'helper', 'helperHash'])
+  })
+
+  it('rejects runtime coordinates that cannot name a remote location', async () => {
+    const ctx = await boot(true)
+    await expect(ctx.settings.replace(namespace, {
+      environments: { build01: { host: 'build01.example', helper: 'helper.js' } },
+    })).rejects.toThrow()
+    await expect(ctx.settings.replace(namespace, {
+      environments: { build01: { host: 'build01.example', helperHash: 'not-a-digest' } },
+    })).rejects.toThrow()
+  })
+
   it('reports an unknown id instead of guessing an environment', async () => {
     const ctx = await boot(true)
     expect(ctx.sshEnvironments.get('missing' as SshEnvironmentId)).toBeUndefined()
     expect(() => ctx.sshEnvironments.resolve('missing' as SshEnvironmentId)).toThrow(SshEnvironmentUnknownError)
+    expect(() => ctx.sshEnvironments.resolveRuntime('missing' as SshEnvironmentId)).toThrow(SshEnvironmentUnknownError)
   })
 
   it('rejects a write the connection schema cannot admit', async () => {

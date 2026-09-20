@@ -44,6 +44,11 @@ export interface SshWorldConnection {
   connectStream(endpoint: SshStreamEndpoint, signal?: AbortSignal): Promise<Socket>
   /** Release this connection and its remote cleanup. */
   dispose(): Promise<void>
+  /**
+   * Verified remote PTC bootstrap entry this connection runs harness code
+   * with; undefined when the deployment installed none.
+   */
+  readonly launchBootstrap?: string | undefined
 }
 
 /** One remote directory a composed connection owns. */
@@ -158,6 +163,20 @@ export class SshWorlds extends Service {
    */
   list(): readonly string[] {
     return [...this.connections.keys()].filter((id): id is string => id !== undefined)
+  }
+
+  /**
+   * Resolve one named world's connection explicitly, without consulting the
+   * workspace locators: a caller that already knows the world it addresses
+   * (an operator-chosen environment, a target that records it) needs no claim.
+   * @param environmentId - world to resolve.
+   * @returns the connection serving that world.
+   * @throws {SshWorldUnavailableError} when no connection is composed for it.
+   */
+  connectionForEnvironment(environmentId: string): SshWorldConnection {
+    const connection = this.connections.get(environmentId)
+    if (connection === undefined) throw new SshWorldUnavailableError(environmentId)
+    return connection
   }
 
   /**

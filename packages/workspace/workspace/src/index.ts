@@ -156,15 +156,17 @@ export class WorkspaceRegistry extends Service {
    * Canonicalize a fully qualified directory path in the workspace's execution
    * world and confirm it is a directory.
    * @param path - Fully qualified path in that world.
+   * @param environmentId - Named SSH environment whose world holds the path;
+   *   omitted resolves through the composed world.
    * @returns the canonical path, or `undefined` when the target is not a directory.
    * @throws {FsError} `FS_NOT_FOUND` when no such entry exists.
    * @throws {TypeError} when the path is not absolute in either execution world.
    */
-  private async resolveDirectory(path: string): Promise<string | undefined> {
+  private async resolveDirectory(path: string, environmentId?: string): Promise<string | undefined> {
     if (!absoluteWorkspacePath(path)) {
       throw new TypeError(`Workspace path is not fully qualified: '${path}'`)
     }
-    const target = await this.ctx.fs.resolve(path)
+    const target = await this.ctx.fs.resolve(path, environmentId === undefined ? undefined : { environmentId })
     const info = await this.ctx.fs.stat(target)
     if (info === undefined) {
       throw new FsError(`cannot resolve '${path}': no such directory`, 'FS_NOT_FOUND')
@@ -192,7 +194,7 @@ export class WorkspaceRegistry extends Service {
     if (transport === 'local' && environmentId !== undefined) {
       throw new Error('a local workspace cannot carry an SSH environment')
     }
-    const canonical = await this.resolveDirectory(path)
+    const canonical = await this.resolveDirectory(path, environmentId)
     if (canonical === undefined) {
       throw new Error(`cannot create a workspace at '${path}': path is not a directory`)
     }
@@ -331,10 +333,12 @@ export class WorkspaceRegistry extends Service {
    * workspace. A missing path rejects during `realpath`; an existing unowned
    * directory returns `undefined`.
    * @param path - Existing directory path in a fully qualified spelling.
+   * @param environmentId - Named SSH environment whose world holds the path;
+   *   omitted resolves through the composed world.
    * @returns the workspace owning the canonical path, when one exists.
    */
-  async resolveByPath(path: string): Promise<Workspace | undefined> {
-    const canonical = await this.resolveDirectory(path)
+  async resolveByPath(path: string, environmentId?: string): Promise<Workspace | undefined> {
+    const canonical = await this.resolveDirectory(path, environmentId)
     if (canonical === undefined) return undefined
     for (const entity of this.entities.values()) {
       if (entity.path === canonical) return entity

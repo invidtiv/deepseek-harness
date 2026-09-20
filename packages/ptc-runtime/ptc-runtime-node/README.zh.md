@@ -52,7 +52,7 @@ kind: "package-reference"
 | `maxMessageBytes` | `134,217,728` | 控制帧、未完成参数字节和排队控制写入的上限 |
 | `maxPendingCalls` | `128` | 同时进行的 Host 绑定调用数量上限 |
 | `graceMs` | `3,000` | 受管终止与输出排空宽限时间 |
-| `nodeExecutable` | 当前 Node 可执行文件 | 在子进程执行世界中解析的可执行文件 |
+| `nodeExecutable` | 当前 Node 可执行文件 | 在运行所属执行世界中解析的可执行文件；隐式默认在无法解析当前可执行文件的世界中回退为裸 `node` 名称 |
 | `bootstrapPath` | 包内 bootstrap | 该执行世界中预先安装的构建后 bootstrap 的可选绝对路径 |
 
 [配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-ptc-runtime-node)定义可接受的配置字段。`resolve(request)` 补全 cwd、数值或 null 截止选择与执行策略；`run(spec)` 接受这些已解析输入，不补缺省值。

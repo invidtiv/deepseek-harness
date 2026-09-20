@@ -41,11 +41,15 @@ export class WorkspaceCommands {
   create(request: WorkspaceCreateRequest): Promise<WorkspaceCreateValue> {
     return this.enqueue(async () => {
       try {
-        const existing = await this.ctx.workspaceRegistry.resolveByPath(request.path)
+        // Resolve the world before the reuse lookup: an unclaimed remote path
+        // must be canonicalized in the world the request names, not in the
+        // composed default that would fall back to the host filesystem.
+        const world = this.resolveWorld(request)
+        const existing = await this.ctx.workspaceRegistry.resolveByPath(request.path, world.environmentId)
         if (existing !== undefined) {
           return { workspace: workspaceView(existing), created: false }
         }
-        const workspace = await this.ctx.workspaceRegistry.create(request.path, this.resolveWorld(request))
+        const workspace = await this.ctx.workspaceRegistry.create(request.path, world)
         return { workspace: workspaceView(workspace), created: true }
       } catch (error) {
         if (remoteErrorOf(error) !== undefined) throw error
@@ -86,6 +90,12 @@ export class WorkspaceCommands {
         transport: request.transport,
         ...(request.environmentId === undefined ? {} : { environmentId: request.environmentId }),
       }
+    }
+    // A named environment decides the transport: the create names the world it
+    // wants, and the composed filesystem's own locality is a default only for
+    // a request that names no environment.
+    if (request.environmentId !== undefined) {
+      return { transport: 'ssh', environmentId: request.environmentId }
     }
     if (this.ctx.fs.addressesHostFilesystem) return { transport: 'local' }
     const ssh = this.ctx.get('ssh') as { readonly environmentId?: string } | undefined

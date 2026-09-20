@@ -62,6 +62,14 @@ describe('SshWorlds', () => {
     expect(pool.connectionFor('/srv/app')).toBe(fallback)
   })
 
+  it('resolves a named world explicitly, without a locator claim', () => {
+    const build01 = connection('build01')
+    const pool = harness({ register: [[undefined, connection('default')], ['build01', build01]] })
+
+    expect(pool.connectionForEnvironment('build01')).toBe(build01)
+    expect(() => pool.connectionForEnvironment('missing')).toThrow(SshWorldUnavailableError)
+  })
+
   it('refuses a second connection for one world, default included', () => {
     const pool = harness({ register: [['build01', connection('first')], [undefined, connection('default')]] })
 

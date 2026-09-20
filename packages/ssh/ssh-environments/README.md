@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-ssh-environments` owns the deployment's named SSH environments. It registers one `ssh-environments` settings namespace, keyed by a stable environment id, and exposes `ctx.sshEnvironments` with `list`, `get`, and `resolve`. An entry supplies the OpenSSH connection options one [SSH provider family](../README.md) deployment needs; the registry opens no connection, stores no secret, and contributes no model-visible content.
+`dsh-ssh-environments` owns the deployment's named SSH environments. It registers one `ssh-environments` settings namespace, keyed by a stable environment id, and exposes `ctx.sshEnvironments` with `list`, `get`, `resolve`, and `resolveRuntime`. An entry supplies the OpenSSH connection options one [SSH provider family](../README.md) deployment needs, and — so a deployment can compose that connection from settings alone — the remote runtime coordinates the helper launches with: the Node executable, the installed helper entry, its digest, and the remote default workspace, which defaults to the remote root when an entry omits it. The registry opens no connection, stores no secret, and contributes no model-visible content.
 
 ## Table of Contents
 
@@ -32,9 +32,12 @@ ssh-environments:
       user: alice
       identityFile: ~/.ssh/id_ed25519
       proxyJump: bastion
+      node: /usr/bin/node
+      helper: /opt/dsh-ssh/helper.js
+      helperHash: <lowercase sha256 of that file>
 ```
 
-The [SSH connection](../ssh/README.md) reads the registry by service name through its `environment` config field, so a deployment selects a named environment without repeating its options. `ctx.sshEnvironments.resolve(id)` returns validated `SshEnvironment` connection options with strict host-key checking and a 10-second, 3-probe keepalive applied. An unknown id throws `SshEnvironmentUnknownError`; the registry never falls back to a default host.
+The [SSH connection](../ssh/README.md) reads the registry by service name through its `environment` config field, so a deployment selects a named environment without repeating its options. `ctx.sshEnvironments.resolve(id)` returns validated `SshEnvironment` connection options with strict host-key checking and a 10-second, 3-probe keepalive applied. `ctx.sshEnvironments.resolveRuntime(id)` returns those options together with the remote runtime coordinates; the OpenSSH schema never sees the runtime fields, and an entry missing one of the three required coordinates throws `SshEnvironmentIncompleteError` naming them, so a deployment fails at resolve time instead of connecting to a guessed location; an entry that omits `workspace` resolves to the remote root, where the picker opens for the operator to select one. An unknown id throws `SshEnvironmentUnknownError`; the registry never falls back to a default host.
 
 ## Model Experience
 
@@ -48,7 +51,7 @@ This registry contributes no request-prefix content.
 
 - **No interactive authentication.** The SSH provider enables `BatchMode`; password and passphrase prompts are unavailable, so a deployment authenticates with a key or an SSH agent.
 - **One flat settings section.** Environments live in a single settings namespace with no secret slot; a future passphrase or token field must use `role('secret')` so settings wire redaction removes it.
-- **The settings card edits two fields per environment.** The [SSH environments card](../../client/ui-settings-plugins/README.md) binds this namespace through the client settings-scope seam and edits each environment's identifier and OpenSSH destination. Every other option — `identityFile`, `identityAgent`, `proxyJump`, `configFile`, host-key policy, and timeouts — is written back unchanged, so it comes from `$DSH_HOME/settings.yaml` or `~/.ssh/config`.
+- **The settings card edits two fields per environment.** The [SSH environments card](../../client/ui-settings-plugins/README.md) binds this namespace through the client settings-scope seam and edits each environment's identifier and OpenSSH destination. Every other option — `identityFile`, `identityAgent`, `proxyJump`, `configFile`, host-key policy, timeouts, and the `node`/`helper`/`helperHash`/`workspace` runtime coordinates — is written back unchanged, so it comes from `$DSH_HOME/settings.yaml` or `~/.ssh/config`.
 - **No connection ownership.** The registry resolves options; it never opens, keeps alive, or reconnects a connection.
 - **No invariant companion.** No runtime invariant companion is published because the registry owns no independent runtime state: it reads one settings namespace and returns detached values, and the settings provider's own tests observe every durable relation.
 

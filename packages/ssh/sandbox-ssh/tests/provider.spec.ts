@@ -11,7 +11,17 @@ const completeFacts = {
   runnerFailureRules: [{ allowedExitCodes: [1], fatalSignatures: ['bwrap:'], informationalLines: ['notice'] }],
 }
 
-async function setup(raw: unknown = completeFacts, options: { pool?: string } = {}) {
+/** The local execution world's face, recording what the remote provider delegates. */
+function fakeLocal() {
+  return {
+    confine: vi.fn(async (argv: readonly string[], _policy: SandboxPolicy) => ({
+      argv: ['/local/sandbox', '--', ...argv], enforcement: 'full' as const, denialSignatures: ['EPERM'], runnerFailureRules: [],
+    })),
+    __policy: { mode: 'workspace-write' as const, workspaceRoot: '/local/work' },
+  }
+}
+
+async function setup(raw: unknown = completeFacts, options: { pool?: string; local?: ReturnType<typeof fakeLocal>; noOwn?: boolean } = {}) {
   const dispatch = vi.fn(async (_method: string, _params: unknown, _signal?: AbortSignal) => raw)
   const poolDispatch = vi.fn(async (_method: string, _params: unknown, _signal?: AbortSignal) => raw)
   class Connection extends Service {
@@ -21,7 +31,7 @@ async function setup(raw: unknown = completeFacts, options: { pool?: string } = 
     }
   }
   const ctx = new Context()
-  const connection = await ctx.plugin(Connection)
+  const connection = options.noOwn === true ? undefined : await ctx.plugin(Connection)
   if (options.pool !== undefined) {
     const pooled = {
       request: async <T>(method: string, params: unknown, result: z.ZodType<T>, signal?: AbortSignal): Promise<T> =>
@@ -29,11 +39,13 @@ async function setup(raw: unknown = completeFacts, options: { pool?: string } = 
     }
     ctx.provide('sshWorlds', {
       connectionFor: (path: string) => path === options.pool ? pooled : ctx.ssh,
+      worldFor: (path: string) => path === options.pool ? 'pool' : undefined,
     } as never)
   }
+  if (options.local !== undefined) ctx.provide('localSandbox', options.local as never)
   const fiber = await ctx.plugin(SshSandboxProvider)
-  onTestFinished(async () => { await fiber.dispose(); await connection.dispose() })
-  return { ctx, dispatch, poolDispatch }
+  onTestFinished(async () => { await fiber.dispose(); await connection?.dispose() })
+  return { ctx, dispatch, poolDispatch, local: options.local }
 }
 
 describe('SSH sandbox provider', () => {
@@ -45,6 +57,38 @@ describe('SSH sandbox provider', () => {
 
     expect(state.poolDispatch).toHaveBeenCalledWith('sandbox', { argv: ['true'], policy }, undefined)
     expect(state.dispatch).not.toHaveBeenCalled()
+  })
+
+  it('reports an unavailable default world when no connection is composed', async () => {
+    const state = await setup(completeFacts, { noOwn: true })
+
+    await expect(state.ctx.sandbox.confine(['true'], policy))
+      .rejects.toBeInstanceOf(SandboxUnavailableError)
+    expect(state.dispatch).not.toHaveBeenCalled()
+  })
+
+  it('confines an unclaimed workspace root through the composed local world', async () => {
+    const local = fakeLocal()
+    const state = await setup(completeFacts, { pool: '/remote/other', local })
+    const localPolicy = { mode: 'workspace-write' as const, workspaceRoot: '/local/work' }
+
+    const confined = await state.ctx.sandbox.confine(['true'], localPolicy)
+
+    expect(local.confine).toHaveBeenCalledWith(['true'], localPolicy, undefined)
+    expect(confined.argv).toEqual(['/local/sandbox', '--', 'true'])
+    expect(state.dispatch).not.toHaveBeenCalled()
+    expect(state.poolDispatch).not.toHaveBeenCalled()
+  })
+
+  it('keeps a claimed workspace root on its SSH world with a local world composed', async () => {
+    const local = fakeLocal()
+    const state = await setup(completeFacts, { pool: '/remote/other', local })
+    const pooled = { mode: 'workspace-write' as const, workspaceRoot: '/remote/other' }
+
+    await state.ctx.sandbox.confine(['true'], pooled)
+
+    expect(state.poolDispatch).toHaveBeenCalledWith('sandbox', { argv: ['true'], policy: pooled }, undefined)
+    expect(local.confine).not.toHaveBeenCalled()
   })
 
   it('awaits remote policy resolution and returns the literal enforcing argv', async () => {

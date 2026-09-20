@@ -222,14 +222,21 @@ class FakeDirectoryPicker {
 
   onPick: () => Promise<RemoteResult<string | null>> = () => Promise.resolve({ ok: true, value: null })
   onList: () => Promise<RemoteResult<DirectoryListing>> = () => Promise.resolve({ ok: true, value: listing })
+  onListIn: () => Promise<RemoteResult<DirectoryListing>> = () => Promise.resolve({ ok: true, value: listing })
   onCreateDirectory: () => Promise<RemoteResult<string>> =
     () => Promise.resolve({ ok: true, value: '/home/u/new' })
+  onCreateDirectoryIn: () => Promise<RemoteResult<string>> =
+    () => Promise.resolve({ ok: true, value: '/srv/app/new' })
 
   readonly remote: ClientRemote['directoryPicker'] = {
     pick: () => this.record('pick', {}, this.onPick()),
     list: (path?: string) => this.record('list', { path }, this.onList()),
+    listIn: (environmentId: string, path?: string) =>
+      this.record('listIn', { environmentId, path }, this.onListIn()),
     createDirectory: (path: string, name: string) =>
       this.record('createDirectory', { path, name }, this.onCreateDirectory()),
+    createDirectoryIn: (environmentId: string, path: string, name: string) =>
+      this.record('createDirectoryIn', { environmentId, path, name }, this.onCreateDirectoryIn()),
   }
 
   callsOf(method: string): unknown[] {
@@ -624,6 +631,11 @@ describe('UiWorkspaceService', () => {
     expect(b.directoryPicker.callsOf('list')).toEqual([{ path: undefined }, { path: '/home/u' }])
     await expect(b.uiWorkspace.createDirectory('/home/u', 'new')).resolves.toBe('/home/u/new')
     expect(b.directoryPicker.callsOf('createDirectory')).toEqual([{ path: '/home/u', name: 'new' }])
+    await expect(b.uiWorkspace.listDirectoryIn('bsdev', '/srv/app')).resolves.toEqual(listing)
+    expect(b.directoryPicker.callsOf('listIn')).toEqual([{ environmentId: 'bsdev', path: '/srv/app' }])
+    await expect(b.uiWorkspace.createDirectoryIn('bsdev', '/srv/app', 'new')).resolves.toBe('/srv/app/new')
+    expect(b.directoryPicker.callsOf('createDirectoryIn'))
+      .toEqual([{ environmentId: 'bsdev', path: '/srv/app', name: 'new' }])
     b.directoryPicker.onPick = () => Promise.resolve({
       ok: false, error: new RemoteError('gateway/internal', 'no chooser', {}),
     })
@@ -640,5 +652,13 @@ describe('UiWorkspaceService', () => {
     await expect(b.uiWorkspace.createDirectory('/home/u', 'new')).rejects.toMatchObject({
       rpcError: { code: 'directory-picker/exists' },
     })
+    b.directoryPicker.onListIn = () => Promise.resolve({
+      ok: false, error: new RemoteError('directory-picker/unreadable', 'denied', { path: '/srv/app' }),
+    })
+    await expect(b.uiWorkspace.listDirectoryIn('bsdev', '/srv/app')).rejects.toBeInstanceOf(DirectoryBrowseError)
+    b.directoryPicker.onCreateDirectoryIn = () => Promise.resolve({
+      ok: false, error: new RemoteError('directory-picker/create-failed', 'no', { path: '/srv/app/new' }),
+    })
+    await expect(b.uiWorkspace.createDirectoryIn('bsdev', '/srv/app', 'new')).rejects.toBeInstanceOf(DirectoryBrowseError)
   })
 })

@@ -438,6 +438,18 @@ describe('WorkspaceRegistry create and lookup', () => {
     expect(registry.list()).toEqual([])
   })
 
+  it('resolves a path in the world its named environment owns', async () => {
+    const dir = await makeDir('named-world')
+    const { registry, ctx } = await harness()
+    const resolve = vi.spyOn(ctx.fs, 'resolve')
+
+    await expect(registry.resolveByPath(dir, 'bsdev')).resolves.toBeUndefined()
+    expect(resolve).toHaveBeenLastCalledWith(dir, { environmentId: 'bsdev' })
+
+    await expect(registry.resolveByPath(dir)).resolves.toBeUndefined()
+    expect(resolve.mock.calls.at(-1)).toEqual([dir, undefined])
+  })
+
   it('rejects a resolvable relative path instead of adopting it from the Host cwd', async () => {
     const { registry } = await harness()
     const fromHostCwd = '.'

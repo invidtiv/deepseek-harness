@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-host-directory-picker-auto` 为每次启动选出正确的目录选择交互：它在启动时一次性判定宿主处境，并把匹配的后端——[原生](../directory-picker-native/README.zh.md)或[浏览](../directory-picker-browse/README.zh.md)——连同其 browser 半侧一起，作为真实的 Loader 条目挂进内存根树。判定是一次纯函数的启动时采样：`native` 要求仅回环绑定、以宿主文件系统为执行世界、非 SSH 启动与可服务的显示会话；任何含糊情形都判定为处处可用的 `browse`。固定某种交互就是直接组合那个后端。挂载的能力在服务生命周期内保持稳定，符合 seam 的要求。
+`dsh-host-directory-picker-auto` 为每次启动选出正确的目录选择交互：它在启动时一次性判定宿主处境，并把匹配的后端——[原生](../directory-picker-native/README.zh.md)或[浏览](../directory-picker-browse/README.zh.md)——连同其 browser 半侧一起，作为真实的 Loader 条目挂进内存根树。判定是一次纯函数的启动时采样：`native` 要求仅回环绑定、以宿主文件系统为执行世界、非 SSH 启动与可服务的显示会话；任何含糊情形都判定为处处可用的 `browse`。配置字段 `interaction` 可直接固定选择；不用本行而直接组合那个后端是等价做法。挂载的能力在服务生命周期内保持稳定，符合 seam 的要求。
 
 ## 目录
 
@@ -37,7 +37,7 @@ kind: "package-reference"
 
 ### 固定某种交互
 
-固定交互在这里不是配置字段：直接组合 `-native` 或 `-browse` 行来替代本行——那才是 seam 文档化的切换点。同时挂载选择器**和**某个后端行会明确报错（重复的 `directoryPicker` 服务、`single` 类 slot 中的重复 client 流程）。
+`interaction: native` 或 `interaction: browse` 固定每次启动的选择并跳过宿主采样；默认的 `auto` 保留启动时判定。随包发布的 Web bundle 固定为 `browse`，因为 OS 选择器无法服务远程浏览器，而执行世界在别处的工作区必须保持可浏览。不用本行、直接组合 `-native` 或 `-browse` 行是等价的替代做法。同时挂载选择器**和**某个后端行会明确报错（重复的 `directoryPicker` 服务、`single` 类 slot 中的重复 client 流程）。
 
 ### 可观察的失败
 

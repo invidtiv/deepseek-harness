@@ -1,16 +1,16 @@
 /** OpenSSH connection owner for one version-matched POSIX helper and its independent forwarded streams. */
 
-import { spawn, execFile, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, execFile, type ChildProcess, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { createConnection, type Socket } from 'node:net'
+import { createConnection, createServer, type Socket } from 'node:net'
 import { Context, Service } from '@deepseek-ai/cordis'
 import schema from '@deepseek-ai/schemastery'
 import { z } from 'zod'
 import { SshRpcPeer, SSH_PROTOCOL_VERSION } from './protocol.ts'
 import { helloSchema, type SshStreamEndpoint } from './schemas.ts'
 import { authenticateStream } from './stream-security.ts'
-import { buildMasterArgv, resolveConnectionEnvironment, type SshEnvironment, type SshEnvironmentResolver } from './environment.ts'
+import { buildDirectArgv, buildForwardArgv, buildMasterArgv, resolveConnectionEnvironment, type SshEnvironment, type SshEnvironmentResolver } from './environment.ts'
 
 export { resolveConnectionEnvironment, resolveSshEnvironment } from './environment.ts'
 export type { HostKeyChecking, SshConnectionSelection, SshEnvironment, SshEnvironmentResolver } from './environment.ts'
@@ -18,6 +18,19 @@ export { SshWorldAmbiguousError, SshWorldUnavailableError, SshWorlds } from './w
 export type { SshWorldConnection, SshWorldLocator, SshWorldLocatorSource } from './worlds.ts'
 
 type Hello = z.infer<typeof helloSchema>
+
+/**
+ * Client environment this connection reads at construction. A spec replaces
+ * `platform` to exercise the Windows transport on any host; production reads
+ * the running process.
+ */
+export interface SshConnectionInternals {
+  /** Client platform selecting control-master multiplexing or the direct transport. */
+  platform: NodeJS.Platform
+}
+
+/** Production client environment. */
+export const internals: SshConnectionInternals = { platform: process.platform }
 
 /** Config fields resolved into an {@link SshEnvironment} instead of the helper-config zod re-validation. */
 type ConnectionOptionField = 'port' | 'user' | 'identityFile' | 'identityAgent' | 'proxyJump' | 'configFile' | 'hostKeyChecking' | 'connectTimeoutMs' | 'serverAliveIntervalMs' | 'serverAliveCountMax'
@@ -70,6 +83,59 @@ export interface Config {
   serverAliveCountMax?: number
 }
 
+/**
+ * Fixed delay between loopback connection attempts while a forwarder
+ * authenticates and binds; not deployment-varying.
+ */
+const LOOPBACK_RETRY_MS = 50
+
+/**
+ * Bind an ephemeral loopback port and release it so a forwarder can claim it.
+ * @returns the released port number.
+ */
+async function reserveLoopbackPort(): Promise<number> {
+  const server = createServer()
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject)
+      server.listen(0, '127.0.0.1', () => { resolve() })
+    })
+    const address = server.address()
+    if (address === null || typeof address === 'string') throw new Error('SSH loopback forwarder could not reserve a port')
+    return address.port
+  } finally {
+    await new Promise<void>((resolve) => { server.close(() => { resolve() }) })
+  }
+}
+
+/**
+ * Whether a connecting socket opened before the forwarder refused it; abort rejects.
+ * @param socket - the socket being opened.
+ * @param signal - cancellation of the attempt.
+ * @returns true once connected, false when the forwarder refused the attempt.
+ */
+function connects(socket: Socket, signal: AbortSignal): Promise<boolean> {
+  return new Promise<boolean>((resolve, reject) => {
+    const cleanup = (): void => {
+      signal.removeEventListener('abort', aborted)
+      socket.off('connect', connected)
+      socket.off('error', failed)
+    }
+    const connected = (): void => { cleanup(); resolve(true) }
+    const failed = (): void => { cleanup(); resolve(false) }
+    const aborted = (): void => {
+      // Destroy with the caller's reason so the pending connect settles; the
+      // error listener above still owns that event until cleanup runs.
+      const reason = signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason))
+      socket.destroy(reason)
+      reject(reason)
+    }
+    socket.once('connect', connected)
+    socket.once('error', failed)
+    signal.addEventListener('abort', aborted, { once: true })
+  })
+}
+
 declare module '@deepseek-ai/cordis' {
   interface Context { ssh: SshConnection }
 }
@@ -106,6 +172,8 @@ export class SshConnection extends Service {
   private closed = false
   private readonly lifetime = new AbortController()
   private readonly operations = new Set<Promise<unknown>>()
+  private readonly multiplexed: boolean
+  private readonly forwarders = new Set<ChildProcess>()
   private disposal: Promise<void> | undefined
   private failure: Error | undefined
   private sockets = new Set<Socket>()
@@ -116,7 +184,12 @@ export class SshConnection extends Service {
 
   constructor(ctx: Context, config: Config) {
     super(ctx, 'ssh')
-    if (process.platform !== 'linux' && process.platform !== 'darwin') throw new Error('SSH runtime requires a POSIX client')
+    if (internals.platform !== 'linux' && internals.platform !== 'darwin' && internals.platform !== 'win32') {
+      throw new Error(`SSH runtime requires a POSIX or Windows client, not ${internals.platform}`)
+    }
+    // Windows OpenSSH has no control-master multiplexing, so its streams use a
+    // dedicated loopback forwarder instead of an `-O forward` control command.
+    this.multiplexed = internals.platform !== 'win32'
     this.config = z.object({
       host: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.@-]*$/).optional(), environment: z.string().min(1).optional(),
       node: z.string().startsWith('/'), helper: z.string().startsWith('/'), helperHash: z.string().regex(/^[0-9a-f]{64}$/),
@@ -149,6 +222,11 @@ export class SshConnection extends Service {
   get nodeExecutable(): string {
     if (this.remote === undefined) throw new Error('SSH helper is not ready')
     return this.remote.node
+  }
+
+  /** Verified remote PTC bootstrap entry; absent when the deployment configured none. */
+  get launchBootstrap(): string | undefined {
+    return this.remote === undefined ? undefined : this.config.bootstrapPath
   }
 
   /** Verified preinstalled PTC entry; unconfigured runtimes fail before program execution. */
@@ -193,44 +271,78 @@ export class SshConnection extends Service {
     const remote = endpoint.path
     if (!remote.startsWith(`${hello.root}/`) || /[:\r\n\0]/u.test(remote)) throw new Error('SSH helper returned an invalid stream path')
     signal.throwIfAborted()
-    const local = join(this.directory as string, `s${this.nextSocket++}`)
-    const forward = `${local}:${remote}`
-    const cancelForward = async (): Promise<void> => {
-      // An unavailable master already removed its forwarding listeners.
-      if (!this.closed) await this.controlCommand(['-O', 'cancel', '-L', forward]).catch(() => {})
-      await rm(local, { force: true })
-    }
-    try {
-      await this.controlCommand(['-O', 'forward', '-o', 'ExitOnForwardFailure=yes', '-L', forward], signal)
-    } catch (error) { await cancelForward(); throw error }
-    signal.throwIfAborted()
-    const socket = createConnection({ path: local, allowHalfOpen: true })
+    const forwarded = this.multiplexed
+      ? await this.forwardThroughMaster(remote, signal)
+      : await this.forwardThroughLoopback(remote, signal)
+    const socket = forwarded.socket
     this.sockets.add(socket)
     socket.once('close', () => {
       this.sockets.delete(socket)
-      void this.track(cancelForward()).catch(() => {})
-    })
-    await new Promise<void>((resolve, reject) => {
-      const cleanup = (): void => {
-        signal.removeEventListener('abort', aborted)
-        socket.off('connect', connected)
-        socket.off('error', failed)
-        socket.off('close', closed)
-      }
-      const connected = (): void => { cleanup(); resolve() }
-      const failed = (error: Error): void => { cleanup(); reject(error) }
-      const closed = (): void => { failed(new Error('SSH connection closed before stream establishment')) }
-      const aborted = (): void => { socket.destroy(signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason))) }
-      socket.once('connect', connected)
-      socket.once('error', failed)
-      socket.once('close', closed)
-      signal.addEventListener('abort', aborted, { once: true })
+      void this.track(forwarded.release()).catch(() => {})
     })
     const authenticated = await authenticateStream(socket, endpoint.capability, this.config.requestTimeoutMs, signal)
     this.sockets.add(authenticated)
     authenticated.on('error', () => { authenticated.destroy() })
     authenticated.once('close', () => { this.sockets.delete(authenticated) })
     return authenticated
+  }
+
+  /** Open a local Unix socket forwarded to a remote helper socket through the control master. */
+  private async forwardThroughMaster(remote: string, signal: AbortSignal): Promise<{ socket: Socket; release(): Promise<void> }> {
+    const local = join(this.directory as string, `s${this.nextSocket++}`)
+    const forward = `${local}:${remote}`
+    const release = async (): Promise<void> => {
+      // An unavailable master already removed its forwarding listeners.
+      if (!this.closed) await this.controlCommand(['-O', 'cancel', '-L', forward]).catch(() => {})
+      await rm(local, { force: true })
+    }
+    try {
+      await this.controlCommand(['-O', 'forward', '-o', 'ExitOnForwardFailure=yes', '-L', forward], signal)
+    } catch (error) { await release(); throw error }
+    signal.throwIfAborted()
+    const socket = createConnection({ path: local, allowHalfOpen: true })
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const cleanup = (): void => {
+          signal.removeEventListener('abort', aborted)
+          socket.off('connect', connected)
+          socket.off('error', failed)
+          socket.off('close', closed)
+        }
+        const connected = (): void => { cleanup(); resolve() }
+        const failed = (error: Error): void => { cleanup(); reject(error) }
+        const closed = (): void => { failed(new Error('SSH connection closed before stream establishment')) }
+        const aborted = (): void => { socket.destroy(signal.reason instanceof Error ? signal.reason : new Error(String(signal.reason))) }
+        socket.once('connect', connected)
+        socket.once('error', failed)
+        socket.once('close', closed)
+        signal.addEventListener('abort', aborted, { once: true })
+      })
+      return { socket, release }
+    } catch (error) { socket.destroy(); await release(); throw error }
+  }
+
+  /** Open a loopback port forwarded to a remote helper socket by a dedicated OpenSSH session. */
+  private async forwardThroughLoopback(remote: string, signal: AbortSignal): Promise<{ socket: Socket; release(): Promise<void> }> {
+    const port = await reserveLoopbackPort()
+    const forwarder = spawn('ssh', buildForwardArgv(this.environment, port, remote), { stdio: ['ignore', 'ignore', 'ignore'] })
+    this.forwarders.add(forwarder)
+    const lifecycle = { exited: false }
+    forwarder.once('close', () => { lifecycle.exited = true; this.forwarders.delete(forwarder) })
+    forwarder.once('error', () => { this.forwarders.delete(forwarder) })
+    const release = (): Promise<void> => { forwarder.kill('SIGTERM'); return Promise.resolve() }
+    const deadline = Date.now() + this.config.requestTimeoutMs
+    try {
+      for (;;) {
+        signal.throwIfAborted()
+        if (lifecycle.exited) throw new Error('SSH loopback forwarder exited before the stream connected')
+        const socket = createConnection({ host: '127.0.0.1', port, allowHalfOpen: true })
+        if (await connects(socket, signal)) return { socket, release }
+        socket.destroy()
+        if (Date.now() >= deadline) throw new Error('SSH loopback forwarder did not accept the stream in time')
+        await new Promise<void>((resolve) => { setTimeout(resolve, LOOPBACK_RETRY_MS) })
+      }
+    } catch (error) { await release(); throw error }
   }
 
   /** Tear down the helper's remote managed ranges before releasing the SSH master when reachable. */
@@ -254,6 +366,7 @@ export class SshConnection extends Service {
         else { socket.once('close', () => { resolve() }); socket.destroy() }
       }))
       this.child?.kill('SIGTERM')
+      for (const forwarder of [...this.forwarders].reverse()) forwarder.kill('SIGTERM')
       const force = setTimeout(() => { this.child?.kill('SIGKILL') }, this.config.requestTimeoutMs)
       try { await this.childClosed } finally { clearTimeout(force) }
       await Promise.all(socketClosures)
@@ -310,11 +423,14 @@ export class SshConnection extends Service {
   }
 
   private async start(): Promise<Hello> {
-    this.directory = await mkdtemp('/tmp/dsh-ssh-')
+    this.directory = this.multiplexed ? await mkdtemp('/tmp/dsh-ssh-') : undefined
     if (this.closed) throw new Error('SSH connection closed before startup')
     const quote = (value: string): string => `'${value.replaceAll("'", "'\\''")}'`
     const command = [this.config.node, '--disable-sigusr1', this.config.helper].map(quote).join(' ')
-    const child = spawn('ssh', buildMasterArgv(this.environment, this.controlPath(), command), { stdio: ['pipe', 'pipe', 'pipe'] })
+    const argv = this.multiplexed
+      ? buildMasterArgv(this.environment, this.controlPath(), command)
+      : buildDirectArgv(this.environment, command)
+    const child = spawn('ssh', argv, { stdio: ['pipe', 'pipe', 'pipe'] })
     this.child = child
     this.childClosed = new Promise((resolve) => { child.once('close', () => { resolve() }) })
     child.stderr.resume() // SSH diagnostics can contain configured paths; operation errors remain structured.

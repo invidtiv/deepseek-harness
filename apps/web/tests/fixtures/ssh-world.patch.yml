@@ -1,0 +1,13 @@
+# Web e2e fixture overlay: replace the settings-backed SSH environment registry
+# and the lazy connection broker with an in-memory environment whose connection
+# is already registered with the world router, so the workspace picker can
+# offer the environment and browse its folders without an SSH server.
+- id: ssh-environments
+  disabled: true
+
+- id: ssh-broker
+  disabled: true
+
+- insert:
+    - id: fixture-ssh-world
+      name: '@fixture/ssh-world'

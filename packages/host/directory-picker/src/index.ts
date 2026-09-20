@@ -56,6 +56,26 @@ export interface DirectoryPickerBrowseCapability {
    * `directory-create-failed` for a parent that is not fully qualified or any other failure.
    */
   createDirectory(path: string, name: string): Promise<string>
+  /**
+   * List one directory level in a named SSH environment, before any workspace
+   * exists in that world. Optional: a backend that cannot reach another
+   * execution world leaves it out, and the Remote verb then refuses.
+   * @param environmentId - configured environment whose world holds the path.
+   * @param path - absolute directory in that world; absent lists the
+   * environment's configured workspace.
+   * @param signal - caller lifetime.
+   * @returns the level's listing, with the remote host's own path spelling.
+   */
+  listIn?(environmentId: string, path?: string, signal?: AbortSignal): Promise<DirectoryListing>
+  /**
+   * Create one child directory inside a named SSH environment. Optional for
+   * the same reason as {@link listIn}.
+   * @param environmentId - configured environment whose world holds the parent.
+   * @param path - absolute existing parent directory in that world.
+   * @param name - single non-blank path segment.
+   * @returns the created directory's absolute remote path.
+   */
+  createDirectoryIn?(environmentId: string, path: string, name: string): Promise<string>
 }
 
 /**

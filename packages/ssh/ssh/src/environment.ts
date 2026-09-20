@@ -177,25 +177,20 @@ function toSeconds(milliseconds: number): number {
 }
 
 /**
- * Build the argument list for the long-lived OpenSSH master that carries the
- * remote helper. The list never includes the leading `ssh` program name.
- * Forwarding and interactive authentication stay disabled regardless of the
- * environment, and every other option comes from the resolved environment.
+ * Append the OpenSSH options, destination, and security posture every client
+ * transport shares. Interactive authentication stays disabled regardless of
+ * the environment, and every other option comes from the resolved environment.
+ * @param argv - the transport's leading arguments, extended in place.
  * @param environment - a resolved environment from {@link resolveSshEnvironment}.
- * @param controlPath - absolute path of the multiplexing control socket.
- * @param remoteCommand - command string the master runs after connecting; omitted for control commands.
- * @returns the argv for `spawn('ssh', argv)`.
+ * @param clearForwardings - clear initial forwardings; false for a transport whose forwarding is the point.
  */
-export function buildMasterArgv(environment: SshEnvironment, controlPath: string, remoteCommand?: string): string[] {
-  const argv = ['-T', '-M', '-S', controlPath]
-  if (environment.configFile !== undefined) argv.push('-F', environment.configFile)
+function pushConnectionArgv(argv: string[], environment: SshEnvironment, clearForwardings: boolean): void {
   argv.push(
-    '-o', 'ControlPersist=no',
     '-o', 'BatchMode=yes',
     '-o', `StrictHostKeyChecking=${environment.hostKeyChecking ?? 'yes'}`,
     '-o', 'ForwardAgent=no',
-    '-o', 'ClearAllForwardings=yes',
   )
+  if (clearForwardings) argv.push('-o', 'ClearAllForwardings=yes')
   if (environment.serverAliveIntervalMs !== undefined) argv.push('-o', `ServerAliveInterval=${String(toSeconds(environment.serverAliveIntervalMs))}`)
   if (environment.serverAliveCountMax !== undefined) argv.push('-o', `ServerAliveCountMax=${String(environment.serverAliveCountMax)}`)
   if (environment.connectTimeoutMs !== undefined) argv.push('-o', `ConnectTimeout=${String(toSeconds(environment.connectTimeoutMs))}`)
@@ -205,6 +200,54 @@ export function buildMasterArgv(environment: SshEnvironment, controlPath: string
   if (environment.port !== undefined) argv.push('-p', String(environment.port))
   if (environment.user !== undefined) argv.push('-l', environment.user)
   argv.push(environment.host)
+}
+
+/**
+ * Build the argument list for the long-lived OpenSSH master that carries the
+ * remote helper on a POSIX client. The list never includes the leading `ssh`
+ * program name.
+ * @param environment - a resolved environment from {@link resolveSshEnvironment}.
+ * @param controlPath - absolute path of the multiplexing control socket.
+ * @param remoteCommand - command string the master runs after connecting; omitted for control commands.
+ * @returns the argv for `spawn('ssh', argv)`.
+ */
+export function buildMasterArgv(environment: SshEnvironment, controlPath: string, remoteCommand?: string): string[] {
+  const argv = ['-T', '-M', '-S', controlPath]
+  if (environment.configFile !== undefined) argv.push('-F', environment.configFile)
+  argv.push('-o', 'ControlPersist=no')
+  pushConnectionArgv(argv, environment, true)
   if (remoteCommand !== undefined) argv.push(remoteCommand)
+  return argv
+}
+
+/**
+ * Build the argument list for the plain OpenSSH connection that carries the
+ * remote helper where control-master multiplexing is unavailable, as on a
+ * Windows client. Forwarding and interactive authentication stay disabled.
+ * @param environment - a resolved environment from {@link resolveSshEnvironment}.
+ * @param remoteCommand - command string the connection runs after connecting.
+ * @returns the argv for `spawn('ssh', argv)`.
+ */
+export function buildDirectArgv(environment: SshEnvironment, remoteCommand?: string): string[] {
+  const argv = ['-T']
+  if (environment.configFile !== undefined) argv.push('-F', environment.configFile)
+  pushConnectionArgv(argv, environment, true)
+  if (remoteCommand !== undefined) argv.push(remoteCommand)
+  return argv
+}
+
+/**
+ * Build the argument list for one no-command OpenSSH session that forwards a
+ * loopback port to a remote socket, the portable replacement for a
+ * control-master `-O forward` command.
+ * @param environment - a resolved environment from {@link resolveSshEnvironment}.
+ * @param localPort - loopback port the forwarder binds.
+ * @param remoteSocket - absolute remote socket the port forwards to.
+ * @returns the argv for `spawn('ssh', argv)`.
+ */
+export function buildForwardArgv(environment: SshEnvironment, localPort: number, remoteSocket: string): string[] {
+  const argv = ['-N', '-o', 'ExitOnForwardFailure=yes', '-L', `127.0.0.1:${String(localPort)}:${remoteSocket}`]
+  if (environment.configFile !== undefined) argv.push('-F', environment.configFile)
+  pushConnectionArgv(argv, environment, false)
   return argv
 }

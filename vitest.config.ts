@@ -33,7 +33,10 @@ const windowsUnsupportedPackages = process.platform === 'win32'
       'packages/terminal/terminal-bash',
       'packages/experimental/ptc-runtime-python',
       'packages/sandbox/sandbox-local',
-      // OpenSSH multiplexing and Unix-socket helper streams require POSIX endpoints.
+      // The SSH suite exercises control-master multiplexing, Unix-socket helper
+      // streams, and the real helper, all of which need POSIX endpoints. The
+      // shipped Windows client transport is covered on the POSIX lane through
+      // the injected platform seam instead.
       'packages/ssh/*',
     ]
   : []

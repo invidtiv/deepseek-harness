@@ -128,7 +128,7 @@ Ownership truth is the record's ordered `sessionIds`, never derived from session
 
 ## The registry: `ctx.workspaceRegistry`
 
-`WorkspaceRegistry` ([signatures](#ctxworkspaceregistry--workspaceregistry)) owns registration and resolution. `create(path, options?)` requires a fully qualified path, canonicalizes it through `ctx.fs`, rejects a nonexistent path (`FS_NOT_FOUND`) or a non-directory, returns the existing entity unchanged when the canonical path is already owned, and otherwise creates a record with `title ?? defaultWorkspaceTitle(path)` prepended to the durable registry order (different canonical paths may share a display title, and a path with no final segment uses its root spelling). `get(id)` and the ordered `list()` are synchronous cache reads; `resolveByPath(path)` applies the same fully qualified `ctx.fs` canon without creating. `delete(id)` removes only the registration, order entry, and session account — the directory, user files, live sessions, and persisted logs are never touched, so those sessions become Ungrouped ([decision](../../.agents/notes/implemented/feature/2026-07-27-workspace-registration-deletion.md)); unknown ids return `false`. Create and delete persist a pending-mutation marker before their two writes (record + order) can diverge; startup resolves exactly the marked mutation — by deleting the marked table row, which completes an interrupted delete and rolls back an interrupted create (the registration is re-creatable, so rollback is the safe direction) — and an unmarked order/table mismatch fails loud as corruption.
+`WorkspaceRegistry` ([signatures](#ctxworkspaceregistry--workspaceregistry)) owns registration and resolution. `create(path, options?)` requires a fully qualified path, canonicalizes it through `ctx.fs`, rejects a nonexistent path (`FS_NOT_FOUND`) or a non-directory, returns the existing entity unchanged when the canonical path is already owned, and otherwise creates a record with `title ?? defaultWorkspaceTitle(path)` prepended to the durable registry order (different canonical paths may share a display title, and a path with no final segment uses its root spelling). `get(id)` and the ordered `list()` are synchronous cache reads; `resolveByPath(path, environmentId?)` applies the same fully qualified `ctx.fs` canon in the named environment's world without creating. `delete(id)` removes only the registration, order entry, and session account — the directory, user files, live sessions, and persisted logs are never touched, so those sessions become Ungrouped ([decision](../../.agents/notes/implemented/feature/2026-07-27-workspace-registration-deletion.md)); unknown ids return `false`. Create and delete persist a pending-mutation marker before their two writes (record + order) can diverge; startup resolves exactly the marked mutation — by deleting the marked table row, which completes an interrupted delete and rolls back an interrupted create (the registration is re-creatable, so rollback is the safe direction) — and an unmarked order/table mismatch fails loud as corruption.
 
 Sessions get their cwd at create time from whoever creates them, not from this registry — the API gateway resolves a new session's cwd from the chosen workspace's `path` (falling back to an explicit or default cwd), creates the session so the cwd lands in its immutable [`SessionHeader`](persistence.md#sessionheader--metadata-beside-the-log), then calls `attachSession`, which re-validates that stored header cwd against the workspace path. On the first successful start, the registry bootstraps history from persisted headers alone (`id`, `cwd`, `createdAt` — never event bodies), grouping sessions with a valid canonical cwd into per-directory workspaces, newest first; the initialized marker is written last so an interrupted bootstrap resumes safely. The bootstrap is one-time: cwd-less legacy sessions stay Ungrouped, and sessions created afterwards join a workspace only through `attachSession`.
 
@@ -184,12 +184,32 @@ Host service backing the generated `ctx.remote.directoryPicker` namespace. The s
 @Remote('list') async list(path: string | undefined, signal: AbortSignal): Promise<DirectoryListing>
 
 /**
+ * List one directory level inside a named SSH environment, before any
+ * workspace exists in that world.
+ * @param environmentId - configured environment whose world holds the path.
+ * @param path - absolute directory in that world; absent lists the
+ *   environment's configured workspace.
+ * @param signal - caller lifetime.
+ * @returns the level's listing in the remote host's own path spelling.
+ */
+@Remote('listIn') async listIn(environmentId: string, path: string | undefined, signal: AbortSignal): Promise<DirectoryListing>
+
+/**
  * Create one child directory for a Remote caller's in-app browser.
  * @param path - absolute existing parent directory.
  * @param name - single non-blank path segment.
  * @returns the created directory's absolute path.
  */
 @Remote('createDirectory') async createDirectory(path: string, name: string): Promise<string>
+
+/**
+ * Create one child directory inside a named SSH environment.
+ * @param environmentId - configured environment whose world holds the parent.
+ * @param path - absolute existing parent directory in that world.
+ * @param name - single non-blank path segment.
+ * @returns the created directory's absolute remote path.
+ */
+@Remote('createDirectoryIn') async createDirectoryIn(environmentId: string, path: string, name: string): Promise<string>
 ```
 
 Source: [`packages/api/workspace-controller/src/directory-picker.ts`](../../packages/api/workspace-controller/src/directory-picker.ts)
@@ -550,9 +570,11 @@ unarchiveSession(sessionId: SessionId): Promise<void>
  * workspace. A missing path rejects during `realpath`; an existing unowned
  * directory returns `undefined`.
  * @param path - Existing directory path in a fully qualified spelling.
+ * @param environmentId - Named SSH environment whose world holds the path;
+ *   omitted resolves through the composed world.
  * @returns the workspace owning the canonical path, when one exists.
  */
-async resolveByPath(path: string): Promise<Workspace | undefined>
+async resolveByPath(path: string, environmentId?: string): Promise<Workspace | undefined>
 ```
 
 Types: [SessionId](core.md)

@@ -2299,12 +2299,18 @@ importers:
       '@deepseek-ai/dsh-cordis-host-runner':
         specifier: workspace:^
         version: link:../../extensions/cordis-host-runner
+      '@deepseek-ai/dsh-execution-world-context':
+        specifier: workspace:^
+        version: link:../../context/execution-world-context
       '@deepseek-ai/dsh-file-reference':
         specifier: workspace:^
         version: link:../../context/file-reference
       '@deepseek-ai/dsh-file-reference-local':
         specifier: workspace:^
         version: link:../../context/file-reference-local
+      '@deepseek-ai/dsh-fs-ssh':
+        specifier: workspace:^
+        version: link:../../ssh/fs-ssh
       '@deepseek-ai/dsh-host-directory-picker-auto':
         specifier: workspace:^
         version: link:../../host/directory-picker-auto
@@ -2335,6 +2341,9 @@ importers:
       '@deepseek-ai/dsh-office-to-pdf':
         specifier: workspace:^
         version: link:../../document/office-to-pdf
+      '@deepseek-ai/dsh-sandbox-ssh':
+        specifier: workspace:^
+        version: link:../../ssh/sandbox-ssh
       '@deepseek-ai/dsh-session-log-export':
         specifier: workspace:^
         version: link:../../session-query/session-log-export
@@ -2347,12 +2356,18 @@ importers:
       '@deepseek-ai/dsh-session-turn-outline':
         specifier: workspace:^
         version: link:../../session/session-turn-outline
+      '@deepseek-ai/dsh-ssh':
+        specifier: workspace:^
+        version: link:../../ssh/ssh
       '@deepseek-ai/dsh-ssh-environments':
         specifier: workspace:^
         version: link:../../ssh/ssh-environments
       '@deepseek-ai/dsh-subprocess':
         specifier: workspace:^
         version: link:../../subprocess/subprocess
+      '@deepseek-ai/dsh-subprocess-ssh':
+        specifier: workspace:^
+        version: link:../../ssh/subprocess-ssh
       '@deepseek-ai/dsh-tool-subagent':
         specifier: workspace:^
         version: link:../../subagent/tool-subagent
@@ -5669,6 +5684,18 @@ importers:
         specifier: workspace:^
         version: link:../../core/tools
 
+  packages/context/execution-world-context:
+    devDependencies:
+      '@deepseek-ai/cordis':
+        specifier: workspace:^
+        version: link:../../../vendor/cordis
+      '@deepseek-ai/dsh-agent':
+        specifier: workspace:^
+        version: link:../../core/agent
+      '@deepseek-ai/dsh-system-prompt':
+        specifier: workspace:^
+        version: link:../../core/system-prompt
+
   packages/context/file-reference:
     devDependencies:
       '@deepseek-ai/cordis':
@@ -7867,6 +7894,9 @@ importers:
       '@deepseek-ai/dsh-launch-environment':
         specifier: workspace:^
         version: link:../../util/launch-environment
+      '@deepseek-ai/schemastery':
+        specifier: link:../../../vendor/schemastery
+        version: link:../../../vendor/schemastery
     devDependencies:
       '@deepseek-ai/cordis':
         specifier: workspace:^

@@ -1,6 +1,11 @@
-# Web e2e fixture overlay: replace the sandboxed host filesystem with a world
-# that is not the harness host, so the workspace picker lists the virtual tree.
+# Web e2e fixture overlay: replace the composed execution filesystem with a
+# world that is not the harness host, so the workspace picker lists the virtual
+# tree. The Web bundle composes the SSH filesystem as `ctx.fs`, so that row is
+# disabled too: one composition has exactly one filesystem provider.
 - id: fs-sandbox
+  disabled: true
+
+- id: fs-ssh
   disabled: true
 
 - insert:

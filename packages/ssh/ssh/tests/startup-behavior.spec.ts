@@ -5,7 +5,7 @@ import { Context, Service } from '@deepseek-ai/cordis'
 import { describe, expect, it, onTestFinished, vi } from 'vitest'
 import { z } from 'zod'
 import { SshRpcPeer } from '../src/protocol.ts'
-import { SshConnection } from '../src/index.ts'
+import { internals, SshConnection } from '../src/index.ts'
 import type { Config } from '../src/index.ts'
 
 const transport = vi.hoisted(() => ({ spawn: vi.fn(), exec: vi.fn(), connect: vi.fn(), tls: vi.fn(), directory: vi.fn(), remove: vi.fn() }))
@@ -142,11 +142,27 @@ describe.skipIf(process.platform === 'win32')('SSH connection startup', () => {
     expect(transport.spawn).not.toHaveBeenCalled()
   })
 
-  it('rejects a non-POSIX client before starting SSH', () => {
-    const platform = vi.spyOn(process, 'platform', 'get').mockReturnValue('win32')
-    try { expect(() => setup()).toThrow('POSIX client') }
-    finally { platform.mockRestore() }
+  it('rejects an unsupported client platform before starting SSH', () => {
+    const platform = internals.platform
+    internals.platform = 'aix'
+    try { expect(() => setup()).toThrow('POSIX or Windows client') }
+    finally { internals.platform = platform }
     expect(transport.spawn).not.toHaveBeenCalled()
+  })
+
+  it('launches the helper without control-master multiplexing on a Windows client', async () => {
+    const platform = internals.platform
+    internals.platform = 'win32'
+    let test: ReturnType<typeof setup>
+    try { test = setup() } finally { internals.platform = platform }
+    await test.service.ready
+    const argv = transport.spawn.mock.calls[0]?.[1] as string[]
+    expect(argv[0]).toBe('-T')
+    expect(argv).not.toContain('-M')
+    expect(argv).not.toContain('-S')
+    expect(argv).not.toContain('ControlPersist=no')
+    expect(argv.at(-1)).toBe("'/remote/node' '--disable-sigusr1' '/remote/helper.js'")
+    expect(transport.directory).not.toHaveBeenCalled()
   })
 
   it('publishes only verified remote coordinates and quotes the configured executable paths', async () => {

@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-09-11-posix-ssh-runtime.md
-2026-09-11-posix-ssh-runtime.md: d54600faa68524b569f219627537ce250158d9b1
-2026-09-11-posix-ssh-runtime.zh.md: a6b3a84c37b0d7b4438e8c766ef4e010443fe744
+2026-09-11-posix-ssh-runtime.md: e5ff69bf9201f68db0aa0311d44b78b504b59253
+2026-09-11-posix-ssh-runtime.zh.md: e7497fbd0524a3f147d9a8561e7f34815b8da053

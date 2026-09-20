@@ -79,6 +79,26 @@ export class DirectoryPickerController extends TypertRemoteService {
   }
 
   /**
+   * List one directory level inside a named SSH environment, before any
+   * workspace exists in that world.
+   * @param environmentId - configured environment whose world holds the path.
+   * @param path - absolute directory in that world; absent lists the
+   *   environment's configured workspace.
+   * @param signal - caller lifetime.
+   * @returns the level's listing in the remote host's own path spelling.
+   */
+  @Remote('listIn')
+  async listIn(environmentId: string, path: string | undefined, signal: AbortSignal): Promise<DirectoryListing> {
+    const capability = this.requireCapability('browse', 'listIn')
+    if (capability.listIn === undefined) throw unservedEnvironmentVerb('listIn')
+    try {
+      return await capability.listIn(environmentId, path, signal)
+    } catch (error: unknown) {
+      throw cancellableFailure(error, signal, 'directory listing was aborted')
+    }
+  }
+
+  /**
    * Create one child directory for a Remote caller's in-app browser.
    * @param path - absolute existing parent directory.
    * @param name - single non-blank path segment.
@@ -97,6 +117,32 @@ export class DirectoryPickerController extends TypertRemoteService {
     const capability = this.requireCapability('browse', 'createDirectory')
     try {
       return await capability.createDirectory(request.data.path, request.data.name)
+    } catch (error: unknown) {
+      throw browseFailure(error)
+    }
+  }
+
+  /**
+   * Create one child directory inside a named SSH environment.
+   * @param environmentId - configured environment whose world holds the parent.
+   * @param path - absolute existing parent directory in that world.
+   * @param name - single non-blank path segment.
+   * @returns the created directory's absolute remote path.
+   */
+  @Remote('createDirectoryIn')
+  async createDirectoryIn(environmentId: string, path: string, name: string): Promise<string> {
+    const request = createDirectoryRequestSchema.safeParse({ path, name })
+    if (!request.success) {
+      throw new RemoteError(
+        'gateway/bad-request',
+        'invalid payload for host.createDirectoryIn',
+        { issues: request.error.issues },
+      )
+    }
+    const capability = this.requireCapability('browse', 'createDirectoryIn')
+    if (capability.createDirectoryIn === undefined) throw unservedEnvironmentVerb('createDirectoryIn')
+    try {
+      return await capability.createDirectoryIn(environmentId, request.data.path, request.data.name)
     } catch (error: unknown) {
       throw browseFailure(error)
     }
@@ -129,6 +175,20 @@ const BROWSE_FAILURE_CODES = {
   'directory-exists': 'directory-picker/exists',
   'directory-create-failed': 'directory-picker/create-failed',
 } as const satisfies Record<DirectoryPickerErrorCode, RemoteErrorCode>
+
+/**
+ * The refusal for an environment-scoped verb the composed browse backend does
+ * not implement: the deployment reaches no named execution world.
+ * @param method - the unserved wire verb.
+ * @returns the failure to throw across the Remote boundary.
+ */
+function unservedEnvironmentVerb(method: string): RemoteError {
+  return new RemoteError(
+    'directory-picker/unavailable',
+    `directoryPicker.${method} is not served by the composed browse backend`,
+    { capability: method },
+  )
+}
 
 /**
  * Classify a browse-primitive rejection: the seam's own closed codes carry the

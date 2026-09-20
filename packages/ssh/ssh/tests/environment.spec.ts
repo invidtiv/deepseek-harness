@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { buildMasterArgv, resolveConnectionEnvironment, resolveSshEnvironment } from '../src/environment.ts'
+import { buildDirectArgv, buildForwardArgv, buildMasterArgv, resolveConnectionEnvironment, resolveSshEnvironment } from '../src/environment.ts'
 
 describe('resolveSshEnvironment', () => {
   it('applies the owned host-key and keepalive defaults', () => {
@@ -95,6 +95,37 @@ describe('buildMasterArgv', () => {
 
   it('treats a missing host-key policy as strict', () => {
     expect(buildMasterArgv({ host: 'build01' }, '/tmp/master')).toContain('StrictHostKeyChecking=yes')
+  })
+})
+
+describe('buildDirectArgv', () => {
+  it('omits control-master multiplexing and keeps the shared security posture', () => {
+    const argv = buildDirectArgv(resolveSshEnvironment({ host: 'build01', configFile: '/etc/ssh/ssh_config' }), "'node' 'helper'")
+    expect(argv[0]).toBe('-T')
+    expect(argv).not.toContain('-M')
+    expect(argv).not.toContain('-S')
+    expect(argv).not.toContain('ControlPersist=no')
+    expect(argv.slice(1, 3)).toEqual(['-F', '/etc/ssh/ssh_config'])
+    expect(argv).toContain('BatchMode=yes')
+    expect(argv).toContain('StrictHostKeyChecking=yes')
+    expect(argv.at(-1)).toBe("'node' 'helper'")
+  })
+
+  it('carries no config file and ends at the destination without a remote command', () => {
+    const argv = buildDirectArgv(resolveSshEnvironment({ host: 'build01' }))
+    expect(argv).not.toContain('-F')
+    expect(argv.at(-1)).toBe('build01')
+  })
+})
+
+describe('buildForwardArgv', () => {
+  it('forwards one loopback port to one remote socket', () => {
+    const argv = buildForwardArgv(resolveSshEnvironment({ host: 'build01', configFile: '/etc/ssh/ssh_config' }), 43_210, '/tmp/root/stream')
+    expect(argv.slice(0, 4)).toEqual(['-N', '-o', 'ExitOnForwardFailure=yes', '-L'])
+    expect(argv[4]).toBe('127.0.0.1:43210:/tmp/root/stream')
+    expect(argv).not.toContain('-T')
+    expect(argv).not.toContain('ClearAllForwardings=yes')
+    expect(argv.at(-1)).toBe('build01')
   })
 })
 

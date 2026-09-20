@@ -75,12 +75,29 @@ export interface UiWorkspace {
    */
   listDirectory(path?: string, signal?: AbortSignal): Promise<DirectoryListing>
   /**
+   * List one directory level inside a named SSH environment, before any
+   * workspace exists in that world.
+   * @param environmentId - configured environment whose world holds the path.
+   * @param path - directory in that world; absent selects its configured workspace.
+   * @param signal - cancellation for a superseded scan.
+   * @returns directory entries and breadcrumb ancestry, in remote path spelling.
+   */
+  listDirectoryIn(environmentId: string, path?: string, signal?: AbortSignal): Promise<DirectoryListing>
+  /**
    * Create a child directory.
    * @param path - existing parent directory.
    * @param name - child directory name.
    * @returns created absolute path.
    */
   createDirectory(path: string, name: string): Promise<string>
+  /**
+   * Create a child directory inside a named SSH environment.
+   * @param environmentId - configured environment whose world holds the parent.
+   * @param path - existing parent directory in that world.
+   * @param name - child directory name.
+   * @returns created absolute remote path.
+   */
+  createDirectoryIn(environmentId: string, path: string, name: string): Promise<string>
 }
 
 declare module '@deepseek-ai/cordis' {
@@ -216,8 +233,20 @@ class UiWorkspaceService extends Service implements UiWorkspace {
     return result.value
   }
 
+  async listDirectoryIn(environmentId: string, path?: string, signal?: AbortSignal): Promise<DirectoryListing> {
+    const result = await this.directoryPicker.listIn(environmentId, path, signal)
+    if (!result.ok) throw new DirectoryBrowseError(result.error)
+    return result.value
+  }
+
   async createDirectory(path: string, name: string): Promise<string> {
     const result = await this.directoryPicker.createDirectory(path, name)
+    if (!result.ok) throw new DirectoryBrowseError(result.error)
+    return result.value
+  }
+
+  async createDirectoryIn(environmentId: string, path: string, name: string): Promise<string> {
+    const result = await this.directoryPicker.createDirectoryIn(environmentId, path, name)
     if (!result.ok) throw new DirectoryBrowseError(result.error)
     return result.value
   }
