@@ -27,6 +27,8 @@ export interface EnvironmentTeamConfig {
     tokenEnv: string
     /** Project aliases this peer may use. */
     workspaces: string[]
+    /** Allow this peer to browse and register workspaces beneath its granted aliases. */
+    workspaceManagement?: boolean
   }[]
   /** Milliseconds allowed for discovery plus one operation. */
   requestTimeoutMs?: number
@@ -42,4 +44,6 @@ export interface EnvironmentTeamConfig {
   maxTasks?: number
   /** Maximum retained mutation receipts per team; exhaustion rejects additional mutations. */
   maxOperations?: number
+  /** Maximum directory entries or workspace records returned in one view. */
+  workspacePageSize?: number
 }

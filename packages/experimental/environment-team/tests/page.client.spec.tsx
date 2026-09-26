@@ -16,7 +16,8 @@ const initial: EnvironmentConfiguration = {
   environmentId: brandString<EnvironmentConfiguration['environmentId']>('11111111-1111-4111-8111-111111111111'), revision: brandString<EnvironmentConfiguration['revision']>('revision'),
   config: { stateDirectory: '/private', label: 'machine', provider: 'provider', model: 'model', agentPreset: 'standard', sandboxMode: 'read-only', approvalPolicy: 'ask',
     workspaces: { project: '/checkout' }, peers: [{ environmentId: '22222222-2222-4222-8222-222222222222', url: 'https://worker.example.ts.net', tokenEnv: 'DSH_PAIR', workspaces: ['project'] }],
-    requestTimeoutMs: 15000, retryIntervalMs: 5000, maxBytes: 1048576, maxTeams: 64, maxMembers: 16, maxTasks: 256, maxOperations: 2048 },
+    requestTimeoutMs: 15000, retryIntervalMs: 5000, maxBytes: 1048576, maxTeams: 64, maxMembers: 16,
+    maxTasks: 256, maxOperations: 2048, workspacePageSize: 100 },
 }
 function mount(options: { read?: () => Promise<EnvironmentConfiguration>; view?: PageProps['view'] } = {}) {
   const read = vi.fn(options.read ?? (async () => structuredClone(initial)))
@@ -85,10 +86,11 @@ it('edits worker policy, project grants, and limits while retaining other peer s
   fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[1]!)
   expect(screen.getByLabelText('Pairing secret')).toHaveProperty('value', 'second-secret')
   fireEvent.change(screen.getByLabelText('Request timeout (ms)'), { target: { value: '20000' } })
+  fireEvent.click(screen.getByLabelText(en.workspaceManagement))
   fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
   await waitFor(() => { expect(save).toHaveBeenCalledOnce() })
   expect(save.mock.calls[0]?.[0].config).toMatchObject({ provider: 'local-provider', model: 'local-model', agentPreset: 'worker', sandboxMode: 'workspace-write', approvalPolicy: 'never', workspaces: { second: '/second' }, requestTimeoutMs: 20000,
-    peers: [{ environmentId: '33333333-3333-4333-8333-333333333333', workspaces: ['second', 'shared'] }] })
+    peers: [{ environmentId: '33333333-3333-4333-8333-333333333333', workspaces: ['second', 'shared'], workspaceManagement: true }] })
   expect(credential).toHaveBeenCalledExactlyOnceWith('DSH_PEER_33333333_3333_4333_8333_333333333333', 'second-secret')
 })
 

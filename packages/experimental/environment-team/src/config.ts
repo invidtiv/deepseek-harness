@@ -14,6 +14,7 @@ const peer = z.object({
   }),
   tokenEnv: z.string().min(1),
   workspaces: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/u)),
+  workspaceManagement: z.boolean().default(false),
 })
 
 const schema = z.object({
@@ -33,6 +34,7 @@ const schema = z.object({
   maxMembers: z.number().int().positive().default(16),
   maxTasks: z.number().int().positive().default(256),
   maxOperations: z.number().int().positive().default(2048),
+  workspacePageSize: z.number().int().positive().default(100),
 })
 /** Resolved deployment configuration. */
 export type ResolvedConfig = z.infer<typeof schema>
@@ -49,11 +51,13 @@ export const Config: s<Config> = s.object({
   peers: s.array(s.object({
     environmentId: s.string().required(), url: s.string().required(),
     tokenEnv: s.string().required(), workspaces: s.array(String).required(),
+    workspaceManagement: s.boolean().default(false),
   })).default([]),
   workspaces: s.dict(String).required(),
   requestTimeoutMs: s.number().default(15000), retryIntervalMs: s.number().default(5000),
   maxBytes: s.number().default(1048576), maxTeams: s.number().default(64),
   maxMembers: s.number().default(16), maxTasks: s.number().default(256), maxOperations: s.number().default(2048),
+  workspacePageSize: s.number().default(100),
 })
 /**
  * Resolve and validate all deployment values before activation.

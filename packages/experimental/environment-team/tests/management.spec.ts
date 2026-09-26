@@ -10,12 +10,51 @@ import Credentials from '@deepseek-ai/dsh-credentials-local'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { Config } from '../src/config.ts'
 import EnvironmentTeamSettings from '../src/management.ts'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import { PeerTransport } from '../src/transport.ts'
+import { descriptorSchema } from '../src/protocol.ts'
+import type { EnvironmentConfiguration } from '../src/settings-types.ts'
 
 const contexts: Awaited<ReturnType<typeof boot>>[] = []
 const roots: string[] = []
 afterEach(async () => {
+  vi.restoreAllMocks()
   for (const ctx of contexts.splice(0).reverse()) await ctx.fiber.dispose()
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 5 })
+})
+
+it('retains offline and unsupported peer identities without routing their workspace operations locally', async () => {
+  const { start } = await fixture()
+  const { controller, ctx } = await start()
+  const original = await controller.read()
+  const ids = [randomUUID(), randomUUID(), randomUUID()]
+  const peers = ids.map((environmentId, index) => ({ environmentId, url: `https://worker${index}.example.ts.net`, tokenEnv: `DSH_PAIR_${index}`, workspaces: [] }))
+  for (const peer of peers) await ctx.credentials.set(credentialRef(peer.tokenEnv), randomUUID())
+  await controller.save({ ...original, config: { ...original.config, peers } })
+  vi.spyOn(PeerTransport.prototype, 'describe').mockImplementation(async (id) => {
+    if (id === ids[2]) throw new Error('offline')
+    return descriptorSchema.parse({ environmentId: id, label: 'worker', platform: process.platform, protocol: 1, capabilities: { distributedTeams: true, ...(id === ids[0] ? { workspaceBrowser: true } : {}) } })
+  })
+  expect((await controller.environments()).map(item => [item.environmentId, item.status])).toEqual([
+    [original.environmentId, 'online'], [ids[0], 'online'], [ids[1], 'unsupported'], [ids[2], 'unavailable'],
+  ])
+  const target = brandString<EnvironmentConfiguration['environmentId']>(ids[0]!)
+  const call = vi.spyOn(PeerTransport.prototype, 'call').mockResolvedValue(JSON.stringify({ kind: 'catalog', roots: [], workspaces: [], truncated: false }))
+  expect(await controller.workspace(target, { action: 'catalog' })).toMatchObject({ kind: 'catalog' })
+  call.mockResolvedValueOnce(JSON.stringify({ kind: 'directory', alias: 'project', relativePath: '', path: '/remote', entries: [], truncated: false }))
+  await expect(controller.workspace(target, { action: 'catalog' })).rejects.toThrow('action mismatch')
+  call.mockResolvedValueOnce(JSON.stringify({ kind: 'directory', alias: 'project', relativePath: '', path: '/remote', entries: [], truncated: false }))
+  expect(await controller.workspace(target, { action: 'browse', alias: 'project', relativePath: '' })).toMatchObject({ path: '/remote' })
+  await expect(controller.workspace(original.environmentId, { action: 'browse', alias: 'missing', relativePath: '' })).rejects.toThrow('workspace alias is not granted')
+  const workspace = { environmentId: original.environmentId, workspaceId: 'other', alias: 'project', relativePath: '', path: '/remote', title: 'remote' }
+  call.mockResolvedValueOnce(JSON.stringify({ kind: 'registered', workspace }))
+  await expect(controller.workspace(target, { action: 'register', alias: 'project', relativePath: '' })).rejects.toThrow('identity mismatch')
+  call.mockResolvedValueOnce(JSON.stringify({ kind: 'catalog', roots: [], workspaces: [workspace], truncated: false }))
+  await expect(controller.workspace(target, { action: 'catalog' })).rejects.toThrow('identity mismatch')
+  call.mockRejectedValueOnce(new Error('offline'))
+  await expect(controller.workspace(target, { action: 'catalog' })).rejects.toThrow('offline')
+  await ctx.fiber.dispose()
+  await expect(controller.environments()).rejects.toThrow('closed')
 })
 
 async function fixture() {

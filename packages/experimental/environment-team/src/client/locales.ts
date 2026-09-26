@@ -1,5 +1,15 @@
 /** English and Chinese copy for environment deployment configuration. */
 export const en = {
+  environments: 'Environments', environmentsHelp: 'Browse directories and create workspaces on a selected machine. Machine settings and access grants live in Plugins → Environment teams.',
+  machine: 'Machine', thisMachine: 'This machine', online: 'Online', unavailable: 'Unavailable', unsupported: 'Update required', refresh: 'Refresh',
+  registeredWorkspaces: 'Workspaces on this machine', grantedDirectories: 'Directories available to this connection', browse: 'Browse',
+  noWorkspaces: 'No workspaces have been registered in these directories.', noGrantedDirectories: 'No directories are granted to this connection. Configure access on the destination machine.',
+  workspaceReadFailed: 'Could not load this machine. Check its connection and workspace access in Plugins, then refresh.',
+  allWorkspaces: 'All workspaces', parentDirectory: 'Parent folder', useDirectory: 'Use as workspace', newFolderName: 'New folder name', createFolder: 'Create folder',
+  noSubdirectories: 'No subfolders in this directory.', truncated: 'The configured list limit was reached. Increase the workspace page size in Plugins to see more entries.',
+  registeredOnMachine: 'This workspace is saved on the selected machine. Open its Web app to start a session there.',
+  workspaceSaved: 'Workspace saved on the selected machine.', workspaceFailed: 'Could not change this workspace.', folderCreated: 'Folder created.',
+  workspaceManagement: 'Allow workspace browsing and creation in granted directories', workspacePageSize: 'Workspace and directory list limit',
   'read-only': 'Read only', 'workspace-write': 'Workspace write', 'danger-full-access': 'Full access', ask: 'Ask for approval', never: 'Never ask',
   title: 'Environment teams', description: 'Connect Harness installations and configure where remote teammates work.',
   coordinator: 'Start a team on the machine that should coordinate it. Every paired machine can coordinate its own teams.',
@@ -18,6 +28,16 @@ export const en = {
 export type EnvironmentSettingsKey = keyof typeof en
 /** Chinese translation of the configuration page. */
 export const zh: Record<EnvironmentSettingsKey, string> = {
+  environments: '环境', environmentsHelp: '在所选机器上浏览目录并创建工作区。机器配置和访问授权位于「插件 → 跨环境团队」。',
+  machine: '机器', thisMachine: '本机', online: '在线', unavailable: '不可用', unsupported: '需要更新', refresh: '刷新',
+  registeredWorkspaces: '此机器上的工作区', grantedDirectories: '此连接可访问的目录', browse: '浏览',
+  noWorkspaces: '这些目录中尚未注册工作区', noGrantedDirectories: '此连接未获目录授权。请在目标机器上配置访问权限',
+  workspaceReadFailed: '无法加载此机器。请检查连接和插件中的工作区权限，然后刷新',
+  allWorkspaces: '全部工作区', parentDirectory: '上级目录', useDirectory: '设为工作区', newFolderName: '新文件夹名称', createFolder: '创建文件夹',
+  noSubdirectories: '此目录中没有子目录', truncated: '已达到配置的列表上限。可在插件中提高工作区列表上限以显示更多条目',
+  registeredOnMachine: '此工作区已保存在所选机器上。请打开该机器的 Web 应用以启动会话',
+  workspaceSaved: '工作区已保存在所选机器上', workspaceFailed: '无法修改此工作区', folderCreated: '文件夹已创建',
+  workspaceManagement: '允许在授权目录中浏览并创建工作区', workspacePageSize: '工作区和目录列表上限',
   'read-only': '只读', 'workspace-write': '工作区写入', 'danger-full-access': '完全访问', ask: '请求审批', never: '从不请求',
   title: '跨环境团队', description: '连接 Harness 实例，配置远程队友的工作位置。',
   coordinator: '在需要担任协调端的机器上启动团队。每台已配对的机器都可以协调自己的团队。',
