@@ -184,7 +184,7 @@
     "scripts/client-bundle-purity.spec.ts"
   ],
   "references": [
-    { "path": "./packages/experimental/environment-team" },
+    { "path": "./packages/experimental/environment-team/tsconfig.host.json" },
     { "path": "./packages/experimental/speech-to-text" },
     { "path": "./packages/experimental/speech-to-text-sensevoice" },
     { "path": "./packages/experimental/api-speech-to-text" },

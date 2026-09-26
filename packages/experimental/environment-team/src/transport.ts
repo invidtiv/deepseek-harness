@@ -2,6 +2,7 @@
 import { createHash, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { z } from 'zod'
+import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { ResolvedConfig } from './config.ts'
 import { descriptorSchema, requestSchema, type EnvironmentId, type PeerRequest } from './protocol.ts'
 import type { EnvironmentTeams } from './runtime.ts'
@@ -12,18 +13,23 @@ export const DESCRIPTOR_PATH = '/.well-known/dsh/environment'
 export const PEER_PATH = '/dsh/environment-team'
 const responseSchema = z.object({ environmentId: z.string(), result: z.string() }).strict()
 
-/** Validates secrets once without copying them into persisted records or model output. */
+/** Resolves current secrets without copying them into persisted records or model output. */
 export class PeerTransport {
-  private readonly tokens = new Map<EnvironmentId, string>()
+  constructor(private readonly id: EnvironmentId, private readonly config: ResolvedConfig, private readonly credentials: Pick<CredentialProvider, 'resolve'>) {}
 
-  constructor(private readonly id: EnvironmentId, private readonly config: ResolvedConfig) {
-    for (const peer of config.peers) {
-      if (peer.environmentId === id) throw new Error('an environment cannot pair with itself')
-      const token = process.env[peer.tokenEnv]
-      if (!token || Buffer.byteLength(token) < 32) throw new Error(`peer credential variable ${peer.tokenEnv} must contain at least 32 bytes`)
-      if ([...this.tokens.values()].includes(token)) throw new Error('each peer needs a distinct credential')
-      this.tokens.set(peer.environmentId, token)
+  /** Resolve the current peer credentials before one operation.
+   * @returns validated pairwise secrets, never persisted with configuration.
+   */
+  async tokens(): Promise<Map<EnvironmentId, string>> {
+    const tokens = new Map<EnvironmentId, string>()
+    for (const peer of this.config.peers) {
+      if (peer.environmentId === this.id) throw new Error('an environment cannot pair with itself')
+      const token = (await this.credentials.resolve(credentialRef(peer.tokenEnv)))?.value
+      if (!token || Buffer.byteLength(token) < 32) throw new Error(`peer credential ${peer.tokenEnv} must contain at least 32 bytes`)
+      if ([...tokens.values()].includes(token)) throw new Error('each peer needs a distinct credential')
+      tokens.set(peer.environmentId, token)
     }
+    return tokens
   }
 
   /**
@@ -31,12 +37,12 @@ export class PeerTransport {
    * @param request - Incoming headers supplied by the server.
    * @returns the granted environment, or undefined when authentication fails.
    */
-  authenticate(request: IncomingMessage): EnvironmentId | undefined {
+  async authenticate(request: IncomingMessage): Promise<EnvironmentId | undefined> {
     if (request.headers.origin !== undefined || request.headers['sec-fetch-site'] !== undefined) return undefined
     const authorization = request.headers.authorization
     if (!authorization?.startsWith('Bearer ')) return undefined
     const digest = createHash('sha256').update(authorization.slice(7)).digest()
-    for (const [id, token] of this.tokens) {
+    for (const [id, token] of await this.tokens()) {
       if (timingSafeEqual(digest, createHash('sha256').update(token).digest())) return id
     }
     return undefined
@@ -51,7 +57,7 @@ export class PeerTransport {
    */
   async call(environment: EnvironmentId, request: PeerRequest, signal: AbortSignal): Promise<string> {
     const peer = this.config.peers.find(item => item.environmentId === environment)
-    const token = this.tokens.get(environment)
+    const token = (await this.tokens()).get(environment)
     if (!peer || !token) throw new Error('peer is not configured')
     const bounded = AbortSignal.any([signal, AbortSignal.timeout(this.config.requestTimeoutMs)])
     const descriptorResponse = await fetch(`${peer.url}${DESCRIPTOR_PATH}`, { signal: bounded, redirect: 'error' })
@@ -79,7 +85,11 @@ export class PeerTransport {
   async handle(runtime: EnvironmentTeams, request: IncomingMessage, response: ServerResponse): Promise<void> {
     response.setHeader('cache-control', 'no-store')
     response.setHeader('content-type', 'application/json')
-    const peer = this.authenticate(request)
+    let peer: EnvironmentId | undefined
+    try { peer = await this.authenticate(request) } catch {
+      // A missing or invalid rotated credential cannot authenticate a peer.
+      response.writeHead(401).end(); return
+    }
     if (!peer) { response.writeHead(401).end(); return }
     if (request.method !== 'POST' || request.headers['content-type'] !== 'application/json') { response.writeHead(415).end(); return }
     request.setTimeout(this.config.requestTimeoutMs, () => request.destroy())

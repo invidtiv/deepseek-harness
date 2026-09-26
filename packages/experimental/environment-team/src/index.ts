@@ -18,7 +18,7 @@ export { Config } from './config.ts'
 /** Cordis plugin identity. */
 export const name = 'environment-team'
 /** Services needed before exposing peer operations or tools. */
-export const inject = ['agents', 'sessions', 'sessionPersistence', 'sessionProjections', 'storageDomain', 'tools', 'webServer', 'agentPresets', 'workspaceRegistry']
+export const inject = ['agents', 'sessions', 'sessionPersistence', 'sessionProjections', 'storageDomain', 'tools', 'webServer', 'agentPresets', 'workspaceRegistry', 'credentials']
 
 /**
  * Mount identity discovery, authenticated peer routes, and model-facing team tools.
@@ -29,7 +29,8 @@ export const inject = ['agents', 'sessions', 'sessionPersistence', 'sessionProje
 export async function apply(ctx: Context, input: Config): Promise<void> {
   const config = resolveConfig(input)
   const identity = await loadIdentity(config.stateDirectory)
-  const transport = new PeerTransport(identity, config)
+  const transport = new PeerTransport(identity, config, ctx.credentials)
+  await transport.tokens()
   for (const [alias, path] of Object.entries(config.workspaces)) {
     if (!(await stat(path)).isDirectory()) throw new Error('configured workspace must be a directory')
     config.workspaces[alias] = (await ctx.workspaceRegistry.create(path)).path

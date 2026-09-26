@@ -16,6 +16,8 @@ import LlmRuntime, { ToolCallId, MessageId } from '@deepseek-ai/dsh-llm'
 import SessionStore, { SessionId, SessionLogOffset } from '@deepseek-ai/dsh-session'
 import AgentPresets from '@deepseek-ai/dsh-agent-preset-registry'
 import AgentPreset from '@deepseek-ai/dsh-agent-preset'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
+import Credentials from '@deepseek-ai/dsh-credentials-local'
 import Workspace from '@deepseek-ai/dsh-workspace'
 import Projections from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
@@ -62,7 +64,8 @@ async function host() {
     include: Include, llm: LlmRuntime, sessions: SessionStore, projections: Projections,
     prompt: SystemPrompt, tools: Tools, agents: AgentRegistry, loop: AgentLoop,
     persistence: Persistence, storage: Storage, json: JsonStorage,
-    domain: StorageDomain, web: WebServer, environment: Plugin, presets: AgentPresets, preset: AgentPreset, workspace: Workspace,
+    domain: StorageDomain, web: WebServer, environment: Plugin, presets: AgentPresets,
+    preset: AgentPreset, workspace: Workspace, credentials: Credentials,
   })
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, JSON.stringify([
@@ -75,6 +78,7 @@ async function host() {
     { name: 'cordis:presets', config: { default: 'test' } },
     { name: 'cordis:preset', config: { id: 'test', plugins: [] } },
     { name: 'cordis:workspace' },
+    { name: 'cordis:credentials', config: { path: join(root, 'credentials.yml'), watch: false } },
   ]) + '\n')
   await ctx.loader.create({ name: 'cordis:include', config: { path: pathToFileURL(configPath).href } })
   await ctx.loader.await()
@@ -177,6 +181,7 @@ describe('distributed teams', () => {
     const bFiber = await mount(b)
     await expect.poll(() => b.ctx.agents.list().length).toBe(1)
     const worker = b.ctx.agents.get(SessionId(spawned.member.sessionId))!
+    await expect.poll(() => b.adapter.requests.length).toBe(1)
     await worker.whenIdle()
     expect(worker.session.header.cwd).toBe(b.cwd)
     expect(worker.session.header.agentPreset).toBe('test')
@@ -198,6 +203,7 @@ describe('distributed teams', () => {
     await mount(b)
     expect((await execute(a, rootAgent, { action: 'send', target: 'worker', text: 'Resume review.' })).text).toContain('queued')
     await expect.poll(() => b.ctx.agents.get(worker.id)).toBeDefined()
+    await expect.poll(() => b.adapter.requests.length).toBe(2)
     await b.ctx.agents.get(worker.id)!.whenIdle()
     expect(b.ctx.agents.list()).toHaveLength(1)
     expect(b.adapter.requests).toHaveLength(2)
@@ -230,7 +236,7 @@ describe('distributed teams', () => {
     const wrongId = environmentIdSchema.parse(randomUUID())
     const transport = new PeerTransport(b.id, resolveConfig({
       ...b.config, peers: [{ ...b.config.peers[0]!, environmentId: wrongId, url: a.url }],
-    }))
+    }), b.ctx.credentials)
     const request = requestSchema.parse({ kind: 'interrupt', environmentId: wrongId, teamId: randomUUID(), sessionId: 'x' })
     await expect(transport.call(wrongId, request, signal)).rejects.toThrow('identity mismatch')
   })
@@ -332,7 +338,7 @@ describe('peer configuration', () => {
     const secure = { ...peer, url: 'https://host.example' }
     expect(() => resolveConfig({ ...a.config, peers: [secure, secure] })).toThrow('duplicate')
     expect(() => resolveConfig({ ...a.config, peers: [{ ...secure, url: 'https://user:pass@host.example' }] })).toThrow('origin')
-    expect(() => new PeerTransport(a.id, resolveConfig({ ...a.config, peers: [secure] }))).toThrow('32 bytes')
+    await expect(new PeerTransport(a.id, resolveConfig({ ...a.config, peers: [secure] }), a.ctx.credentials).tokens()).rejects.toThrow('32 bytes')
   })
 })
 
@@ -407,17 +413,17 @@ describe('deployment and admission limits', () => {
     const b = await host()
     pair(a, b)
     const grant = a.config.peers[0]!
-    expect(() => new PeerTransport(a.id, resolveConfig({ ...a.config, peers: [{ ...grant, environmentId: a.id }] }))).toThrow('itself')
-    expect(() => new PeerTransport(a.id, resolveConfig({ ...a.config, peers: [grant, { ...grant, environmentId: randomUUID() }] }))).toThrow('distinct credential')
-    const transport = new PeerTransport(a.id, resolveConfig(a.config))
+    await expect(new PeerTransport(a.id, resolveConfig({ ...a.config, peers: [{ ...grant, environmentId: a.id }] }), a.ctx.credentials).tokens()).rejects.toThrow('itself')
+    await expect(new PeerTransport(a.id, resolveConfig({ ...a.config, peers: [grant, { ...grant, environmentId: randomUUID() }] }), a.ctx.credentials).tokens()).rejects.toThrow('distinct credential')
+    const transport = new PeerTransport(a.id, resolveConfig(a.config), a.ctx.credentials)
     const request = requestSchema.parse({ kind: 'interrupt', environmentId: b.id, teamId: 'team', sessionId: 'member' })
     await expect(transport.call(a.id, request, signal)).rejects.toThrow('not configured')
     await expect(transport.call(b.id, request, signal)).rejects.toThrow('descriptor is unavailable')
     await mount(b)
-    const limited = new PeerTransport(a.id, resolveConfig({ ...a.config, maxBytes: 300 }))
+    const limited = new PeerTransport(a.id, resolveConfig({ ...a.config, maxBytes: 300 }), a.ctx.credentials)
     const large = requestSchema.parse({ kind: 'command', environmentId: b.id, teamId: 'team', actor: 'member', operationId: 'op', command: { action: 'task-create', text: 'x'.repeat(500) } })
     await expect(limited.call(b.id, large, signal)).rejects.toThrow('request byte limit')
-    const tiny = new PeerTransport(a.id, resolveConfig({ ...a.config, maxBytes: 10 }))
+    const tiny = new PeerTransport(a.id, resolveConfig({ ...a.config, maxBytes: 10 }), a.ctx.credentials)
     await expect(tiny.call(b.id, request, signal)).rejects.toThrow('response byte limit')
   })
 })
@@ -459,7 +465,7 @@ describe('receiver ownership', () => {
     pair(a, b)
     b.config.peers[0]!.workspaces.push('absent')
     await mount(b)
-    const transport = new PeerTransport(a.id, resolveConfig(a.config))
+    const transport = new PeerTransport(a.id, resolveConfig(a.config), a.ctx.credentials)
     const request = requestSchema.parse({ kind: 'deliver', environmentId: b.id,
       assignment: { coordinator: a.id, teamId: 'team', member: { environmentId: b.id, sessionId: randomUUID(), name: 'worker', workspace: 'absent' } },
       message: { id: 'op', sender: 'lead', target: 'worker', text: 'work' } })
@@ -550,7 +556,7 @@ describe('restart and transport failures', () => {
     const a = await host()
     const b = await host()
     pair(a, b)
-    const transport = new PeerTransport(a.id, resolveConfig(a.config))
+    const transport = new PeerTransport(a.id, resolveConfig(a.config), a.ctx.credentials)
     const input = requestSchema.parse({ kind: 'interrupt', environmentId: b.id, teamId: 'team', sessionId: 'worker' })
     const empty = b.ctx.webServer.register({ kind: 'exact', path: DESCRIPTOR_PATH, handler(_request, response) { response.writeHead(204).end() } })
     await expect(transport.call(b.id, input, signal)).rejects.toThrow('no body')
@@ -800,4 +806,22 @@ it('refuses a durable assignment whose Session has no recorded preset', async ()
     message: { id: 'op', sender: 'lead', target: 'worker', text: 'work' } })
   await expect(second.runtime.receive(a.id, input)).rejects.toThrow('stored member lacks its agent preset')
   expect(b.ctx.agents.get(sessionId)).toBeUndefined()
+})
+
+it('uses stored pairing secrets and applies rotation and removal to the next request', async () => {
+  const a = await host()
+  const b = await host()
+  const key = pair(a, b)
+  const secret = process.env[key]!
+  Reflect.deleteProperty(process.env, key)
+  await a.ctx.credentials.set(credentialRef(key), secret)
+  await mount(a)
+  const request = (value: string) => fetch(`${a.url}${PEER_PATH}`, { headers: { authorization: `Bearer ${value}`, 'content-type': 'application/json' } })
+  expect((await request(secret)).status).toBe(415)
+  const rotated = randomUUID()
+  await a.ctx.credentials.set(credentialRef(key), rotated)
+  expect((await request(secret)).status).toBe(401)
+  expect((await request(rotated)).status).toBe(415)
+  await a.ctx.credentials.unset(credentialRef(key))
+  expect((await request(rotated)).status).toBe(401)
 })

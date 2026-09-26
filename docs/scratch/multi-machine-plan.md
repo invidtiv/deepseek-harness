@@ -19,7 +19,8 @@ This work targets five independent DSH Web installations: one Linux host and fou
 3. Create independent local Sessions for incoming members. Map a deployment-owned project alias to an absolute local directory. Persist assignment before creation and acknowledge delivery only after the inbox is flushed. Reconcile pending delivery after restart.
 4. Expose environment discovery and distributed-team operations as model tools. Remote participants address their coordinator through authenticated peer requests. Local Web views display their ordinary Session transcripts and tool results.
 5. Verify identity initialization, authentication denial, mismatched endpoints, permission isolation, idempotent spawn and delivery, revision conflicts, disconnection, restart, and lifecycle disposal. Add a real Loader composition test and recorded model-visible output.
-6. Document configuration and the tested deployment path, update bilingual package references, run focused behavior/type/documentation checks, and record remaining platform deployment evidence explicitly.
+6. Package the runtime with a Plugins configuration page. Save arbitrary peer identities and URLs, checkout mappings, worker defaults, and limits through the profile editor; store secrets through the credential service. Keep the coordinator selection per team, determined by the lead Session. Verify saved edits across reload and restart, concurrent-edit rejection, secret rotation, and page lifecycle.
+7. Document configuration and the tested deployment path, update bilingual package references, run focused behavior/type/documentation checks, and record remaining platform deployment evidence explicitly.
 
 ## Initial protocol limits
 
@@ -28,3 +29,5 @@ One environment owns each team; coordinator failover and automatic task reassign
 ## Acceptance
 
 A lead can start a member on a paired environment, exchange durable messages, and share revision-checked tasks. Retrying an uncertain command does not create another member or inbox item. Wrong environment identity, missing peer permission, and an unconfigured workspace fail closed. Every model input remains in the destination Session log. Removing a configured grant denies subsequent requests. Disconnect does not imply cancellation or task completion.
+
+Deployment choices must be editable in Plugins without source edits or deployment environment variables. No hostname, checkout path, machine count, or coordinator is fixed in code.

@@ -1,72 +1,57 @@
 ---
-description: "配置独立的 DSH Web 实例，使其参与分布式团队。"
+description: "通过插件页面配对 Harness 实例并映射本地检出目录。"
 kind: "user-guide"
 ---
 
-# 跨机器分布式团队
+# 跨机器的分布式团队
 
 [English](environment-teams.md) | 中文
 
-## 概述
+## Summary
 
-每台机器运行一个 DSH Web 实例，并配对需要交换工作的实例。此实验功能会在显式映射的本地检出目录中创建独立队友 Session。先配置一个协调端和一个工作端，再扩展到全部五台机器。
+在每台机器上通过 **插件 → 跨环境团队** 进行配置。每个 Harness 实例保留自己的 Session、凭据、模型路由和检出目录。机器数量、操作系统、主机名和检出路径由部署决定；插件不绑定特定机器组合。
 
-## 目录
+## Table of Contents
 
-- [准备各台机器](#prepare)
+- [安装插件](#install)
+- [配置各台机器](#configure)
 - [配对环境](#pair)
 - [运行团队](#run)
-- [开发备注](#dev-note)
+- [Dev Note](#dev-note)
 
-<a id="prepare"></a>
-## 准备各台机器
+<a id="install"></a>
+## 安装插件
 
-使用此分支的检出目录，先运行 `pnpm install`，再运行 `pnpm run build`。每台机器分别保留自己的 DSH 主目录、提供方凭据和仓库检出目录。如果此安装必须与另一个 DSH 安装共存，请将 `DSH_HOME` 设为私有绝对目录。
+使用 `pnpm install` 和 `pnpm run build` 构建此检出目录。打开 DSH Web，选择 **插件 → 添加插件**，输入此检出目录中 `packages/experimental/environment-team` 的绝对路径。安装并启用组合包，然后打开 **跨环境团队** 卡片。无需部署环境变量或修改源码。
 
-在启动 DSH 的 shell 中设置这些环境变量。Windows PowerShell 使用 `$env:NAME = 'value'`；Linux shell 使用 `export NAME='value'`。
+每个实例都需要独立的私有 DSH 主目录。插件在其中保留环境身份，并在配置页面显示 ID。不要将身份文件复制到另一台机器。
 
-| 变量 | 值 |
-|---|---|
-| `DSH_ENVIRONMENT_LABEL` | 便于阅读的机器标签 |
-| `DSH_TEAM_PROVIDER` | 此实例中已配置的提供方 ID |
-| `DSH_TEAM_MODEL` | 该提供方可用的模型 |
-| `DSH_TEAM_PRESET` | 已安装的本地智能体预设，例如 Web 中的 `standard` |
-| `DSH_TEAM_SANDBOX` | 初始 `read-only`、`workspace-write` 或 `danger-full-access` 限制 |
-| `DSH_TEAM_APPROVAL` | 初始 `ask` 或 `never` 审批策略 |
-| `DSH_TEAM_WORKSPACE` | 映射到 `project` 的已存在绝对检出目录 |
-| `DSH_TEAM_PEERS` | JSON 对等端数组；首次未配对启动时可省略 |
+<a id="configure"></a>
+## 配置各台机器
 
-从检出目录根目录，使用附带的覆盖层启动构建后的插件：
+设置机器名称、本地模型提供方和模型、智能体预设、沙箱模式以及审批策略。默认使用 Web 的标准预设并请求审批。添加本地检出目录，填写项目别名和这台机器上已存在的绝对目录。Windows 和 Linux 可为同一个别名设置各自的路径。
 
-```sh
-pnpm dsh web --patch apps/cli/config/examples/environment-team.yml --no-open --port 3000
-```
+保存配置。值保存在当前 profile 中，重启后仍有效。保存会重新加载团队运行时并停止其活动队友；排队消息会持久保留。过期表单不能覆盖另一客户端保存的修改。部署限制也可在同一页面设置。
 
-`http://127.0.0.1:3000/.well-known/dsh/environment` 上的描述符返回持久化的 `environmentId`。在每台机器本地记录此值。将身份文件与该安装的其余状态一同保留；新机器需要新身份。
-
-对于 tailnet 访问，[Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve) 可以把私有 HTTPS 端点转发到环回服务器。配置端点以访问端口 3000，并将其 HTTPS 来源保存为对等端 URL。通过该主机名访问浏览器时，还需提供 DSH 的常规 `--trusted-host <hostname>` 选项和操作员身份验证。对等协议使用独立凭据。
+要通过 tailnet 访问，可用 [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve) 将私有 HTTPS 端点转发到 DSH 的回环服务器。将其配置到 Web 端口，并记录 HTTPS origin 作为对端 URL。浏览器通过该主机名访问时，还需要 DSH 常规的 `--trusted-host <hostname>` 选项和操作员认证。对等端凭据与浏览器会话相互独立。
 
 <a id="pair"></a>
 ## 配对环境
 
-为每一对协调端和工作端生成至少 32 字节的随机密钥，并在两个进程中通过选定的环境变量私密配置，例如 `DSH_PEER_WORKER_ONE`。每对使用不同的密钥。将协调端的 `DSH_TEAM_PEERS` 设为 JSON 数组，每个工作端对应一项：
+选择 **添加机器**，输入另一实例显示的环境 ID 和 Tailscale HTTPS URL，并列出对端可使用的项目别名。输入独立生成的至少 32 字节配对密钥。在另一台机器上配置反向对端，使用相同密钥。每一对机器使用不同密钥。
 
-```json
-[{"environmentId":"11111111-1111-4111-8111-111111111111","url":"https://worker-one.example.ts.net","tokenEnv":"DSH_PEER_WORKER_ONE","workspaces":["project"]}]
-```
+配对密钥写入本地凭据存储，不会通过配置读取返回，也不会嵌入 profile patch。密钥字段留空可保留现有值。密钥先于 profile 更新写入；若 profile 更新失败，密钥修改不会回滚。继承的环境凭据为只读，不能通过此页面替换。密钥修改在下一次对等端请求时生效；移除对端并保存会撤销其后续请求的权限。
 
-用工作端记录的值替换示例 UUID 和主机名。在工作端使用相同的配对密钥配置协调端的 UUID 和 HTTPS 来源。两端分别将 `project` 映射到自己的本地检出目录。更改授权后重新启动两个 DSH 进程。JSON 中包含密钥变量名，不包含密钥值。
-
-一个协调端加四个工作端的星形拓扑需要四组配对。工作端之间的消息经过团队协调端。如果另一台机器也需要领导团队，请为其将要访问的主机配置授权。对等端不可用时，消息保持排队；身份不匹配或缺少工作区授权会拒绝操作。
+按部署需要添加对端和检出映射。一个协调端与四个工作端需要四组配对。工作端之间的消息经过团队协调端。双方将共享项目别名映射到自己的本地检出目录；文件不会同步。
 
 <a id="run"></a>
 ## 运行团队
 
-在协调端配置的检出目录中打开 Session。要求它使用 `environment_list`，通过 `environment_team` 创建具名工作端，为该工作端提供自包含任务，并交换消息以及检查修订号的任务更新。每个工作端都会在其所属机器的 Web UI 中显示为普通本地 Session。使用 `environment_team` 的 `list` 操作读取团队状态。
+在希望协调该团队的机器上启动主 Session。Session 必须使用这台机器已配置的一个检出目录。让智能体使用 `environment_list` 和 `environment_team`，在指定环境中创建具名队友、交换消息并更新共享任务。任意已配对机器都可以协调自己的团队；没有固定的协调端设置。
 
-排队结果确认工作已持久接纳，不代表执行或任务完成。请在检出目录之间显式交换 Git 提交或补丁。移除对等授权并重启后，后续对等请求会被拒绝；如需停止已授权的活动工作，应单独发出中断请求。
+排队结果确认消息已持久接纳，不代表执行或完成。每个工作端在目标机器的 Web UI 中显示为普通本地 Session。请显式交换 Git 提交或补丁。移除授权时需要另外中断已授权的活动工作；移除不会撤销已经接纳的工作。
 
 <a id="dev-note"></a>
-## 开发备注
+## Dev Note
 
-[包参考](../../../packages/experimental/environment-team/README.zh.md) 负责说明协议、授权、存储和资源限制。自动化证据覆盖开发机器上的隔离环回主机与录制的模型输出。混合 Linux/Windows 的 Tailscale 部署需要在实际机器群上验证。
+[包参考](../../../packages/experimental/environment-team/README.zh.md)说明协议、存储、授权和限制。自动化回环测试不能证明实际 Tailscale 机器组合的可达性。

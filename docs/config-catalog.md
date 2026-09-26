@@ -866,11 +866,14 @@ Source: [`packages/experimental/computer-use-cua-driver-mcp/src/index.ts:20`](..
 
 ## `@deepseek-ai/dsh-experimental-environment-team`
 
-Requires: `agents` · `sessions` · `sessionPersistence` · `sessionProjections` · `storageDomain` · `tools` · `webServer` · `agentPresets` · `workspaceRegistry`
+Requires: `agents` · `sessions` · `sessionPersistence` · `sessionProjections` · `storageDomain` · `tools` · `webServer` · `agentPresets` · `workspaceRegistry` · `credentials`
 
 ```ts config-catalog
 /** Plugin configuration accepted by the Loader. */
-export interface Config {
+export type Config = EnvironmentTeamConfig
+
+/** Plugin configuration accepted by the Loader. */
+export interface EnvironmentTeamConfig {
   /** Private absolute directory containing this installation's identity and ownership lock. */
   stateDirectory: string
   /** Human-readable installation label returned by discovery. */
@@ -887,13 +890,13 @@ export interface Config {
   approvalPolicy: 'ask' | 'never'
   /** Project aliases mapped to existing absolute local directories. */
   workspaces: Record<string, string>
-  /** Pairwise host grants; tokenEnv names a secret environment variable rather than containing the secret. */
+  /** Pairwise host grants; tokenEnv names a local credential reference rather than containing the secret. */
   peers?: {
     /** Persisted UUID of the authorized peer. */
     environmentId: string
     /** HTTPS origin of the peer, or literal loopback HTTP for local use. */
     url: string
-    /** Environment variable containing the pairwise bearer secret. */
+    /** Local credential reference containing the pairwise bearer secret. */
     tokenEnv: string
     /** Project aliases this peer may use. */
     workspaces: string[]
@@ -915,7 +918,7 @@ export interface Config {
 }
 ```
 
-Source: [`packages/experimental/environment-team/src/config.ts:40`](../packages/experimental/environment-team/src/config.ts)
+Source: [`packages/experimental/environment-team/src/config.ts:41`](../packages/experimental/environment-team/src/config.ts)
 
 <a id="deepseek-aidsh-experimental-inspector"></a>
 

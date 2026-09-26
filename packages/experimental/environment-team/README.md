@@ -1,6 +1,6 @@
 ---
 description: "Coordinate agents across independently owned Windows and Linux Harness environments, with authenticated peers, durable delivery, and explicit workspace mappings."
-kind: "package-reference"
+kind: "package-bundle"
 ---
 
 # @deepseek-ai/dsh-experimental-environment-team
@@ -25,13 +25,13 @@ Use this opt-in plugin to create teammates on other Harness installations and sh
 <a id="use-this-package"></a>
 ## Use this package
 
-Mount the plugin in a Web composition with durable Session persistence, storage-domain, the Agent loop, and tools. It coexists with local Agent Teams, but distributed members use `environment_team` and belong to a separate distributed roster. This package is a plugin, not an independently executable application or a profile bundle.
+Mount the plugin in a Web composition with durable Session persistence, storage-domain, the Agent loop, and tools. It coexists with local Agent Teams, but distributed members use `environment_team` and belong to a separate distributed roster. Install this package as a bundle from Plugins, then edit its Environment teams page. Its runtime and operator configuration service are separate entries, so saving runtime settings does not remove the configuration service.
 
 ### Configuration
 
 Set `stateDirectory` to a private absolute directory owned by this installation, and set `label`, `provider`, and `model` explicitly. `workspaces` maps project aliases to existing absolute local directories. The lead Session must use one of those directories. A destination uses its own mapping and model route; caller paths, model credentials, and filesystem contents never cross the peer protocol.
 
-Each `peers` entry contains `environmentId`, an HTTPS origin in `url`, the environment-variable name `tokenEnv`, and allowed project aliases in `workspaces`. Configure both ends with their partner's identity and the same independently generated secret of at least 32 bytes. Use a different secret for every pair. The token grants host-level participation in teams and remote execution within the configured workspace aliases; it is not a per-user or read-only credential. Remote agents retain the destination's composed tools and sandbox policy. Removing a peer and reloading the plugin revokes subsequent requests; already-authorized work is not automatically canceled.
+Each `peers` entry contains `environmentId`, an HTTPS origin in `url`, the credential reference `tokenEnv`, and allowed project aliases in `workspaces`. Configure both ends in Plugins with their partner's identity and the same independently generated secret of at least 32 bytes. The credential store owns secret values; each operation resolves the current value, so rotation applies without a restart. Use a different secret for every pair. The token grants host-level participation in teams and remote execution within the configured workspace aliases; it is not a per-user or read-only credential. Remote agents retain the destination's composed tools and sandbox policy. Removing a peer and saving the configuration revokes subsequent requests; already-authorized work is not automatically canceled.
 
 Configure `agentPreset`, `sandboxMode`, and `approvalPolicy` explicitly. New members mount that local preset and record those permission settings before publication; they attach to the local Workspace for Web navigation. Resumed members use their persisted preset selection and permissions, with the configured local default model route.
 
@@ -108,7 +108,7 @@ Messages append to each member's independent history. No conversation prefix or 
 
 - The coordinator must recover before authoritative task updates and member messaging can resume. There is no leader election, failover, automatic reassignment, or session migration.
 - Remote members start fresh. They exchange text, commits, or patches; the plugin does not copy conversation history, attachments, repositories, or credentials.
-- Peer credentials are deployment-configured and host-scoped. Interactive pairing, individual browser-session revocation, and per-method read-only grants are not provided.
+- Peer credentials are configured in Plugins and host-scoped. Automatic pairing invitations, individual browser-session revocation, and per-method read-only grants are not provided.
 - The distributed roster and task board appear through tool results. A unified multi-environment sidebar and the local Agent Teams graphical roster do not project this separate domain.
 - Retained teams, tasks, and command receipts have explicit limits. There is no automatic history eviction or team deletion; start a new lead Session when a team's operation budget is exhausted.
 
