@@ -1,0 +1,42 @@
+/** Browser-safe operations for destination-owned ordinary Sessions. */
+import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
+import type { SessionId } from '@deepseek-ai/dsh-session/types'
+import type { Branded } from '@deepseek-ai/dsh-brand'
+
+type WorkspaceId = Branded<'WorkspaceId'>
+type EnvironmentId = Branded<'EnvironmentId'>
+
+/** Requests never accept a caller filesystem path or model credential. */
+export type SessionRequest =
+  | { readonly action: 'list'; readonly workspaceId: WorkspaceId }
+  | { readonly action: 'create'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }
+  | { readonly action: 'read'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }
+  | { readonly action: 'cancel'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }
+  | { readonly action: 'prompt'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId; readonly requestId: SessionRequestId; readonly text: string }
+
+/** One completed, committed text message; tool and attachment details remain on the owning Web app. */
+export interface EnvironmentSessionMessage {
+  readonly seq: number
+  readonly role: 'user' | 'assistant'
+  readonly text: string
+}
+
+/** One ordinary Session currently attached to the addressed workspace. */
+export interface EnvironmentSessionSummary {
+  readonly sessionId: SessionId
+  readonly title: string
+  readonly running: boolean
+  readonly updatedAt: number
+}
+
+/** Every response retains both destination identities, including empty lists. */
+export type SessionResult = {
+  readonly environmentId: EnvironmentId
+  readonly workspaceId: WorkspaceId
+} & (
+  | { readonly kind: 'sessions'; readonly sessions: readonly EnvironmentSessionSummary[]; readonly truncated: boolean }
+  | { readonly kind: 'created'; readonly sessionId: SessionId }
+  | { readonly kind: 'accepted'; readonly sessionId: SessionId }
+  | { readonly kind: 'cancelled'; readonly sessionId: SessionId }
+  | { readonly kind: 'snapshot'; readonly sessionId: SessionId; readonly cursor: number; readonly running: boolean; readonly messages: readonly EnvironmentSessionMessage[]; readonly truncated: boolean }
+)

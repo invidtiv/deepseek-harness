@@ -14,10 +14,13 @@ import { environmentIdSchema } from './protocol.ts'
 import { PeerTransport } from './transport.ts'
 import { EnvironmentWorkspaceBrowser } from './workspace-browser.ts'
 import { workspaceRequestSchema, workspaceResultSchema } from './workspace-protocol.ts'
+import type { SessionRequest, SessionResult } from './session-types.ts'
+import { sessionRequestSchema, sessionResultSchema } from './session-protocol.ts'
+import { EnvironmentSessions } from './session-service.ts'
 
 /** Operator-only configuration namespace, separate from peer execution routes. */
 export default class EnvironmentTeamSettings extends TypertRemoteService {
-  static inject = ['configEditor', 'credentials', 'typert', 'workspaceRegistry']
+  static inject = ['configEditor', 'credentials', 'typert', 'workspaceRegistry', 'agents']
 
   private readonly abort = new AbortController()
   private readonly pending = new Set<Promise<unknown>>()
@@ -69,6 +72,33 @@ export default class EnvironmentTeamSettings extends TypertRemoteService {
       const expected = operation.action === 'catalog' ? 'catalog' : operation.action === 'register' ? 'registered' : 'directory'
       if (result.kind !== expected) throw new Error('workspace response action mismatch')
       if (result.kind === 'registered' && result.workspace.environmentId !== target || result.kind === 'catalog' && result.workspaces.some(item => item.environmentId !== target)) throw new Error('workspace environment identity mismatch')
+      return result
+    })
+  }
+
+  /** Run a session operation in its owning environment and registered workspace.
+   * @param environmentId - installation selected by the operator.
+   * @param request - workspace-scoped session operation.
+   * @param signal - operator request cancellation before admission or during reads.
+   * @returns validated destination session state; unavailable peers never execute locally.
+   */
+  @Remote
+  session(environmentId: EnvironmentTarget['environmentId'], request: SessionRequest, signal: AbortSignal): Promise<SessionResult> {
+    return this.track(async () => {
+      const lifetime = AbortSignal.any([signal, this.abort.signal])
+      lifetime.throwIfAborted()
+      const target = environmentIdSchema.parse(environmentId)
+      const operation = sessionRequestSchema.parse(request)
+      const { config } = this.entry()
+      const local = await loadIdentity(config.stateDirectory)
+      lifetime.throwIfAborted()
+      if (target === local) return new EnvironmentSessions(this.ctx, local, config).run(local, operation, lifetime)
+      const transport = new PeerTransport(local, config, this.ctx.credentials)
+      const result = sessionResultSchema.parse(JSON.parse(await transport.call(target, { kind: 'session', environmentId: target, request: operation }, lifetime)))
+      const expected = { list: 'sessions', create: 'created', read: 'snapshot', prompt: 'accepted', cancel: 'cancelled' }[operation.action]
+      if (result.kind !== expected) throw new Error('session response action mismatch')
+      if (result.environmentId !== target || result.workspaceId !== operation.workspaceId) throw new Error('session response destination mismatch')
+      if ('sessionId' in operation && 'sessionId' in result && result.sessionId !== operation.sessionId) throw new Error('session response identity mismatch')
       return result
     })
   }

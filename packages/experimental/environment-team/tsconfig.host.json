@@ -65,6 +65,9 @@
     },
     {
       "path": "../../typert/protocol"
+    },
+    {
+      "path": "../../api/session-controller/tsconfig.host.json"
     }
   ]
 }

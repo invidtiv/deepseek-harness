@@ -14,6 +14,8 @@ import { brandString } from '@deepseek-ai/dsh-brand'
 import { PeerTransport } from '../src/transport.ts'
 import { descriptorSchema } from '../src/protocol.ts'
 import type { EnvironmentConfiguration } from '../src/settings-types.ts'
+import { sessionRequestSchema, sessionResultSchema } from '../src/session-protocol.ts'
+import { EnvironmentSessions } from '../src/session-service.ts'
 
 const contexts: Awaited<ReturnType<typeof boot>>[] = []
 const roots: string[] = []
@@ -21,6 +23,56 @@ afterEach(async () => {
   vi.restoreAllMocks()
   for (const ctx of contexts.splice(0).reverse()) await ctx.fiber.dispose()
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true, maxRetries: 5 })
+})
+
+it('routes session requests to the selected destination and rejects mismatched or malformed responses', async () => {
+  const { start } = await fixture()
+  const { controller } = await start()
+  const current = await controller.read()
+  const target = brandString<EnvironmentConfiguration['environmentId']>(randomUUID())
+  const request = sessionRequestSchema.parse({ action: 'create', workspaceId: 'workspace-remote', sessionId: 'session-remote' })
+  const created = { kind: 'created', environmentId: target, workspaceId: request.workspaceId, sessionId: 'session-remote' }
+  const call = vi.spyOn(PeerTransport.prototype, 'call').mockResolvedValue(JSON.stringify(created))
+  const local = vi.spyOn(EnvironmentSessions.prototype, 'run')
+  const signal = new AbortController().signal
+  expect(await controller.session(target, request, signal)).toEqual(created)
+  expect(call).toHaveBeenCalledWith(target, { kind: 'session', environmentId: target, request }, expect.any(AbortSignal))
+  expect(local).not.toHaveBeenCalled()
+  call.mockResolvedValueOnce(JSON.stringify({ ...created, kind: 'accepted' }))
+  await expect(controller.session(target, request, signal)).rejects.toThrow('action mismatch')
+  call.mockResolvedValueOnce(JSON.stringify({ ...created, environmentId: current.environmentId }))
+  await expect(controller.session(target, request, signal)).rejects.toThrow('destination mismatch')
+  call.mockResolvedValueOnce(JSON.stringify({ ...created, workspaceId: 'workspace-other' }))
+  await expect(controller.session(target, request, signal)).rejects.toThrow('destination mismatch')
+  call.mockResolvedValueOnce(JSON.stringify({ ...created, sessionId: 'session-other' }))
+  await expect(controller.session(target, request, signal)).rejects.toThrow('identity mismatch')
+  call.mockResolvedValueOnce(JSON.stringify({ ...created, unexpected: true }))
+  await expect(controller.session(target, request, signal)).rejects.toThrow()
+  call.mockRejectedValueOnce(new Error('destination offline'))
+  await expect(controller.session(target, request, signal)).rejects.toThrow('destination offline')
+  expect(local).not.toHaveBeenCalled()
+  local.mockResolvedValueOnce(sessionResultSchema.parse({ ...created, environmentId: current.environmentId }))
+  expect(await controller.session(current.environmentId, request, signal)).toMatchObject({ environmentId: current.environmentId })
+})
+
+it('cancels session reads with their operator request and waits for them during disposal', async () => {
+  const { start } = await fixture()
+  const { controller, ctx } = await start()
+  const target = brandString<EnvironmentConfiguration['environmentId']>(randomUUID())
+  const request = sessionRequestSchema.parse({ action: 'list', workspaceId: 'workspace-remote' })
+  const call = vi.spyOn(PeerTransport.prototype, 'call').mockImplementation((_target, _request, signal) => new Promise((_resolve, reject) => {
+    signal.addEventListener('abort', () => { reject(new Error('read cancelled')) }, { once: true })
+  }))
+  const abort = new AbortController()
+  abort.abort()
+  await expect(controller.session(target, request, abort.signal)).rejects.toThrow()
+  expect(call).not.toHaveBeenCalled()
+  const pending = controller.session(target, request, new AbortController().signal)
+  const rejected = expect(pending).rejects.toThrow('read cancelled')
+  await vi.waitFor(() => { expect(call).toHaveBeenCalledTimes(1) })
+  await ctx.fiber.dispose()
+  await rejected
+  await expect(controller.session(target, request, new AbortController().signal)).rejects.toThrow('closed')
 })
 
 it('retains offline and unsupported peer identities without routing their workspace operations locally', async () => {

@@ -3,11 +3,13 @@ import { useEffect, useRef, useState } from 'react'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import { Button, IconFolderCloseRegular, IconLoadingOutlineRegular, Input } from '@deepseek-ai/dsh-client-ui-primitives'
-import type { EnvironmentTarget, WorkspaceRequest, WorkspaceResult } from '../workspace-types.ts'
+import type { EnvironmentTarget, EnvironmentWorkspace, WorkspaceRequest, WorkspaceResult } from '../workspace-types.ts'
 import css from './Environments.module.css'
 
 /** Operator actions owned by the authenticated local management connection. */
 export interface EnvironmentsActions {
+  /** @param workspace - explicitly selected destination workspace. */
+  openSessions?: (workspace: EnvironmentWorkspace) => void
   /** @returns configured installations, including unavailable peers. */
   environments: () => Promise<EnvironmentTarget[]>
   /**
@@ -32,7 +34,7 @@ export function EnvironmentsIcon({ size }: Pick<PropsRuntime<'sidebar.panellist'
  * @param props - translated copy and authenticated operations.
  * @returns the environment selector, workspace catalog, and granted-directory browser.
  */
-export function Environments({ t, environments, workspace, notify }: EnvironmentsProps) {
+export function Environments({ t, environments, workspace, notify, openSessions }: EnvironmentsProps) {
   const [targets, setTargets] = useState<EnvironmentTarget[]>([])
   const [selected, setSelected] = useState<EnvironmentTarget['environmentId']>()
   const [view, setView] = useState<WorkspaceResult>()
@@ -101,7 +103,7 @@ export function Environments({ t, environments, workspace, notify }: Environment
     {view?.kind === 'catalog' && <>
       <h2>{t('registeredWorkspaces')}</h2>
       {view.workspaces.length === 0 && <p>{t('noWorkspaces')}</p>}
-      {view.workspaces.map(item => <div className={css.row} key={`${item.environmentId}:${item.workspaceId}`}><div><strong>{item.title}</strong><code>{item.path}</code></div><Button disabled={busy} onClick={() => { void perform({ action: 'browse', alias: item.alias, relativePath: item.relativePath }) }}>{t('browse')}</Button></div>)}
+      {view.workspaces.map(item => <div className={css.row} key={`${item.environmentId}:${item.workspaceId}`}><div><strong>{item.title}</strong><code>{item.path}</code></div><div>{openSessions && <Button disabled={busy} onClick={() =>{  openSessions(item) }}>{t('openSessions')}</Button>}<Button disabled={busy} onClick={() => { void perform({ action: 'browse', alias: item.alias, relativePath: item.relativePath }) }}>{t('browse')}</Button></div></div>)}
       <h2>{t('grantedDirectories')}</h2>
       {view.roots.length === 0 && <p>{t('noGrantedDirectories')}</p>}
       {view.roots.map(root => <div className={css.row} key={root.alias}><div><strong>{root.alias}</strong><code>{root.path}</code></div><Button disabled={busy} onClick={() => { void perform({ action: 'browse', alias: root.alias, relativePath: '' }) }}>{t('browse')}</Button></div>)}
@@ -116,6 +118,6 @@ export function Environments({ t, environments, workspace, notify }: Environment
       {view.entries.map(entry => <div className={css.row} key={entry.relativePath}><span>{entry.name}</span><Button disabled={busy} onClick={() => { void perform({ action: 'browse', alias: view.alias, relativePath: entry.relativePath }) }}>{t('browse')}</Button></div>)}
       {view.truncated && <p>{t('truncated')}</p>}
     </>}
-    {view?.kind === 'registered' && <><h2>{view.workspace.title}</h2><code className={css.path}>{view.workspace.path}</code><p>{t('registeredOnMachine')}</p><Button disabled={busy} onClick={() => { void perform({ action: 'catalog' }) }}>{t('allWorkspaces')}</Button></>}
+    {view?.kind === 'registered' && <><h2>{view.workspace.title}</h2><code className={css.path}>{view.workspace.path}</code><p>{t('registeredOnMachine')}</p>{openSessions && <Button onClick={() =>{  openSessions(view.workspace) }}>{t('openSessions')}</Button>}<Button disabled={busy} onClick={() => { void perform({ action: 'catalog' }) }}>{t('allWorkspaces')}</Button></>}
   </section>
 }

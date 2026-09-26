@@ -3,6 +3,7 @@ import { z } from 'zod'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { workspaceRequestSchema } from './workspace-protocol.ts'
+import { sessionRequestSchema } from './session-protocol.ts'
 
 /** Durable identity of one independently owned Harness installation. */
 export type EnvironmentId = Branded<'EnvironmentId'>
@@ -46,7 +47,9 @@ export const descriptorSchema = z.object({
   label: z.string(),
   platform: z.string(),
   protocol: z.literal(1),
-  capabilities: z.object({ distributedTeams: z.literal(true), workspaceBrowser: z.literal(true).optional() }),
+  capabilities: z.object({
+    distributedTeams: z.literal(true), workspaceBrowser: z.literal(true).optional(), workspaceSessions: z.literal(true).optional(),
+  }),
 }).strict()
 /** Public environment identity and compatible protocol capabilities. */
 export type EnvironmentDescriptor = z.infer<typeof descriptorSchema>
@@ -101,6 +104,7 @@ export type Assignment = z.infer<typeof assignmentSchema>
 
 /** Authenticated peer request. The receiver checks target identity before dispatch. */
 export const requestSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('session'), environmentId: environmentIdSchema, request: sessionRequestSchema }).strict(),
   z.object({ kind: z.literal('workspace'), environmentId: environmentIdSchema, request: workspaceRequestSchema }).strict(),
   z.object({ kind: z.literal('command'), environmentId: environmentIdSchema, teamId, actor: sessionId, operationId, command: commandSchema }).strict(),
   z.object({ kind: z.literal('deliver'), environmentId: environmentIdSchema, assignment: assignmentSchema, message: messageSchema }).strict(),

@@ -11,6 +11,9 @@ import type { TypertRemoteContribution } from '@deepseek-ai/dsh-typert-protocol'
 import type { PageActions } from '../src/client/Page.tsx'
 import type { NoticeFace } from '../src/client/Notice.tsx'
 import type { EnvironmentsActions } from '../src/client/Environments.tsx'
+import type { SessionsFace } from '../src/client/Sessions.tsx'
+import type { EnvironmentWorkspace } from '../src/workspace-types.ts'
+import type { SessionRequest } from '../src/session-types.ts'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { apply } from '../src/client/index.ts'
 
@@ -45,15 +48,17 @@ async function fixture() {
   const set = vi.fn().mockResolvedValue({ ok: true, value: undefined })
   const environments = vi.fn().mockResolvedValue({ ok: true, value: [] })
   const workspace = vi.fn().mockResolvedValue({ ok: true, value: { kind: 'catalog', roots: [], workspaces: [], truncated: false } })
-  ctx.provide('remote.environmentTeamSettings', { read, save, environments, workspace })
+  const session = vi.fn()
+  ctx.provide('remote.environmentTeamSettings', { read, save, environments, workspace, session })
   ctx.provide('remote.credentials', { set })
   ctx.provide('locale', new LocaleRuntime(ctx))
+  ctx.provide('layout', { selectPanel: vi.fn() })
   await ctx.plugin(SlotRegistry)
   ctx.slots.register({ name: 'root', children: {
     'plugins.bundle.config': { kind: 'keyed', scope: 'root' }, 'shell.overlay': { kind: 'list', scope: 'root' },
     main: { kind: 'keyed', scope: 'root' }, 'sidebar.panellist': { kind: 'list', scope: 'root' },
   } }, (_props: PropsRenderSlots<'plugins.bundle.config' | 'shell.overlay' | 'main' | 'sidebar.panellist'>) => null)
-  return { ctx, unmount, read, save, set, environments, workspace }
+  return { ctx, unmount, read, save, set, environments, workspace, session }
 }
 
 it('withdraws its configuration page and feedback when the Client plugin is disposed', async () => {
@@ -73,7 +78,7 @@ it('withdraws its configuration page and feedback when the Client plugin is disp
   notice.dismiss()
   expect(notice.hooks.environmentNotice.getSnapshot().kind).toBeNull()
   const failure = { ok: false, error: new RemoteError('gateway/internal', 'unavailable', {}) }
-  const browser = b.ctx.slots.entries('main')[0]!.inject!()
+  const browser = b.ctx.slots.entries('main').find(entry => entry.options.key === 'environments')!.inject!()
   assertBrowser(browser)
   expect(await browser.environments()).toEqual([])
   const id = brandString<Parameters<EnvironmentsActions['workspace']>[0]>('11111111-1111-4111-8111-111111111111')
@@ -103,4 +108,56 @@ it('withdraws the Remote contribution if UI registration fails', async () => {
   vi.spyOn(b.ctx.locale, 'register').mockImplementationOnce(() => { throw new Error('registration failed') })
   await expect(apply(b.ctx)).rejects.toThrow('registration failed')
   expect(b.unmount).toHaveBeenCalledOnce()
+})
+
+it('routes the remote session panel through its destination and recovers after connection reset', async () => {
+  const b = await fixture()
+  const target: EnvironmentWorkspace = { environmentId: brandString<EnvironmentWorkspace['environmentId']>('11111111-1111-4111-8111-111111111111'), workspaceId: brandString<EnvironmentWorkspace['workspaceId']>('workspace'), alias: 'project', relativePath: '', path: '/srv/project', title: 'Project' }
+  const config = { environmentId: 'different', config: { sessionSyncIntervalMs: 60000, peers: [{ environmentId: target.environmentId, url: 'https://peer.example.ts.net' }] } }
+  b.read.mockResolvedValue({ ok: true, value: config })
+  b.session.mockImplementation(async (_id: string, request: SessionRequest) => ({ ok: true, value: {
+    environmentId: target.environmentId, workspaceId: target.workspaceId,
+    ...(request.action === 'list' ? { kind: 'sessions', sessions: [], truncated: false }
+      : request.action === 'read' ? { kind: 'snapshot', sessionId: request.sessionId, cursor: 0, running: false, messages: [], truncated: false }
+        : { kind: request.action === 'create' ? 'created' : request.action === 'prompt' ? 'accepted' : 'cancelled', sessionId: request.sessionId }),
+  } }))
+  const dispose = await apply(b.ctx)
+  const browser = b.ctx.slots.entries('main').find(entry => entry.options.key === 'environments')!.inject!()
+  assertBrowser(browser)
+  const panel = b.ctx.slots.entries('main').find(entry => entry.options.key === 'environment-sessions')!.inject!()
+  function assertPanel(value: Record<string, unknown>): asserts value is Record<string, unknown> & SessionsFace {
+    assert(typeof value.create === 'function' && typeof value.resume === 'function' && 'hooks' in value)
+  }
+  assertPanel(panel)
+  browser.openSessions!(target); panel.resume()
+  await vi.waitFor(() => { expect(panel.hooks.remoteSessions.getSnapshot().webUrl).toBe('https://peer.example.ts.net') })
+  panel.create()
+  await vi.waitFor(() => { expect(panel.hooks.remoteSessions.getSnapshot().sessionId).toBeTruthy() })
+  const id = panel.hooks.remoteSessions.getSnapshot().sessionId!
+  panel.select(id); panel.refresh()
+  await vi.waitFor(() => { expect(panel.hooks.remoteSessions.getSnapshot().transcript).toBeTruthy() })
+  panel.draft('Remote message'); panel.send()
+  await vi.waitFor(() => { expect(panel.hooks.remoteSessions.getSnapshot().draft).toBe('') })
+  panel.cancel()
+  await vi.waitFor(() => { expect(panel.hooks.remoteSessions.getSnapshot().busy).toBe(false) })
+  const failure = { ok: false, error: new RemoteError('gateway/internal', 'offline', {}) }
+  b.session.mockResolvedValueOnce(failure); b.read.mockResolvedValueOnce(failure)
+  panel.refresh()
+  await vi.waitFor(() => { expect(panel.hooks.remoteSessions.getSnapshot().offline).toBe(true) })
+  b.ctx.emit('connection/reset')
+  await vi.waitFor(() => { expect(panel.hooks.remoteSessions.getSnapshot().offline).toBe(false) })
+  b.session.mockResolvedValueOnce(failure); panel.cancel()
+  await vi.waitFor(() => { expect(panel.hooks.remoteSessions.getSnapshot().busy).toBe(false) })
+  panel.pause(); panel.back()
+  b.read.mockResolvedValueOnce(failure); browser.openSessions!(target)
+  await Promise.resolve(); await Promise.resolve()
+  b.read.mockRejectedValueOnce(new Error('offline')); browser.openSessions!(target)
+  await Promise.resolve(); await Promise.resolve()
+  b.read.mockResolvedValueOnce({ ok: true, value: { ...config, config: { ...config.config, peers: [] } } }); browser.openSessions!(target)
+  await Promise.resolve(); await Promise.resolve()
+  vi.stubGlobal('location', { origin: 'http://127.0.0.1:8080' })
+  b.read.mockResolvedValueOnce({ ok: true, value: { ...config, environmentId: target.environmentId } }); browser.openSessions!(target)
+  await vi.waitFor(() => { expect(panel.hooks.remoteSessions.getSnapshot().webUrl).toBe('http://127.0.0.1:8080') })
+  vi.unstubAllGlobals()
+  await dispose()
 })

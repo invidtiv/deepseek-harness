@@ -29,6 +29,8 @@ export interface EnvironmentTeamConfig {
     workspaces: string[]
     /** Allow this peer to browse and register workspaces beneath its granted aliases. */
     workspaceManagement?: boolean
+    /** Allow this peer to read and operate Sessions in its granted workspaces. */
+    sessionAccess?: boolean
   }[]
   /** Milliseconds allowed for discovery plus one operation. */
   requestTimeoutMs?: number
@@ -46,4 +48,8 @@ export interface EnvironmentTeamConfig {
   maxOperations?: number
   /** Maximum directory entries or workspace records returned in one view. */
   workspacePageSize?: number
+  /** Maximum Session summaries or committed messages returned in one view. */
+  sessionPageSize?: number
+  /** Milliseconds between refreshes of an open destination Session view. */
+  sessionSyncIntervalMs?: number
 }

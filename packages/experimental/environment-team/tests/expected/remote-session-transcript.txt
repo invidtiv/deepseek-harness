@@ -1,0 +1,4 @@
+user: remote message
+assistant: destination reply
+user: destination message
+assistant: destination reply

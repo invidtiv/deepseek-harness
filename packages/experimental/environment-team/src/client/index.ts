@@ -6,7 +6,11 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
 import remote from '@deepseek-ai/dsh-experimental-environment-team/remote'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import { RemoteSessionController } from './session-controller.ts'
+import { Sessions, type SessionsFace } from './Sessions.tsx'
 import { Notice, type NoticeState } from './Notice.tsx'
 import { Page, type PageActions } from './Page.tsx'
 import { en, zh, type EnvironmentSettingsKey } from './locales.ts'
@@ -28,9 +32,28 @@ export const inject = ['remote', 'slots', 'locale']
  */
 export async function apply(ctx: Context): Promise<() => Promise<void>> {
   const disposeRemote = await ctx.remote.$mount(remote)
-  const ui = ctx.inject(['remote.environmentTeamSettings', 'remote.credentials', 'slots', 'locale'], (child) => {
+  const ui = ctx.inject(['remote.environmentTeamSettings', 'remote.credentials', 'slots', 'locale', 'layout'], (child) => {
     child.effect(() => child.locale.register('environmentTeams', { en, zh }))
     const notice = createSnapshotStore<NoticeState>({ kind: null, sequence: 0 })
+    const sessions = new RemoteSessionController(async (environment, request, signal) => {
+      const result = await child.remote.environmentTeamSettings.session(environment, request, signal)
+      if (!result.ok) throw result.error
+      return result.value
+    }, async () => {
+      const result = await child.remote.environmentTeamSettings.read()
+      if (!result.ok) throw result.error
+      return result.value.config.sessionSyncIntervalMs
+    }, (success) => { notice.update((value) => { value.kind = success ? 'sessionChanged' : 'sessionChangeFailed'; value.sequence++ }) })
+    child.effect(() => () => { sessions.pause() })
+    child.on('connection/reset', () => { void sessions.refresh() })
+    const sessionActions: SessionsFace = {
+      hooks: { remoteSessions: sessions.state }, resume: () => { sessions.resume() }, pause: () => { sessions.pause() },
+      back: () => { child.layout.selectPanel(brandString<MainPanelId>('environments')) },
+      refresh: () => { void sessions.refresh() }, create: () => { void sessions.create() },
+      select: (id) => { sessions.select(id) }, draft: (text) => { sessions.draft(text) },
+      send: () => { void sessions.send() }, cancel: () => { void sessions.cancel() },
+    }
+    child.slots.inject('main', () => child.slots.register({ name: 'main', key: 'environment-sessions', locale: 'environmentTeams', inject: () => sessionActions }, Sessions))
     child.slots.inject('shell.overlay', () => child.slots.register({ name: 'shell.overlay', id: 'environment-team-notice', locale: 'environmentTeams', inject: () => ({ hooks: { environmentNotice: notice }, dismiss: () => { notice.update((value) => { value.kind = null }) } }) }, Notice))
     const actions: PageActions = {
       notify: (kind) => { notice.update((value) => { value.kind = kind; value.sequence++ }) },
@@ -54,6 +77,16 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       locale: 'environmentTeams', inject: () => actions,
     }, Page))
     const browser: EnvironmentsActions = {
+      openSessions: (workspace) => {
+        sessions.open(workspace); child.layout.selectPanel(brandString<MainPanelId>('environment-sessions'))
+        void child.remote.environmentTeamSettings.read().then((result) => {
+          if (!result.ok) return
+          const url = workspace.environmentId === result.value.environmentId
+            ? location.origin
+            : result.value.config.peers.find(peer => peer.environmentId === workspace.environmentId)?.url
+          if (url !== undefined) sessions.destination(workspace.environmentId, url)
+        }).catch((_error: unknown) => { /* Endpoint metadata is retried with the next explicit workspace selection. */ })
+      },
       environments: async () => {
         const result = await child.remote.environmentTeamSettings.environments()
         if (!result.ok) throw result.error

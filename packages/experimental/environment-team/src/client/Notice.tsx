@@ -4,7 +4,7 @@ import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Toast } from '@deepseek-ai/dsh-client-ui-primitives'
 
 /** Last completed operator save. */
-export interface NoticeState { kind: 'saved' | 'saveFailed' | 'workspaceSaved' | 'workspaceFailed' | 'folderCreated' | null; sequence: number }
+export interface NoticeState { kind: 'saved' | 'saveFailed' | 'workspaceSaved' | 'workspaceFailed' | 'folderCreated' | 'sessionChanged' | 'sessionChangeFailed' | null; sequence: number }
 /** Notification state and acknowledgement supplied by the plugin owner. */
 export interface NoticeFace { hooks: { environmentNotice: SnapshotStore<NoticeState> }; dismiss(): void }
 
@@ -14,5 +14,5 @@ export interface NoticeFace { hooks: { environmentNotice: SnapshotStore<NoticeSt
  */
 export function Notice(props: PropsLocale<'environmentTeams'> & InjectFace<NoticeFace>) {
   const state = props.useEnvironmentNotice(value => value)
-  return state.kind === null ? null : <Toast key={state.sequence} text={props.t(state.kind)} {...['saved', 'workspaceSaved', 'folderCreated'].includes(state.kind) ? { tone: 'success' as const } : {}} onDone={props.dismiss} />
+  return state.kind === null ? null : <Toast key={state.sequence} text={props.t(state.kind)} {...['saved', 'workspaceSaved', 'folderCreated', 'sessionChanged'].includes(state.kind) ? { tone: 'success' as const } : {}} onDone={props.dismiss} />
 }

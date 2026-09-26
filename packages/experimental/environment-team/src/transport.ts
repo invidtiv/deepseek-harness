@@ -63,6 +63,7 @@ export class PeerTransport {
     const bounded = AbortSignal.any([signal, AbortSignal.timeout(this.config.requestTimeoutMs)])
     const descriptor = await this.describe(environment, bounded)
     if (request.kind === 'workspace' && !descriptor.capabilities.workspaceBrowser) throw new Error('peer does not support workspace management')
+    if (request.kind === 'session' && !descriptor.capabilities.workspaceSessions) throw new Error('peer does not support workspace sessions')
     const body = JSON.stringify(request)
     if (Buffer.byteLength(body) > this.config.maxBytes) throw new Error('peer request byte limit reached')
     const response = await fetch(`${peer.url}${PEER_PATH}`, {
@@ -106,6 +107,9 @@ export class PeerTransport {
     }
     if (!peer) { response.writeHead(401).end(); return }
     if (request.method !== 'POST' || request.headers['content-type'] !== 'application/json') { response.writeHead(415).end(); return }
+    const abort = new AbortController()
+    const closed = () => { abort.abort() }
+    response.once('close', closed)
     request.setTimeout(this.config.requestTimeoutMs, () => request.destroy())
     try {
       const chunks: Buffer[] = []
@@ -118,7 +122,7 @@ export class PeerTransport {
       }
       const input = requestSchema.parse(JSON.parse(Buffer.concat(chunks).toString('utf8')))
       if (input.environmentId !== this.id) { response.writeHead(409).end(); return }
-      const result = await runtime.receive(peer, input)
+      const result = await runtime.receive(peer, input, abort.signal)
       const output = JSON.stringify({ environmentId: this.id, result })
       if (Buffer.byteLength(output) > this.config.maxBytes) { response.writeHead(413).end(); return }
       response.end(output)
@@ -126,6 +130,7 @@ export class PeerTransport {
       // Protocol failures intentionally omit payloads, paths, credentials, and peer diagnostics.
       response.writeHead(error instanceof z.ZodError ? 400 : 403).end(JSON.stringify({ error: 'peer operation rejected' }))
     } finally {
+      response.off('close', closed)
       request.setTimeout(0)
     }
   }
