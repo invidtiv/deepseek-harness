@@ -36,6 +36,7 @@ import { resolveConfig, type Config } from '../src/config.ts'
 import { descriptorSchema, environmentIdSchema, requestSchema } from '../src/protocol.ts'
 import type { WorkspaceRequest } from '../src/workspace-types.ts'
 import { workspaceResultSchema } from '../src/workspace-protocol.ts'
+import { sessionRequestSchema } from '../src/session-protocol.ts'
 import { DESCRIPTOR_PATH, PEER_PATH, PeerTransport } from '../src/transport.ts'
 
 const contexts: Context[] = []
@@ -937,6 +938,7 @@ describe('paired workspace management', () => {
     } }))
     const transport = new PeerTransport(a.id, resolveConfig(a.config), a.ctx.credentials)
     await expect(transport.call(b.id, { kind: 'workspace', environmentId: b.id, request: { action: 'catalog' } }, signal)).rejects.toThrow('does not support')
+    await expect(transport.call(b.id, { kind: 'session', environmentId: b.id, request: sessionRequestSchema.parse({ action: 'create', workspaceId: 'workspace-test', sessionId: 'session-test' }) }, signal)).rejects.toThrow('does not support workspace sessions')
     await expect(transport.describe(a.id, signal)).rejects.toThrow('not configured')
     expect(b.ctx.workspaceRegistry.list()).toHaveLength(0)
   })

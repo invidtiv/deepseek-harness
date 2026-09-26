@@ -52,7 +52,11 @@ Upgrade the plugin on both machines. On the destination, open **Plugins → Envi
 
 In your current Web app, open **Environments** in the sidebar and select the destination machine. Under granted directories, choose **Browse**, navigate to the desired directory, and select **Use as workspace**. To create a directory first, enter a folder name and select **Create folder**. The displayed path belongs to the selected machine.
 
-Registration creates the workspace on the destination. Open that machine's Web app to start its Sessions. A nested workspace needs its own configured alias before it can host a distributed team's lead Session. If discovery or browsing fails, check the destination is running, the peer URL and identity match, and workspace management is granted; then select **Refresh**. No operation is redirected to your local filesystem.
+Registration creates the workspace on the destination. A nested workspace needs its own configured alias before it can host a distributed team's lead Session. If discovery or browsing fails, check the destination is running, the peer URL and identity match, and workspace management is granted; then select **Refresh**. No operation is redirected to your local filesystem.
+
+To use Sessions from this Web app, enable **Allow workspace session access** for the calling machine in the destination's Plugins configuration. Select **Open sessions** on the registered workspace, then **New session** or open an existing Session. Send text or stop active work from that panel. Saved messages and running status refresh automatically, including messages submitted through the destination's Web app. After a connection failure, the last view remains visible and refresh resumes when the destination returns. If a send was not acknowledged, **Retry message** reuses its submission identity.
+
+Sessions run with the destination's credentials and ordinary Web defaults. Their logs and files remain there. This view shows saved text; token streaming, attachments, tool details, errors, approvals, and terminals require the destination's full Web app. Refresh intervals and message limits are configurable in Plugins. Workspace browsing permission alone does not grant Session access.
 
 <a id="run"></a>
 ## Run a team

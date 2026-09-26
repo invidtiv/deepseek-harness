@@ -9,9 +9,16 @@
     "src/client",
     "src/config-types.ts",
     "src/settings-types.ts",
-    "src/workspace-types.ts"
+    "src/workspace-types.ts",
+    "src/session-types.ts"
   ],
   "references": [
+    {
+      "path": "../../util/crypto"
+    },
+    {
+      "path": "../../api/session-controller/tsconfig.client.json"
+    },
     {
       "path": "../../util/brand"
     },

@@ -2,6 +2,7 @@
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { EnvironmentTeamConfig } from './config-types.ts'
 export type { EnvironmentTarget, EnvironmentWorkspace, WorkspaceRequest, WorkspaceResult } from './workspace-types.ts'
+export type { SessionRequest, SessionResult } from './session-types.ts'
 
 /** Optimistically edited environment configuration. */
 export interface EnvironmentConfiguration {

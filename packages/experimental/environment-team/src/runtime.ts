@@ -17,6 +17,7 @@ import { z } from 'zod'
 import type { ResolvedConfig } from './config.ts'
 import { assignmentSchema, environmentIdSchema, teamSchema } from './protocol.ts'
 import { EnvironmentWorkspaceBrowser } from './workspace-browser.ts'
+import { EnvironmentSessions } from './session-service.ts'
 import type { Assignment, Delivery, DistributedTeamId, EnvironmentDescriptor, EnvironmentId, Member, OperationId, PeerRequest, Team, TeamCommand } from './protocol.ts'
 
 const domainSpec = defineDomain({
@@ -39,6 +40,7 @@ export class EnvironmentTeams {
   private readonly active = new Set<Promise<unknown>>()
   private pumping: Promise<void> | undefined
   private stopped = false
+  private readonly workspaceSessions: EnvironmentSessions
 
   constructor(
     private readonly ctx: Context,
@@ -46,7 +48,9 @@ export class EnvironmentTeams {
     private readonly config: ResolvedConfig,
     private readonly domain: Domain<typeof domainSpec>,
     private readonly call: PeerCall,
-  ) {}
+  ) {
+    this.workspaceSessions = new EnvironmentSessions(ctx, environmentId, config)
+  }
 
   /**
    * Open validated state before publishing tools or peer routes.
@@ -85,7 +89,7 @@ export class EnvironmentTeams {
   descriptor(): EnvironmentDescriptor {
     return {
       environmentId: this.environmentId, label: this.config.label, platform: platform(),
-      protocol: 1, capabilities: { distributedTeams: true, workspaceBrowser: true },
+      protocol: 1, capabilities: { distributedTeams: true, workspaceBrowser: true, ...(this.ctx.get('sessionController') ? { workspaceSessions: true as const } : {}) },
     }
   }
 
@@ -113,12 +117,14 @@ export class EnvironmentTeams {
    * Dispatch one validated request after the carrier authenticates its peer identity.
    * @param peer - Environment established by the credential, never by request fields.
    * @param request - Parsed request whose target must match this runtime.
+   * @param signal - Optional carrier cancellation for session reads and pre-admission checks.
    * @returns JSON text acknowledging only committed state or observed cancellation.
    */
-  receive(peer: EnvironmentId, request: PeerRequest): Promise<string> {
+  receive(peer: EnvironmentId, request: PeerRequest, signal: AbortSignal = this.abort.signal): Promise<string> {
     return this.track(async () => {
       if (request.environmentId !== this.environmentId) throw new Error('environment identity mismatch')
       switch (request.kind) {
+        case 'session': return JSON.stringify(await this.workspaceSessions.run(peer, request.request, AbortSignal.any([signal, this.abort.signal])))
         case 'workspace': return JSON.stringify(await new EnvironmentWorkspaceBrowser(this.ctx, this.environmentId, this.config).run(peer, request.request))
         case 'command': return this.command(peer, request)
         case 'deliver': return this.deliver(peer, request.assignment, request.message)

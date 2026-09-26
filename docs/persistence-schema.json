@@ -51063,8 +51063,8 @@
         "packages/experimental/agent-team/src/types.ts:20",
         "packages/experimental/agent-team/src/types.ts:32",
         "packages/experimental/agent-team/src/types.ts:8",
-        "packages/experimental/environment-team/src/protocol.ts:10",
-        "packages/experimental/environment-team/src/protocol.ts:8",
+        "packages/experimental/environment-team/src/protocol.ts:11",
+        "packages/experimental/environment-team/src/protocol.ts:9",
         "packages/feedback/message-feedback/src/types.ts:14",
         "packages/goal/goal/src/types.ts:17",
         "packages/interaction/commands/src/brand.ts:31",
@@ -51529,7 +51529,7 @@
         "packages/experimental/environment-team/src/protocol.ts#EnvironmentTeamMessageSource"
       ],
       "sources": [
-        "packages/experimental/environment-team/src/protocol.ts:15"
+        "packages/experimental/environment-team/src/protocol.ts:16"
       ]
     },
     {

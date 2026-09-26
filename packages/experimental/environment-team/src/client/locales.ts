@@ -1,5 +1,14 @@
 /** English and Chinese copy for environment deployment configuration. */
 export const en = {
+  sessionAccess: 'Allow workspace session access', sessionPageSize: 'Session list and message limit', sessionSyncIntervalMs: 'Session refresh interval (ms)',
+  openDestination: 'Open destination Web app', openSessions: 'Open sessions', remoteSessions: 'Remote sessions', sessionSyncHelp: 'Sessions run on the selected machine. Saved text messages refresh automatically; attachments, tool details, approval prompts and errors remain in its full Web app.',
+  newSession: 'New session', noRemoteSessions: 'No sessions in this workspace.', openSession: 'Open session', sessionRunning: 'Running', sessionIdle: 'Idle',
+  sessionOffline: 'Could not synchronize. The last received messages remain visible. Reconnecting automatically; check session access in Plugins if this continues.',
+  sessionsTruncated: 'The session list limit was reached. Increase it in Plugins to see more sessions.',
+  sessionMessages: 'Saved messages', noSessionMessages: 'No saved messages yet.', sessionUser: 'You', sessionAssistant: 'Assistant', sessionMessage: 'Message',
+  messagesTruncated: 'Only the most recent messages are shown. Increase the session message limit in Plugins to see more.',
+  sessionUncertain: 'Delivery was not confirmed. Retry sends the same request, so an accepted message is not submitted twice.',
+  retryMessage: 'Retry message', sendMessage: 'Send message', stopSession: 'Stop', sessionChanged: 'Session updated on the selected machine.', sessionChangeFailed: 'Could not confirm the session change.',
   environments: 'Environments', environmentsHelp: 'Browse directories and create workspaces on a selected machine. Machine settings and access grants live in Plugins → Environment teams.',
   machine: 'Machine', thisMachine: 'This machine', online: 'Online', unavailable: 'Unavailable', unsupported: 'Update required', refresh: 'Refresh',
   registeredWorkspaces: 'Workspaces on this machine', grantedDirectories: 'Directories available to this connection', browse: 'Browse',
@@ -7,7 +16,7 @@ export const en = {
   workspaceReadFailed: 'Could not load this machine. Check its connection and workspace access in Plugins, then refresh.',
   allWorkspaces: 'All workspaces', parentDirectory: 'Parent folder', useDirectory: 'Use as workspace', newFolderName: 'New folder name', createFolder: 'Create folder',
   noSubdirectories: 'No subfolders in this directory.', truncated: 'The configured list limit was reached. Increase the workspace page size in Plugins to see more entries.',
-  registeredOnMachine: 'This workspace is saved on the selected machine. Open its Web app to start a session there.',
+  registeredOnMachine: 'This workspace is saved on the selected machine. Open sessions to work there from this browser.',
   workspaceSaved: 'Workspace saved on the selected machine.', workspaceFailed: 'Could not change this workspace.', folderCreated: 'Folder created.',
   workspaceManagement: 'Allow workspace browsing and creation in granted directories', workspacePageSize: 'Workspace and directory list limit',
   'read-only': 'Read only', 'workspace-write': 'Workspace write', 'danger-full-access': 'Full access', ask: 'Ask for approval', never: 'Never ask',
@@ -28,6 +37,15 @@ export const en = {
 export type EnvironmentSettingsKey = keyof typeof en
 /** Chinese translation of the configuration page. */
 export const zh: Record<EnvironmentSettingsKey, string> = {
+  sessionAccess: '允许访问工作区会话', sessionPageSize: '会话列表和消息上限', sessionSyncIntervalMs: '会话刷新间隔（毫秒）',
+  openDestination: '打开目标机器的 Web 应用', openSessions: '打开会话', remoteSessions: '远程会话', sessionSyncHelp: '会话在所选机器上运行。已保存的文本消息会自动刷新；附件、工具详情、审批提示和错误请使用该机器的完整 Web 应用。',
+  newSession: '新建会话', noRemoteSessions: '此工作区没有会话', openSession: '打开会话', sessionRunning: '运行中', sessionIdle: '空闲',
+  sessionOffline: '无法同步，仍显示上次收到的消息。正在自动重连；若持续失败，请检查插件中的会话访问权限',
+  sessionsTruncated: '已达到会话列表上限。可在插件中提高上限以显示更多会话',
+  sessionMessages: '已保存的消息', noSessionMessages: '尚无已保存的消息', sessionUser: '你', sessionAssistant: '助手', sessionMessage: '消息',
+  messagesTruncated: '仅显示最近的消息。可在插件中提高会话消息上限以显示更多内容',
+  sessionUncertain: '尚未确认投递。重试将使用同一请求，不会重复提交已接受的消息',
+  retryMessage: '重试消息', sendMessage: '发送消息', stopSession: '停止', sessionChanged: '所选机器上的会话已更新', sessionChangeFailed: '无法确认会话操作结果',
   environments: '环境', environmentsHelp: '在所选机器上浏览目录并创建工作区。机器配置和访问授权位于「插件 → 跨环境团队」。',
   machine: '机器', thisMachine: '本机', online: '在线', unavailable: '不可用', unsupported: '需要更新', refresh: '刷新',
   registeredWorkspaces: '此机器上的工作区', grantedDirectories: '此连接可访问的目录', browse: '浏览',
@@ -35,7 +53,7 @@ export const zh: Record<EnvironmentSettingsKey, string> = {
   workspaceReadFailed: '无法加载此机器。请检查连接和插件中的工作区权限，然后刷新',
   allWorkspaces: '全部工作区', parentDirectory: '上级目录', useDirectory: '设为工作区', newFolderName: '新文件夹名称', createFolder: '创建文件夹',
   noSubdirectories: '此目录中没有子目录', truncated: '已达到配置的列表上限。可在插件中提高工作区列表上限以显示更多条目',
-  registeredOnMachine: '此工作区已保存在所选机器上。请打开该机器的 Web 应用以启动会话',
+  registeredOnMachine: '此工作区已保存在所选机器上。打开会话即可在当前浏览器中使用',
   workspaceSaved: '工作区已保存在所选机器上', workspaceFailed: '无法修改此工作区', folderCreated: '文件夹已创建',
   workspaceManagement: '允许在授权目录中浏览并创建工作区', workspacePageSize: '工作区和目录列表上限',
   'read-only': '只读', 'workspace-write': '工作区写入', 'danger-full-access': '完全访问', ask: '请求审批', never: '从不请求',

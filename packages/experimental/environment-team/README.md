@@ -47,6 +47,8 @@ Configure `agentPreset`, `sandboxMode`, and `approvalPolicy` explicitly. New mem
 | `maxTasks` | `256` | Maximum retained tasks per team |
 | `maxOperations` | `2048` | Maximum retained mutating-command receipts per team |
 | `workspacePageSize` | `100` | Maximum roots, registered workspaces, or directory entries per workspace response |
+| `sessionPageSize` | `100` | Maximum Session summaries or saved text messages per response |
+| `sessionSyncIntervalMs` | `2000` | Delay between refreshes of the visible Session panel |
 
 ### Workspace browser
 
@@ -54,7 +56,15 @@ The **Environments** panel lists configured installations by durable identity an
 
 On the destination, set the calling peer's `workspaceManagement` permission to allow these operations; it defaults to `false`. Its `workspaces` grants limit directory access to configured aliases and their canonical descendants. Traversal and symlinks outside those roots reject. Directory metadata includes destination paths; file contents and credentials are not returned. Repeating folder creation or registering the same directory reuses the existing directory or workspace. `workspacePageSize` truncates lists explicitly, while `maxBytes` bounds the complete encoded response.
 
-Both installations must advertise the workspace browser capability. Remote Sessions still open in the destination's Web app. Registering a nested workspace does not add a team alias; configure that directory as an alias before using it as a distributed team's lead workspace.
+Both installations must advertise the workspace browser capability. Registering a nested workspace does not add a team alias; configure that directory as an alias before using it as a distributed team's lead workspace.
+
+### Workspace Sessions
+
+Enable the calling peer's separate `sessionAccess` grant on the destination to list, create, read, submit text to, and stop ordinary Sessions in its granted workspaces. This permission defaults to `false`; workspace-management permission does not imply Session access. The destination must advertise `workspaceSessions`, which requires its Session Controller. New Sessions use the configured agent preset and the destination's ordinary Web model and permission defaults; the team-worker model settings do not override them.
+
+Select **Open sessions** on a registered workspace. The panel refreshes saved user and assistant text and running status from the destination, retains its last view during disconnection, and resumes refreshing after recovery. The destination remains the sole owner of its Session log, credentials, execution, and files. Every request includes environment and workspace identity; a foreign Session ID never enters the local conversation controller. Creation and prompt retries retain their operation identities to avoid duplicate admission after an uncertain response.
+
+This panel displays saved text with a configurable message limit, rather than a replicated conversation database. Token streaming, tool details, attachments, approval responses, and terminals remain in the destination's full Web app. Stopping a Session requests interruption of active work and preserves its queued inbox. Revoking access rejects subsequent reads and commands; already accepted work continues.
 
 ### Team operations
 
@@ -118,7 +128,7 @@ Messages append to each member's independent history. No conversation prefix or 
 - The coordinator must recover before authoritative task updates and member messaging can resume. There is no leader election, failover, automatic reassignment, or session migration.
 - Remote members start fresh. They exchange text, commits, or patches; the plugin does not copy conversation history, attachments, repositories, or credentials.
 - Peer credentials are configured in Plugins and host-scoped. Automatic pairing invitations, individual browser-session revocation, and per-method read-only grants are not provided.
-- The distributed roster and task board appear through tool results. The Environments panel manages workspaces; remote Session tabs, terminals, and the local Agent Teams graphical roster do not project this separate domain.
+- The distributed roster and task board appear through tool results. The Environments panel provides workspace management and saved-text Session access; ordinary conversation tabs, remote terminals, and the local Agent Teams graphical roster do not project this separate domain.
 - Retained teams, tasks, and command receipts have explicit limits. There is no automatic history eviction or team deletion; start a new lead Session when a team's operation budget is exhausted.
 
 <a id="dev-note"></a>

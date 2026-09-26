@@ -17,4 +17,8 @@
 .toolbar { justify-content: flex-start; align-items: end; margin-top: 16px; }
 .loading { display: flex; justify-content: center; padding: 32px; }
 .error { min-height: 20px; }
+.messages article { padding: 16px 0; border-bottom: 1px solid var(--dsw-alias-border-l4); }
+.messages pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 20px; }
+.composer { margin-top: 24px; }
+.composer textarea { padding: 12px; font: inherit; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l4); border-radius: 8px; resize: vertical; }
 @media (max-width: 600px) { .header, .toolbar { flex-wrap: wrap; } }

@@ -17,6 +17,20 @@ const targets: EnvironmentTarget[] = [{ environmentId: windows, label: 'Windows'
 const catalog = (path: string): WorkspaceResult => ({ kind: 'catalog', roots: [{ alias: 'project', path }], workspaces: [], truncated: false })
 const directory: WorkspaceResult = { kind: 'directory', alias: 'project', relativePath: '', path: '/srv/project', entries: [], truncated: false }
 
+it('opens sessions from both an existing workspace and a newly registered directory', async () => {
+  const registered: EnvironmentWorkspace = { environmentId: linux, workspaceId: brandString<EnvironmentWorkspace['workspaceId']>('remote'), alias: 'project', relativePath: '', path: '/srv/project', title: 'Remote project' }
+  const workspace = vi.fn<EnvironmentsProps['workspace']>().mockResolvedValueOnce({ kind: 'catalog', roots: [], workspaces: [registered], truncated: false })
+    .mockResolvedValueOnce(directory).mockResolvedValueOnce({ kind: 'registered', workspace: registered })
+  const openSessions = vi.fn()
+  render(<Environments t={t} environments={async () => [targets[1]!]} workspace={workspace} notify={vi.fn()} openSessions={openSessions} />)
+  fireEvent.click(await screen.findByRole('button', { name: 'Open sessions' }))
+  expect(openSessions).toHaveBeenCalledWith(registered)
+  fireEvent.click(screen.getByRole('button', { name: 'Browse' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Use as workspace' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Open sessions' }))
+  expect(openSessions).toHaveBeenCalledTimes(2)
+})
+
 it('creates and registers a remote workspace using the selected environment and relative directory', async () => {
   const workspace = vi.fn(async (id: EnvironmentTarget['environmentId'], request: WorkspaceRequest): Promise<WorkspaceResult> => {
     if (request.action === 'catalog') return catalog(id === windows ? 'C:/project' : '/srv/project')
