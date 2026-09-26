@@ -19,7 +19,7 @@
 
 | 工具包 | 模型可见名称 | 依赖 | 写入／影响 | 随产品发布的别名 | 部署说明 |
 | --- | --- | --- | --- | --- | --- |
-| `@deepseek-ai/dsh-experimental-environment-team` | `environment_list`, `environment_team` | `agents`, `sessions`, `sessionPersistence`, `sessionProjections`, `storageDomain`, `webServer`, `agentPresets`, `workspaceRegistry` | `agent/inbox/spliced`, `environment_teams storage domain` | - | - |
+| `@deepseek-ai/dsh-experimental-environment-team` | `environment_list`, `environment_team` | `agents`, `sessions`, `sessionPersistence`, `sessionProjections`, `storageDomain`, `webServer`, `agentPresets`, `workspaceRegistry`, `credentials` | `agent/inbox/spliced`, `environment_teams storage domain` | - | - |
 | `@deepseek-ai/dsh-plugin-manager` | `plugin_manager` | `ctx.tools`, `ctx.pluginManager`, `ctx.sandboxPolicy` | `tool/call`, `tool/result`, `user/message` | - | - |
 | `@deepseek-ai/dsh-mcp-resources` | `list_mcp_resource_templates`, `list_mcp_resources`, `read_mcp_resource` | `ctx.tools`, `ctx.mcpResources` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-experimental-browser-use-stagehand-native` | `stagehand_act`、`stagehand_extract`、`stagehand_navigate`、`stagehand_observe`、`stagehand_screenshot`、`stagehand_tabs` | `ctx.browserUse`、`ctx.agents`、`ctx.tools`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | - |

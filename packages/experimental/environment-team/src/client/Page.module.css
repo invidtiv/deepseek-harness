@@ -1,0 +1,11 @@
+.page { max-width: 760px; color: var(--dsw-alias-label-primary); font-size: 13px; }
+.fields { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 16px; }
+.field { display: grid; gap: 8px; min-width: 0; }
+.row { display: grid; grid-template-columns: 1fr 2fr auto; gap: 12px; align-items: end; }
+.peer { display: grid; gap: 12px; padding: 16px 0; border-top: 1px solid var(--dsw-alias-border-l4); }
+.actions { display: flex; gap: 8px; padding: 16px 0; }
+.page h3 { font-size: 13px; font-weight: 500; margin: 0; }
+.field select { color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l4); border-radius: 8px; padding: 8px; }
+@media (max-width: 600px) { .row { grid-template-columns: 1fr; } }
+
+.loading { display: flex; justify-content: center; padding: 32px; }

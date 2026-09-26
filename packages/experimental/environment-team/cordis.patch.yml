@@ -1,0 +1,15 @@
+- insert:
+    - id: environment-team
+      name: '@deepseek-ai/dsh-experimental-environment-team'
+      config:
+        stateDirectory: !!js dshHomePath('environment-team')
+        label: This machine
+        provider: deepseek-official
+        model: deepseek-v4-flash
+        agentPreset: standard
+        sandboxMode: workspace-write
+        approvalPolicy: ask
+        workspaces: {}
+        peers: []
+    - id: environment-team-settings
+      name: '@deepseek-ai/dsh-experimental-environment-team/management'

@@ -190,7 +190,7 @@ const TOOL_PACKAGES: ToolPackage[] = [
   {
     pkg: '@deepseek-ai/dsh-experimental-environment-team', dir: 'environment-team',
     source: 'packages/experimental/environment-team/src/tools.ts',
-    requires: ['agents', 'sessions', 'sessionPersistence', 'sessionProjections', 'storageDomain', 'webServer', 'agentPresets', 'workspaceRegistry'],
+    requires: ['agents', 'sessions', 'sessionPersistence', 'sessionProjections', 'storageDomain', 'webServer', 'agentPresets', 'workspaceRegistry', 'credentials'],
     writes: ['agent/inbox/spliced', 'environment_teams storage domain'],
     mount(ctx) {
       installEnvironmentTools(ctx, {

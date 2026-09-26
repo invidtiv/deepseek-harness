@@ -1,5 +1,5 @@
 ---
-description: "Configure independent DSH Web installations to participate in distributed teams."
+description: "Pair Harness installations and map local checkouts from the Plugins page."
 kind: "user-guide"
 ---
 
@@ -9,64 +9,49 @@ English | [中文](environment-teams.zh.md)
 
 ## Summary
 
-Run one DSH Web instance per machine and pair the instances that need to exchange work. This experimental feature creates independent teammate Sessions in explicitly mapped local checkouts. Start with one coordinator and one worker before extending to all five machines.
+Configure each machine from **Plugins → Environment teams**. Each Harness installation keeps its own Sessions, credentials, model route, and checkout. Machine count, operating systems, hostnames, and checkout paths are deployment choices; the plugin does not encode a particular fleet.
 
 ## Table of Contents
 
-- [Prepare each machine](#prepare)
+- [Install the plugin](#install)
+- [Configure each machine](#configure)
 - [Pair environments](#pair)
 - [Run a team](#run)
 - [Dev Note](#dev-note)
 
-<a id="prepare"></a>
-## Prepare each machine
+<a id="install"></a>
+## Install the plugin
 
-Use this branch's checkout and build it with `pnpm install` followed by `pnpm run build`. Keep each machine's DSH home, provider credentials, and repository checkout separate. Set `DSH_HOME` to a private absolute directory if this installation must coexist with another DSH installation.
+Build this checkout with `pnpm install` and `pnpm run build`. Open DSH Web, select **Plugins → Add plugin**, and enter the absolute path to this checkout's `packages/experimental/environment-team` directory. Install and enable the bundle, then open its **Environment teams** card. No deployment environment variables or source edits are required.
 
-Set these environment variables in the shell that launches DSH. Windows PowerShell uses `$env:NAME = 'value'`; a Linux shell uses `export NAME='value'`.
+Each installation needs a private DSH home. The plugin keeps its environment identity there and displays the ID on its configuration page. Do not copy the identity file to another machine.
 
-| Variable | Value |
-|---|---|
-| `DSH_ENVIRONMENT_LABEL` | Human-readable machine label |
-| `DSH_TEAM_PROVIDER` | A provider ID configured in this instance |
-| `DSH_TEAM_MODEL` | A model available from that provider |
-| `DSH_TEAM_PRESET` | Installed local agent preset, such as `standard` in Web |
-| `DSH_TEAM_SANDBOX` | Initial `read-only`, `workspace-write`, or `danger-full-access` confinement |
-| `DSH_TEAM_APPROVAL` | Initial `ask` or `never` approval policy |
-| `DSH_TEAM_WORKSPACE` | Existing absolute checkout directory mapped to `project` |
-| `DSH_TEAM_PEERS` | JSON peer array; omit for the initial unpaired launch |
+<a id="configure"></a>
+## Configure each machine
 
-From the checkout root, launch the built plugin with the supplied overlay:
+Set the machine label, local model provider and model, agent preset, sandbox mode, and approval policy. The defaults use Web's standard preset and approval requests. Add a local checkout with a project alias and an existing absolute directory on this machine. Windows and Linux use their own paths for the same alias.
 
-```sh
-pnpm dsh web --patch apps/cli/config/examples/environment-team.yml --no-open --port 3000
-```
+Save the configuration. Values persist in the active profile and survive restart. Saving reloads the team runtime and stops its active workers; queued messages remain durable. A stale form cannot overwrite changes saved by another client. Deployment limits are available in the same page.
 
-The descriptor at `http://127.0.0.1:3000/.well-known/dsh/environment` returns the durable `environmentId`. Record it from each machine locally. Keep the identity file with the rest of that installation's state; a fresh machine needs a fresh identity.
-
-For tailnet access, [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve) can forward a private HTTPS endpoint to the loopback server. Configure the endpoint to reach port 3000 and retain its HTTPS origin as the peer URL. For browser access through that hostname, also supply DSH's ordinary `--trusted-host <hostname>` option and operator authentication. The peer protocol uses separate credentials.
+For tailnet access, [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve) can forward a private HTTPS endpoint to DSH's loopback server. Configure it for the Web port and retain its HTTPS origin as the peer URL. Browser access through that hostname also requires DSH's ordinary `--trusted-host <hostname>` option and operator authentication. Peer credentials are separate from browser sessions.
 
 <a id="pair"></a>
 ## Pair environments
 
-Generate one random secret of at least 32 bytes for each coordinator/worker pair and install it privately in both processes under a chosen environment variable, such as `DSH_PEER_WORKER_ONE`. Use a different secret for every pair. Set the coordinator's `DSH_TEAM_PEERS` to a JSON array with one entry per worker:
+Select **Add machine**, enter the other installation's displayed environment ID and Tailscale HTTPS URL, and list the project aliases the peer may use. Enter an independently generated pairing secret of at least 32 bytes. Configure the reciprocal peer on the other machine with the same secret. Use a different secret for every pair.
 
-```json
-[{"environmentId":"11111111-1111-4111-8111-111111111111","url":"https://worker-one.example.ts.net","tokenEnv":"DSH_PEER_WORKER_ONE","workspaces":["project"]}]
-```
+Pairing secrets are written to the local credential store, never returned by configuration reads or embedded in the profile patch. Leave the secret field blank to keep the existing value. Secret writes precede the profile update and are not rolled back if that update fails. An inherited environment credential is read-only and cannot be replaced through this page. Secret changes apply to the next peer request; removing a peer and saving revokes its subsequent requests.
 
-Replace the sample UUID and hostname with the worker's recorded values. On the worker, configure the coordinator's UUID and HTTPS origin with the same pair secret. Each side maps `project` to its own local checkout. Restart both DSH processes after changing grants. The JSON contains secret variable names, never secret values.
-
-A star topology needs four pairs for one coordinator and four workers. Worker-to-worker messages go through the team's coordinator. If another machine must lead teams, configure grants for the hosts it will address. An unavailable peer leaves delivery queued; a mismatched identity or missing workspace grant rejects the operation.
+Add as many peers and checkout mappings as the deployment needs. A coordinator with four workers uses four pairs. Worker-to-worker messages pass through the team's coordinator. Each side maps the shared project alias to its own local checkout; files are not synchronized.
 
 <a id="run"></a>
 ## Run a team
 
-Open a Session in the coordinator's configured checkout. Ask it to use `environment_list`, spawn a named worker with `environment_team`, give that worker a self-contained task, and exchange messages and revision-checked task updates. Each worker appears as an ordinary local Session in its own machine's Web UI. Team state is available through `environment_team` with action `list`.
+Start the lead Session on whichever machine should coordinate that team. The Session must use one of that machine's configured checkouts. Ask the agent to use `environment_list` and `environment_team` to create named workers on explicit environments, exchange messages, and update shared tasks. Any paired machine can coordinate its own teams; there is no fixed coordinator setting.
 
-A queued result confirms durable admission. It does not confirm execution or task completion. Exchange Git commits or patches explicitly between checkouts. Removing a peer grant and restarting denies subsequent peer requests; interrupt authorized active work separately when needed.
+A queued result confirms durable admission, not execution or completion. Each worker appears as an ordinary local Session in its destination Web UI. Exchange Git commits or patches explicitly between checkouts. Interrupt authorized active work separately when removing a grant; removal does not undo already accepted work.
 
 <a id="dev-note"></a>
 ## Dev Note
 
-The [package reference](../../../packages/experimental/environment-team/README.md) owns protocol, authorization, storage, and resource-limit details. Automated evidence covers isolated loopback hosts and recorded model output on the development machine. A mixed Linux/Windows Tailscale rollout requires validation on the actual fleet.
+The [package reference](../../../packages/experimental/environment-team/README.md) owns protocol, storage, authorization, and limits. Automated loopback tests do not establish reachability of a physical Tailscale fleet.
