@@ -250,6 +250,17 @@ it('runs an invocation that names no command without a registry lookup', async (
   expect(pnpm.views).toEqual([])
 })
 
+it('permits a profile-root install with inherited workspace package globs', async () => {
+  const { context, dir } = fixture()
+  const workspace = 'packages:\n  - .\n  - packages/*\nnodeLinker: hoisted\nautoInstallPeers: false\n'
+  writeFileSync(join(dir, 'pnpm-workspace.yaml'), workspace)
+  await runProfilePnpm(context, ['add', './extra'], { execution: 'service', outputBytes: 8192 })
+  expect(command.run).toHaveBeenCalledWith(expect.anything(), [
+    '--config.ignore-workspace-root-check=true', 'add', join(context.cwd, 'extra'),
+  ], expect.objectContaining({ cwd: dir }))
+  expect(readFileSync(join(dir, 'pnpm-workspace.yaml'), 'utf8')).toBe(workspace)
+})
+
 it('installs an incompatible path spec the profile exempts', async () => {
   const { home, dir, context, pnpm } = fixture()
   writePathSpec(home, '999.0.0')
@@ -285,7 +296,7 @@ it('runs the install with the caller\'s flags and its path specs anchored', asyn
   expect(await runProfilePnpm(context, ['add', './extra', '--ignore-scripts'], {
     execution: 'service', outputBytes: 8192, activateNewBundles: false,
   })).toMatchObject({ exitCode: 0 })
-  expect(command.run.mock.calls[0]?.[1]).toEqual(['add', join(context.cwd, 'extra'), '--ignore-scripts'])
+  expect(command.run.mock.calls[0]?.[1]).toEqual(['--config.ignore-workspace-root-check=true', 'add', join(context.cwd, 'extra'), '--ignore-scripts'])
 })
 
 it.each([
@@ -300,7 +311,7 @@ it.each([
   // The lookup could not judge the spec, so the run itself is what installs and checks it.
   expect(pnpm.views).toEqual(['plugin'])
   expect(command.run).toHaveBeenCalledTimes(2)
-  expect(command.run.mock.lastCall?.[1]).toEqual(['add', 'plugin'])
+  expect(command.run.mock.lastCall?.[1]).toEqual(['--config.ignore-workspace-root-check=true', 'add', 'plugin'])
   expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['plugin'])
 })
 
@@ -311,7 +322,7 @@ it.each(['github:owner/repo', 'https://example.com/plugin.tgz'])(
       .toMatchObject({ exitCode: 0 })
     expect(pnpm.views).toEqual([])
     expect(command.run).toHaveBeenCalledTimes(1)
-    expect(command.run.mock.calls[0]?.[1]).toEqual(['add', spec])
+    expect(command.run.mock.calls[0]?.[1]).toEqual(['--config.ignore-workspace-root-check=true', 'add', spec])
   })
 
 it('makes no registry lookup for commands that are not installs', async () => {
@@ -543,7 +554,7 @@ it('can install without activation and bounds output while retaining the complet
   expect(outcome).toMatchObject({ exitCode: 0, output: '6789', truncated: true })
   expect(readFileSync(outcome.logPath, 'utf8')).toBe('0123456789')
   expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual([])
-  expect(command.run.mock.calls[0]?.[1]).toEqual(['add', join(context.cwd, 'extra')])
+  expect(command.run.mock.calls[0]?.[1]).toEqual(['--config.ignore-workspace-root-check=true', 'add', join(context.cwd, 'extra')])
 })
 
 it.each([runPluginCommand, runProfilePnpm])('installs into the supplied application profile directory with %s', async (run) => {
@@ -553,7 +564,7 @@ it.each([runPluginCommand, runProfilePnpm])('installs into the supplied applicat
   pnpm.mutate = (target) => { install(target, 'extra') }
   const outcome = await run({ ...context, dir }, ['add', 'extra'], { execution: 'service', outputBytes: 100 })
   expect(outcome.exitCode).toBe(0)
-  expect(command.run).toHaveBeenCalledWith(expect.anything(), ['add', 'extra'], expect.objectContaining({ cwd: dir }))
+  expect(command.run).toHaveBeenCalledWith(expect.anything(), ['--config.ignore-workspace-root-check=true', 'add', 'extra'], expect.objectContaining({ cwd: dir }))
   expect(readProfileManifest('test', dir).dsh?.profile?.bundles).toEqual(['extra'])
   expect(readProfileManifest('test', namedDir).dependencies).not.toHaveProperty('extra')
   expect(readProfileManifest('test', namedDir).dsh?.profile?.bundles).toEqual([])
@@ -811,7 +822,7 @@ it('uses application-owned executable arguments and environment for package oper
   const { dir, context } = fixture()
   const runtime = { command: '/app/electron', args: ['--expose-internals', '/app/pnpm.mjs'], env: { ELECTRON_RUN_AS_NODE: '1', PATH: '/app/bin' } }
   await runProfilePnpm(context, ['add', './extra'], { ...runtime, execution: 'service', outputBytes: 100, activateNewBundles: false })
-  expect(command.run.mock.calls[0]).toEqual([runtime.command, [...runtime.args, 'add', resolve(context.cwd, 'extra')],
+  expect(command.run.mock.calls[0]).toEqual([runtime.command, [...runtime.args, '--config.ignore-workspace-root-check=true', 'add', resolve(context.cwd, 'extra')],
     expect.objectContaining({ env: expect.objectContaining(runtime.env) as unknown })])
   command.run.mockResolvedValueOnce(Object.assign({ exitCode: 0, failed: false }, { stdout: '{}', stderr: '', timedOut: false }))
   await viewProfilePackage(dir, 'example', { ...runtime, timeoutMs: 1000 })
