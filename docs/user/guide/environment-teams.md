@@ -16,6 +16,7 @@ Configure each machine from **Plugins → Environment teams**. Each Harness inst
 - [Install the plugin](#install)
 - [Configure each machine](#configure)
 - [Pair environments](#pair)
+- [Create a workspace on another machine](#workspace)
 - [Run a team](#run)
 - [Dev Note](#dev-note)
 
@@ -43,6 +44,15 @@ Select **Add machine**, enter the other installation's displayed environment ID 
 Pairing secrets are written to the local credential store, never returned by configuration reads or embedded in the profile patch. Leave the secret field blank to keep the existing value. Secret writes precede the profile update and are not rolled back if that update fails. An inherited environment credential is read-only and cannot be replaced through this page. Secret changes apply to the next peer request; removing a peer and saving revokes its subsequent requests.
 
 Add as many peers and checkout mappings as the deployment needs. A coordinator with four workers uses four pairs. Worker-to-worker messages pass through the team's coordinator. Each side maps the shared project alias to its own local checkout; files are not synchronized.
+
+<a id="workspace"></a>
+## Create a workspace on another machine
+
+Upgrade the plugin on both machines. On the destination, open **Plugins → Environment teams**, enable **Allow workspace browsing and creation in granted directories** for the calling machine, and save. Add an existing parent directory as a checkout alias and include that alias in the caller's allowed workspaces.
+
+In your current Web app, open **Environments** in the sidebar and select the destination machine. Under granted directories, choose **Browse**, navigate to the desired directory, and select **Use as workspace**. To create a directory first, enter a folder name and select **Create folder**. The displayed path belongs to the selected machine.
+
+Registration creates the workspace on the destination. Open that machine's Web app to start its Sessions. A nested workspace needs its own configured alias before it can host a distributed team's lead Session. If discovery or browsing fails, check the destination is running, the peer URL and identity match, and workspace management is granted; then select **Refresh**. No operation is redirected to your local filesystem.
 
 <a id="run"></a>
 ## Run a team

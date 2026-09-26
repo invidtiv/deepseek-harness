@@ -29,7 +29,7 @@ Mount the plugin in a Web composition with durable Session persistence, storage-
 
 ### Configuration
 
-Set `stateDirectory` to a private absolute directory owned by this installation, and set `label`, `provider`, and `model` explicitly. `workspaces` maps project aliases to existing absolute local directories. The lead Session must use one of those directories. A destination uses its own mapping and model route; caller paths, model credentials, and filesystem contents never cross the peer protocol.
+Set `stateDirectory` to a private absolute directory owned by this installation, and set `label`, `provider`, and `model` explicitly. `workspaces` maps project aliases to existing absolute local directories. The lead Session must use one of those directories. A destination uses its own mapping, filesystem, and model route; model credentials are never copied between installations.
 
 Each `peers` entry contains `environmentId`, an HTTPS origin in `url`, the credential reference `tokenEnv`, and allowed project aliases in `workspaces`. Configure both ends in Plugins with their partner's identity and the same independently generated secret of at least 32 bytes. The credential store owns secret values; each operation resolves the current value, so rotation applies without a restart. Use a different secret for every pair. The token grants host-level participation in teams and remote execution within the configured workspace aliases; it is not a per-user or read-only credential. Remote agents retain the destination's composed tools and sandbox policy. Removing a peer and saving the configuration revokes subsequent requests; already-authorized work is not automatically canceled.
 
@@ -46,6 +46,15 @@ Configure `agentPreset`, `sandboxMode`, and `approvalPolicy` explicitly. New mem
 | `maxMembers` | `16` | Maximum members per team, including the lead |
 | `maxTasks` | `256` | Maximum retained tasks per team |
 | `maxOperations` | `2048` | Maximum retained mutating-command receipts per team |
+| `workspacePageSize` | `100` | Maximum roots, registered workspaces, or directory entries per workspace response |
+
+### Workspace browser
+
+The **Environments** panel lists configured installations by durable identity and preserves unavailable entries. Selecting an installation discovers its registered workspaces and browses its granted directories. Folder creation and workspace registration execute on that destination; an unavailable peer never falls back to the local machine. Failed refreshes retain the loaded view, and responses for a previously selected installation cannot replace the current view.
+
+On the destination, set the calling peer's `workspaceManagement` permission to allow these operations; it defaults to `false`. Its `workspaces` grants limit directory access to configured aliases and their canonical descendants. Traversal and symlinks outside those roots reject. Directory metadata includes destination paths; file contents and credentials are not returned. Repeating folder creation or registering the same directory reuses the existing directory or workspace. `workspacePageSize` truncates lists explicitly, while `maxBytes` bounds the complete encoded response.
+
+Both installations must advertise the workspace browser capability. Remote Sessions still open in the destination's Web app. Registering a nested workspace does not add a team alias; configure that directory as an alias before using it as a distributed team's lead workspace.
 
 ### Team operations
 
@@ -109,7 +118,7 @@ Messages append to each member's independent history. No conversation prefix or 
 - The coordinator must recover before authoritative task updates and member messaging can resume. There is no leader election, failover, automatic reassignment, or session migration.
 - Remote members start fresh. They exchange text, commits, or patches; the plugin does not copy conversation history, attachments, repositories, or credentials.
 - Peer credentials are configured in Plugins and host-scoped. Automatic pairing invitations, individual browser-session revocation, and per-method read-only grants are not provided.
-- The distributed roster and task board appear through tool results. A unified multi-environment sidebar and the local Agent Teams graphical roster do not project this separate domain.
+- The distributed roster and task board appear through tool results. The Environments panel manages workspaces; remote Session tabs, terminals, and the local Agent Teams graphical roster do not project this separate domain.
 - Retained teams, tasks, and command receipts have explicit limits. There is no automatic history eviction or team deletion; start a new lead Session when a team's operation budget is exhausted.
 
 <a id="dev-note"></a>

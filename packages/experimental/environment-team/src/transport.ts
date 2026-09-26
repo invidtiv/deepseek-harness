@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { ResolvedConfig } from './config.ts'
 import { descriptorSchema, requestSchema, type EnvironmentId, type PeerRequest } from './protocol.ts'
+import type { EnvironmentDescriptor } from './protocol.ts'
 import type { EnvironmentTeams } from './runtime.ts'
 
 /** Public discovery URL; callers must still authenticate every operation. */
@@ -60,10 +61,8 @@ export class PeerTransport {
     const token = (await this.tokens()).get(environment)
     if (!peer || !token) throw new Error('peer is not configured')
     const bounded = AbortSignal.any([signal, AbortSignal.timeout(this.config.requestTimeoutMs)])
-    const descriptorResponse = await fetch(`${peer.url}${DESCRIPTOR_PATH}`, { signal: bounded, redirect: 'error' })
-    if (!descriptorResponse.ok) { await descriptorResponse.body?.cancel(); throw new Error('peer descriptor is unavailable') }
-    const descriptor = descriptorSchema.parse(JSON.parse(await boundedResponse(descriptorResponse, this.config.maxBytes)))
-    if (descriptor.environmentId !== environment) throw new Error('peer environment identity mismatch')
+    const descriptor = await this.describe(environment, bounded)
+    if (request.kind === 'workspace' && !descriptor.capabilities.workspaceBrowser) throw new Error('peer does not support workspace management')
     const body = JSON.stringify(request)
     if (Buffer.byteLength(body) > this.config.maxBytes) throw new Error('peer request byte limit reached')
     const response = await fetch(`${peer.url}${PEER_PATH}`, {
@@ -74,6 +73,21 @@ export class PeerTransport {
     const result = responseSchema.parse(JSON.parse(await boundedResponse(response, this.config.maxBytes)))
     if (result.environmentId !== environment) throw new Error('peer response identity mismatch')
     return result.result
+  }
+
+  /** Fetch a bounded descriptor and verify the pinned identity before using a route.
+   * @param environment - configured destination identity.
+   * @param signal - owner cancellation.
+   * @returns the verified descriptor; route and identity failures reject.
+   */
+  async describe(environment: EnvironmentId, signal: AbortSignal): Promise<EnvironmentDescriptor> {
+    const peer = this.config.peers.find(item => item.environmentId === environment)
+    if (!peer) throw new Error('peer is not configured')
+    const response = await fetch(`${peer.url}${DESCRIPTOR_PATH}`, { signal: AbortSignal.any([signal, AbortSignal.timeout(this.config.requestTimeoutMs)]), redirect: 'error' })
+    if (!response.ok) { await response.body?.cancel(); throw new Error('peer descriptor is unavailable') }
+    const descriptor = descriptorSchema.parse(JSON.parse(await boundedResponse(response, this.config.maxBytes)))
+    if (descriptor.environmentId !== environment) throw new Error('peer environment identity mismatch')
+    return descriptor
   }
 
   /**

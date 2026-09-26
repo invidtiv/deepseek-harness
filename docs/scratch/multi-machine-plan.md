@@ -22,6 +22,14 @@ This work targets five independent DSH Web installations: one Linux host and fou
 6. Package the runtime with a Plugins configuration page. Save arbitrary peer identities and URLs, checkout mappings, worker defaults, and limits through the profile editor; store secrets through the credential service. Keep the coordinator selection per team, determined by the lead Session. Verify saved edits across reload and restart, concurrent-edit rejection, secret rotation, and page lifecycle.
 7. Document configuration and the tested deployment path, update bilingual package references, run focused behavior/type/documentation checks, and record remaining platform deployment evidence explicitly.
 
+## Remaining implementation sequence
+
+1. Workspace management: add the Environments panel, destination directory browsing, folder creation, and workspace registration. Require explicit per-peer grants, capability discovery, identity-scoped responses, bounded lists, and canonical path checks. Validate remote mutations, grant removal, stale responses, and unsupported peers before rollout.
+2. Unified remote Sessions: introduce an environment-keyed client connection registry and scoped workspace/Session references. Route chat, attachments, approvals, terminals, and navigation to their owning installation; preserve disconnected registrations without local fallback. Remote workspace registration alone does not implement this client lifecycle.
+3. Distributed team dashboard: project coordinator-owned rosters, revisioned tasks, delivery status, and interruptions into the GUI. Keep remote members distinct from local Agent handles and surface coordinator disconnection explicitly.
+4. Pairing lifecycle: add one-time invitations and individually revocable grants while retaining direct Tailscale configuration in Plugins. Verify replay rejection, expiration, permission narrowing, and credential rotation.
+5. Physical rollout: upgrade the paired Windows and Linux hosts, verify a real cross-machine team and restart recovery, then configure the other three Windows hosts. Record each host's actual reachability and execution evidence; loopback fixtures are insufficient.
+
 ## Initial protocol limits
 
 One environment owns each team; coordinator failover and automatic task reassignment are excluded. Remote agents start with fresh context. Files are never synchronized implicitly: hosts map project aliases to independent checkouts and exchange commits or patches. Browser aggregation into one multi-environment sidebar is a separate client feature; this iteration keeps DSH Web available on every host.

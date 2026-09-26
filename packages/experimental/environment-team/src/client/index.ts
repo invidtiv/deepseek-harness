@@ -10,6 +10,7 @@ import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { Notice, type NoticeState } from './Notice.tsx'
 import { Page, type PageActions } from './Page.tsx'
 import { en, zh, type EnvironmentSettingsKey } from './locales.ts'
+import { Environments, EnvironmentsIcon, type EnvironmentsActions } from './Environments.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -52,6 +53,21 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       name: 'plugins.bundle.config', key: '@deepseek-ai/dsh-experimental-environment-team',
       locale: 'environmentTeams', inject: () => actions,
     }, Page))
+    const browser: EnvironmentsActions = {
+      environments: async () => {
+        const result = await child.remote.environmentTeamSettings.environments()
+        if (!result.ok) throw result.error
+        return result.value
+      },
+      workspace: async (environment, request) => {
+        const result = await child.remote.environmentTeamSettings.workspace(environment, request)
+        if (!result.ok) throw result.error
+        return result.value
+      },
+      notify: (kind) => { notice.update((value) => { value.kind = kind; value.sequence++ }) },
+    }
+    child.slots.inject('main', () => child.slots.register({ name: 'main', key: 'environments', locale: 'environmentTeams', inject: () => browser }, Environments))
+    child.slots.inject('sidebar.panellist', () => child.slots.register({ name: 'sidebar.panellist', id: 'environments', order: 1, label: () => child.locale.bind('environmentTeams')('environments'), locale: 'environmentTeams' }, EnvironmentsIcon))
   })
   try { await ui } catch (error) { await ui.dispose(); await disposeRemote(); throw error }
   return async () => { await ui.dispose(); await disposeRemote() }

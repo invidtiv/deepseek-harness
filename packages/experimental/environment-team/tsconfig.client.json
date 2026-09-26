@@ -8,10 +8,13 @@
   "include": [
     "src/client",
     "src/config-types.ts",
-    "src/settings-types.ts"
+    "src/settings-types.ts",
+    "src/workspace-types.ts"
   ],
   "references": [
-    { "path": "../../util/brand" },
+    {
+      "path": "../../util/brand"
+    },
     {
       "path": "../../api/remotes/tsconfig.client.json"
     },
@@ -41,6 +44,9 @@
     },
     {
       "path": "../../client/ui-layout"
+    },
+    {
+      "path": "../../client/ui-sidebar"
     }
   ]
 }

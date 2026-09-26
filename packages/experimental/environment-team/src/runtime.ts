@@ -16,6 +16,7 @@ import { defineDomain, type Domain } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
 import type { ResolvedConfig } from './config.ts'
 import { assignmentSchema, environmentIdSchema, teamSchema } from './protocol.ts'
+import { EnvironmentWorkspaceBrowser } from './workspace-browser.ts'
 import type { Assignment, Delivery, DistributedTeamId, EnvironmentDescriptor, EnvironmentId, Member, OperationId, PeerRequest, Team, TeamCommand } from './protocol.ts'
 
 const domainSpec = defineDomain({
@@ -84,7 +85,7 @@ export class EnvironmentTeams {
   descriptor(): EnvironmentDescriptor {
     return {
       environmentId: this.environmentId, label: this.config.label, platform: platform(),
-      protocol: 1, capabilities: { distributedTeams: true },
+      protocol: 1, capabilities: { distributedTeams: true, workspaceBrowser: true },
     }
   }
 
@@ -118,6 +119,7 @@ export class EnvironmentTeams {
     return this.track(async () => {
       if (request.environmentId !== this.environmentId) throw new Error('environment identity mismatch')
       switch (request.kind) {
+        case 'workspace': return JSON.stringify(await new EnvironmentWorkspaceBrowser(this.ctx, this.environmentId, this.config).run(peer, request.request))
         case 'command': return this.command(peer, request)
         case 'deliver': return this.deliver(peer, request.assignment, request.message)
         case 'interrupt': {

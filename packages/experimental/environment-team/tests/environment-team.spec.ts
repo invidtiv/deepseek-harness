@@ -2,7 +2,8 @@
 import { createConnection } from 'node:net'
 import { once } from 'node:events'
 import { randomUUID } from 'node:crypto'
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, symlink, unlink, writeFile } from 'node:fs/promises'
+import * as filesystem from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -33,12 +34,15 @@ import { EnvironmentTeams } from '../src/runtime.ts'
 import { loadIdentity } from '../src/identity.ts'
 import { resolveConfig, type Config } from '../src/config.ts'
 import { descriptorSchema, environmentIdSchema, requestSchema } from '../src/protocol.ts'
+import type { WorkspaceRequest } from '../src/workspace-types.ts'
+import { workspaceResultSchema } from '../src/workspace-protocol.ts'
 import { DESCRIPTOR_PATH, PEER_PATH, PeerTransport } from '../src/transport.ts'
 
 const contexts: Context[] = []
 const roots: string[] = []
 const environmentKeys: string[] = []
 const signal = new AbortController().signal
+vi.mock('node:fs/promises', { spy: true })
 
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -824,4 +828,125 @@ it('uses stored pairing secrets and applies rotation and removal to the next req
   expect((await request(rotated)).status).toBe(415)
   await a.ctx.credentials.unset(credentialRef(key))
   expect((await request(rotated)).status).toBe(401)
+})
+
+describe('paired workspace management', () => {
+  async function fixtures(options: { workspacePageSize?: number; maxBytes?: number; granted?: boolean } = {}) {
+    const a = await host()
+    const b = await host()
+    pair(a, b)
+    b.config.peers[0]!.workspaceManagement = options.granted ?? true
+    await mount(a)
+    const mounted = await mount(b, { ...b.config, ...options })
+    const transport = new PeerTransport(a.id, resolveConfig(a.config), a.ctx.credentials)
+    const call = async (request: WorkspaceRequest) => workspaceResultSchema.parse(JSON.parse(await transport.call(b.id, { kind: 'workspace', environmentId: b.id, request }, signal)))
+    return { a, b, call, mounted }
+  }
+
+  it('creates and registers a directory on the destination without touching the caller filesystem', async () => {
+    const { a, b, call } = await fixtures()
+    expect(await call({ action: 'catalog' })).toMatchObject({ kind: 'catalog', roots: [{ alias: 'project', path: b.cwd }], workspaces: [{ environmentId: b.id }] })
+    expect(await call({ action: 'mkdir', alias: 'project', relativePath: '', name: 'remote-project' })).toMatchObject({ kind: 'directory', path: join(b.cwd, 'remote-project'), relativePath: 'remote-project' })
+    const request = { action: 'register', alias: 'project', relativePath: 'remote-project' } as const
+    const values = await Promise.all([call(request), call(request)])
+    expect(values[0]).toEqual(values[1])
+    expect(values[0]).toMatchObject({ kind: 'registered', workspace: { environmentId: b.id, path: join(b.cwd, 'remote-project') } })
+    expect(b.ctx.workspaceRegistry.list()).toHaveLength(2)
+    expect(a.ctx.workspaceRegistry.list()).toHaveLength(1)
+    await expect(readFile(join(a.cwd, 'remote-project'))).rejects.toMatchObject({ code: 'ENOENT' })
+    expect(await call({ action: 'mkdir', alias: 'project', relativePath: '', name: 'remote-project' })).toMatchObject({ kind: 'directory' })
+    expect(await call({ action: 'browse', alias: 'project', relativePath: '' })).toMatchObject({ entries: [{ name: 'remote-project', relativePath: 'remote-project' }] })
+  })
+
+  it('requires explicit workspace management permission and applies grant removal immediately', async () => {
+    const { b, call, mounted } = await fixtures({ granted: false })
+    await expect(call({ action: 'catalog' })).rejects.toThrow('HTTP 403')
+    await mounted.dispose()
+    b.config.peers[0]!.workspaceManagement = true
+    const allowed = await mount(b)
+    expect(await call({ action: 'catalog' })).toMatchObject({ kind: 'catalog' })
+    await allowed.dispose()
+    b.config.peers[0]!.workspaces = []
+    await mount(b)
+    expect(await call({ action: 'catalog' })).toMatchObject({ roots: [], workspaces: [] })
+    await expect(call({ action: 'browse', alias: 'project', relativePath: '' })).rejects.toThrow('HTTP 403')
+  })
+
+  it('rejects traversal, absolute paths, and directory symlinks outside the grant', async () => {
+    const { a, b, call } = await fixtures()
+    for (const relativePath of ['../outside', '/absolute', 'C:/absolute', 'a\\b', 'a/../b']) {
+      const result = await fetch(`${b.url}${PEER_PATH}`, { method: 'POST', headers: { authorization: `Bearer ${process.env[a.config.peers[0]!.tokenEnv]}`, 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'workspace', environmentId: b.id, request: { action: 'browse', alias: 'project', relativePath } }) })
+      expect(result.status).toBe(400)
+      await result.body?.cancel()
+    }
+    const link = join(b.cwd, 'escape')
+    await symlink(a.cwd, link, 'junction')
+    try {
+      await expect(call({ action: 'register', alias: 'project', relativePath: 'escape' })).rejects.toThrow('HTTP 403')
+      await expect(call({ action: 'mkdir', alias: 'project', relativePath: 'escape', name: 'bad' })).rejects.toThrow('HTTP 403')
+    } finally { await unlink(link) }
+    await expect(call({ action: 'browse', alias: 'missing', relativePath: '' })).rejects.toThrow('HTTP 403')
+    await writeFile(join(b.cwd, 'file'), 'content')
+    await expect(call({ action: 'browse', alias: 'project', relativePath: 'file' })).rejects.toThrow('HTTP 403')
+    await expect(call({ action: 'mkdir', alias: 'project', relativePath: '', name: 'file' })).rejects.toThrow('HTTP 403')
+  })
+
+  it('reports bounded directory and registry views with explicit truncation', async () => {
+    const { b, call } = await fixtures({ workspacePageSize: 1 })
+    await mkdir(join(b.cwd, 'one'))
+    await mkdir(join(b.cwd, 'two'))
+    await b.ctx.workspaceRegistry.create(join(b.cwd, 'one'))
+    await b.ctx.workspaceRegistry.create(join(b.cwd, 'two'))
+    const directory = await call({ action: 'browse', alias: 'project', relativePath: '' })
+    expect(directory).toMatchObject({ kind: 'directory', truncated: true })
+    if (directory.kind !== 'directory') throw new Error('wrong response')
+    expect(directory.entries).toHaveLength(1)
+    const catalog = await call({ action: 'catalog' })
+    expect(catalog).toMatchObject({ kind: 'catalog', truncated: true })
+    if (catalog.kind !== 'catalog') throw new Error('wrong response')
+    expect(catalog.workspaces).toHaveLength(1)
+  })
+
+  it('bounds complete encoded workspace responses', async () => {
+    const { call } = await fixtures({ maxBytes: 200 })
+    await expect(call({ action: 'catalog' })).rejects.toThrow('HTTP 403')
+  })
+
+  it('omits missing and escaped registered directories and sorts directory names without listing files', async () => {
+    const { b, call } = await fixtures()
+    await mkdir(join(b.cwd, 'zebra'))
+    await mkdir(join(b.cwd, 'alpha'))
+    await writeFile(join(b.cwd, 'file.txt'), 'not a directory')
+    const missing = join(b.cwd, 'missing')
+    await mkdir(missing)
+    await b.ctx.workspaceRegistry.create(missing)
+    await rm(missing, { recursive: true })
+    const outside = await temporary()
+    await b.ctx.workspaceRegistry.create(outside)
+    expect(await call({ action: 'catalog' })).toMatchObject({ workspaces: [{ path: b.cwd }] })
+    expect(await call({ action: 'browse', alias: 'project', relativePath: '' })).toMatchObject({ entries: [{ name: 'alpha' }, { name: 'zebra' }] })
+  })
+
+  it('refuses workspace requests to an older peer before sending a mutation', async () => {
+    const a = await host()
+    const b = await host()
+    pair(a, b)
+    b.ctx.effect(() => b.ctx.webServer.register({ kind: 'exact', path: DESCRIPTOR_PATH, handler(_request, response) {
+      response.setHeader('content-type', 'application/json')
+      response.end(JSON.stringify({ environmentId: b.id, label: 'older', platform: 'linux', protocol: 1, capabilities: { distributedTeams: true } }))
+    } }))
+    const transport = new PeerTransport(a.id, resolveConfig(a.config), a.ctx.credentials)
+    await expect(transport.call(b.id, { kind: 'workspace', environmentId: b.id, request: { action: 'catalog' } }, signal)).rejects.toThrow('does not support')
+    await expect(transport.describe(a.id, signal)).rejects.toThrow('not configured')
+    expect(b.ctx.workspaceRegistry.list()).toHaveLength(0)
+  })
+
+  it('reports filesystem failures instead of showing an empty catalog or successful creation', async () => {
+    const { b, call } = await fixtures()
+    const resolvePath = vi.spyOn(filesystem, 'realpath').mockResolvedValueOnce(b.cwd).mockRejectedValueOnce(Object.assign(new Error('denied'), { code: 'EACCES' }))
+    try { await expect(call({ action: 'catalog' })).rejects.toThrow('HTTP 403') } finally { resolvePath.mockRestore() }
+    const create = vi.spyOn(filesystem, 'mkdir').mockRejectedValueOnce(Object.assign(new Error('denied'), { code: 'EACCES' }))
+    try { await expect(call({ action: 'mkdir', alias: 'project', relativePath: '', name: 'denied' })).rejects.toThrow('HTTP 403') } finally { create.mockRestore() }
+    await expect(filesystem.stat(join(b.cwd, 'denied'))).rejects.toMatchObject({ code: 'ENOENT' })
+  })
 })

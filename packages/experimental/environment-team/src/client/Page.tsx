@@ -23,7 +23,7 @@ export interface PageActions {
 export type PageProps = Pick<PropsRuntime<'plugins.bundle.config'>, 'view'> & PropsLocale<'environmentTeams'> & PageActions
 
 const scalarFields = ['label', 'provider', 'model', 'agentPreset'] as const
-const limits = ['requestTimeoutMs', 'retryIntervalMs', 'maxBytes', 'maxTeams', 'maxMembers', 'maxTasks', 'maxOperations'] as const
+const limits = ['requestTimeoutMs', 'retryIntervalMs', 'maxBytes', 'maxTeams', 'maxMembers', 'maxTasks', 'maxOperations', 'workspacePageSize'] as const
 
 /** Render editable deployment values without embedding credentials in saved configuration.
  * @param props - localized copy and authenticated profile operations.
@@ -97,6 +97,7 @@ export function Page(props: PageProps) {
         {field('environmentId', peer.environmentId, (value) => { updatePeer(index, { environmentId: value, tokenEnv: `DSH_PEER_${value.replaceAll('-', '_')}` }) })}
         {field('url', peer.url, (value) => { updatePeer(index, { url: value }) })}
         {field('grants', peer.workspaces.join(', '), (value) => { updatePeer(index, { workspaces: value.split(',').map(item => item.trim()) }) })}
+        <label><input type="checkbox" checked={peer.workspaceManagement ?? false} onChange={(event) => { updatePeer(index, { workspaceManagement: event.target.checked }) }} />{t('workspaceManagement')}</label>
         {field('secret', secrets[index] ?? '', (value) => { setSecrets({ ...secrets, [index]: value }) }, 'password')}
         <Button onClick={() => { setDraft({ ...draft, peers: peers.filter((_, i) => i !== index) })
           setSecrets(Object.fromEntries(Object.entries(secrets).filter(([key]) => Number(key) !== index).map(([key, value]) => [Number(key) > index ? Number(key) - 1 : Number(key), value]))) }}>{t('remove')}</Button>
