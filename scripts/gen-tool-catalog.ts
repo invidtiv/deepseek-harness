@@ -64,6 +64,9 @@ import BrowserUseRegistry from '@deepseek-ai/dsh-browser-use'
 import * as StagehandBrowserTools from '@deepseek-ai/dsh-experimental-browser-use-stagehand-native'
 import type TeamService from '@deepseek-ai/dsh-experimental-agent-team'
 import * as ToolTeam from '@deepseek-ai/dsh-experimental-tool-agent-team'
+import { installTools as installEnvironmentTools } from '../packages/experimental/environment-team/src/tools.ts'
+import { resolveConfig as environmentConfig } from '../packages/experimental/environment-team/src/config.ts'
+import { environmentIdSchema } from '../packages/experimental/environment-team/src/protocol.ts'
 import * as ToolTodo from '@deepseek-ai/dsh-tool-todo'
 import type PluginManager from '@deepseek-ai/dsh-plugin-manager'
 import * as PluginManagerTools from '@deepseek-ai/dsh-plugin-manager/tools'
@@ -184,6 +187,19 @@ export interface ToolPackage {
  * guard proves it is exhaustive against the on-disk glob.
  */
 const TOOL_PACKAGES: ToolPackage[] = [
+  {
+    pkg: '@deepseek-ai/dsh-experimental-environment-team', dir: 'environment-team',
+    source: 'packages/experimental/environment-team/src/tools.ts',
+    requires: ['agents', 'sessions', 'sessionPersistence', 'sessionProjections', 'storageDomain', 'webServer', 'agentPresets', 'workspaceRegistry'],
+    writes: ['agent/inbox/spliced', 'environment_teams storage domain'],
+    mount(ctx) {
+      installEnvironmentTools(ctx, {
+        descriptor: () => ({ environmentId: environmentIdSchema.parse('11111111-1111-4111-8111-111111111111'), label: 'catalog', platform: 'linux', protocol: 1, capabilities: { distributedTeams: true } }),
+        execute: () => Promise.reject(new Error('catalog does not execute tools')),
+      }, environmentConfig({ stateDirectory: resolve('.'), label: 'catalog', provider: 'catalog', model: 'catalog', agentPreset: 'catalog', sandboxMode: 'read-only', approvalPolicy: 'ask', workspaces: {} }))
+      return Promise.resolve()
+    },
+  },
   {
     pkg: '@deepseek-ai/dsh-plugin-manager',
     dir: 'plugin-manager',

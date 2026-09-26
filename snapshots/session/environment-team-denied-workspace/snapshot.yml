@@ -1,0 +1,10 @@
+version: 1
+scenario: environment-team-denied-workspace
+profile: headless
+composition: environment-team-denied-workspace
+recording: authored
+header:
+  class: environment-team-denied-workspace
+  pin: true
+replay:
+  override: true

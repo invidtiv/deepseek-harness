@@ -15,6 +15,7 @@ This table connects model-visible tool names to the plugin package and service s
 
 | Tool package | Model-visible names | Requires | Writes / affects | Shipped aliases | Deployment note |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-experimental-environment-team` | `environment_list`, `environment_team` | `agents`, `sessions`, `sessionPersistence`, `sessionProjections`, `storageDomain`, `webServer`, `agentPresets`, `workspaceRegistry` | `agent/inbox/spliced`, `environment_teams storage domain` | - | - |
 | `@deepseek-ai/dsh-plugin-manager` | `plugin_manager` | `ctx.tools`, `ctx.pluginManager`, `ctx.sandboxPolicy` | `tool/call`, `tool/result`, `user/message` | - | - |
 | `@deepseek-ai/dsh-mcp-resources` | `list_mcp_resource_templates`, `list_mcp_resources`, `read_mcp_resource` | `ctx.tools`, `ctx.mcpResources` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-experimental-browser-use-stagehand-native` | `stagehand_act`, `stagehand_extract`, `stagehand_navigate`, `stagehand_observe`, `stagehand_screenshot`, `stagehand_tabs` | `ctx.browserUse`, `ctx.agents`, `ctx.tools`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | - |
@@ -45,6 +46,88 @@ This table connects model-visible tool names to the plugin package and service s
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`, `ctx.workflowEngine`, `ctx.systemPrompt`, `a calling Agent (exec.agent parents the script children)` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`, `web_search` | `ctx.tools`, `ctx.web`, `ctx.systemPrompt` | `tool/call`, `tool/result` | - | web_search and web_fetch keep provider selection behind ctx.web so model-visible schemas stay stable across backend swaps. |
+
+<a id="deepseek-aidsh-experimental-environment-team"></a>
+
+## `@deepseek-ai/dsh-experimental-environment-team`
+
+### `environment_list`
+
+List this Harness environment and configured peer environments. A configured peer may be offline. Workspace aliases select separate checkouts on each machine.
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+Source: [`packages/experimental/environment-team/src/tools.ts`](../packages/experimental/environment-team/src/tools.ts)
+
+### `environment_team`
+
+Coordinate agents across Harness environments. list reads your team and revisioned tasks. spawn creates a fresh teammate on an explicit environment/workspace (lead only). send durably queues text to a named member, including lead. task-create adds a task; task-update claims, releases, or completes it using its current revision. interrupt requests a teammate stop (lead only). Queued delivery is not completion. Exchange commits or patches; files are not shared between machines.
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "list",
+        "spawn",
+        "send",
+        "task-create",
+        "task-update",
+        "interrupt"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "description": "Unique lowercase teammate name for spawn."
+    },
+    "environmentId": {
+      "type": "string",
+      "description": "Destination UUID from environment_list; required for spawn."
+    },
+    "workspace": {
+      "type": "string",
+      "description": "Configured project alias on the destination; required for spawn."
+    },
+    "text": {
+      "type": "string",
+      "description": "Self-contained prompt, message, or task description."
+    },
+    "target": {
+      "type": "string",
+      "description": "Member name for send or interrupt."
+    },
+    "taskId": {
+      "type": "string",
+      "description": "Task identity from list or task-create."
+    },
+    "revision": {
+      "type": "integer",
+      "description": "Current task revision for task-update."
+    },
+    "status": {
+      "type": "string",
+      "description": "Task status for task-update.",
+      "enum": [
+        "pending",
+        "in_progress",
+        "completed"
+      ]
+    }
+  },
+  "required": [
+    "action"
+  ]
+}
+```
+
+Source: [`packages/experimental/environment-team/src/tools.ts`](../packages/experimental/environment-team/src/tools.ts)
 
 <a id="deepseek-aidsh-plugin-manager"></a>
 

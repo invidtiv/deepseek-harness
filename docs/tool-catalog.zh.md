@@ -19,6 +19,7 @@
 
 | 工具包 | 模型可见名称 | 依赖 | 写入／影响 | 随产品发布的别名 | 部署说明 |
 | --- | --- | --- | --- | --- | --- |
+| `@deepseek-ai/dsh-experimental-environment-team` | `environment_list`, `environment_team` | `agents`, `sessions`, `sessionPersistence`, `sessionProjections`, `storageDomain`, `webServer`, `agentPresets`, `workspaceRegistry` | `agent/inbox/spliced`, `environment_teams storage domain` | - | - |
 | `@deepseek-ai/dsh-plugin-manager` | `plugin_manager` | `ctx.tools`, `ctx.pluginManager`, `ctx.sandboxPolicy` | `tool/call`, `tool/result`, `user/message` | - | - |
 | `@deepseek-ai/dsh-mcp-resources` | `list_mcp_resource_templates`, `list_mcp_resources`, `read_mcp_resource` | `ctx.tools`, `ctx.mcpResources` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-experimental-browser-use-stagehand-native` | `stagehand_act`、`stagehand_extract`、`stagehand_navigate`、`stagehand_observe`、`stagehand_screenshot`、`stagehand_tabs` | `ctx.browserUse`、`ctx.agents`、`ctx.tools`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | - |
@@ -49,6 +50,88 @@
 | `@deepseek-ai/dsh-tool-workflow` | `workflow` | `ctx.tools`、`ctx.workflowEngine`、`ctx.systemPrompt`、`a calling Agent (exec.agent parents the script children)` | `tool/call`、`tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-workspace-dependencies` | `load_workspace_dependencies` | `ctx.tools` | `tool/call`, `tool/result` | - | - |
 | `@deepseek-ai/dsh-tool-web` | `web_fetch`、`web_search` | `ctx.tools`、`ctx.web`、`ctx.systemPrompt` | `tool/call`、`tool/result` | - | web_search 和 web_fetch 将提供方选择置于 ctx.web 之后，使模型可见 schema 在更换后端时保持稳定。 |
+
+<a id="deepseek-aidsh-experimental-environment-team"></a>
+
+## `@deepseek-ai/dsh-experimental-environment-team`
+
+### `environment_list`
+
+列出此 Harness 环境和已配置的对等环境。已配置的对等端可能离线。工作区别名用于选择各台机器上独立的代码检出目录。
+
+```json
+{
+  "type": "object",
+  "properties": {}
+}
+```
+
+源码： [`packages/experimental/environment-team/src/tools.ts`](../packages/experimental/environment-team/src/tools.ts)
+
+### `environment_team`
+
+跨 Harness 环境协调智能体。list 读取团队和带修订号的任务。spawn 在指定的环境与工作区中创建新队友（仅负责人可用）。send 将文本持久排队发送给具名成员，包括 lead。task-create 添加任务；task-update 使用当前修订号领取、释放或完成任务。interrupt 请求队友停止（仅负责人可用）。已排队不代表已完成。请交换提交或补丁；机器之间不共享文件。
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": [
+        "list",
+        "spawn",
+        "send",
+        "task-create",
+        "task-update",
+        "interrupt"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "description": "Unique lowercase teammate name for spawn."
+    },
+    "environmentId": {
+      "type": "string",
+      "description": "Destination UUID from environment_list; required for spawn."
+    },
+    "workspace": {
+      "type": "string",
+      "description": "Configured project alias on the destination; required for spawn."
+    },
+    "text": {
+      "type": "string",
+      "description": "Self-contained prompt, message, or task description."
+    },
+    "target": {
+      "type": "string",
+      "description": "Member name for send or interrupt."
+    },
+    "taskId": {
+      "type": "string",
+      "description": "Task identity from list or task-create."
+    },
+    "revision": {
+      "type": "integer",
+      "description": "Current task revision for task-update."
+    },
+    "status": {
+      "type": "string",
+      "description": "Task status for task-update.",
+      "enum": [
+        "pending",
+        "in_progress",
+        "completed"
+      ]
+    }
+  },
+  "required": [
+    "action"
+  ]
+}
+```
+
+源码： [`packages/experimental/environment-team/src/tools.ts`](../packages/experimental/environment-team/src/tools.ts)
 
 <a id="deepseek-aidsh-plugin-manager"></a>
 
