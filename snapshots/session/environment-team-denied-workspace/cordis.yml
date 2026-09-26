@@ -1,0 +1,29 @@
+- insert:
+    - id: environment-team-webserver
+      name: '@deepseek-ai/dsh-host-webserver'
+      config:
+        host: 127.0.0.1
+        port: 0
+    - id: environment-team-presets
+      name: '@deepseek-ai/dsh-agent-preset-registry'
+      config:
+        default: snapshot
+    - id: environment-team-preset
+      name: '@deepseek-ai/dsh-agent-preset'
+      config:
+        id: snapshot
+        plugins: []
+    - id: environment-team-workspaces
+      name: '@deepseek-ai/dsh-workspace'
+    - id: environment-team
+      name: '../../../packages/experimental/environment-team/src/index.ts'
+      config:
+        stateDirectory: !!js dshHomePath('environment-team')
+        label: snapshot
+        provider: deepseek-official
+        model: deepseek-v4-flash
+        agentPreset: snapshot
+        sandboxMode: workspace-write
+        approvalPolicy: ask
+        workspaces:
+          project: !!js process.cwd()
