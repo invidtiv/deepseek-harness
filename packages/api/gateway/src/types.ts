@@ -5,7 +5,27 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import type { PeerScope } from '@deepseek-ai/dsh-typert-protocol'
-import type { RemoteEventHostInfo } from './stream-protocol.ts'
+import type { RemoteEventHostInfo, RemoteEventId, RemoteEventInvocationFrame } from './stream-protocol.ts'
+
+/** Host-only access to pending interactions after the caller authorizes the owning Agent. */
+export interface RemoteEventAccess {
+  /**
+   * Read pending waterfalls for one authorized Agent and explicit event names without claiming delivery.
+   * @param agentId - authorized owning Agent identity.
+   * @param events - event names understood by the caller's request and answer validators.
+   * @returns detached pending invocation frames; an empty list includes already settled requests.
+   */
+  pending(agentId: string, events: readonly string[]): readonly RemoteEventInvocationFrame[]
+  /**
+   * Resolve a still-pending waterfall; normal Client settlement races use the same broker.
+   * @param agentId - authorized owning Agent identity.
+   * @param eventId - pending identity previously returned by the broker.
+   * @param event - expected event name validated by the consumer.
+   * @param value - event-specific answer validated by the consumer.
+   * @returns false if another client settled or cancelled the request first.
+   */
+  respond(agentId: string, eventId: RemoteEventId, event: string, value: unknown): boolean
+}
 
 /** One Remote method request after a carrier has decoded its envelope. */
 export interface InvokeRemoteRequest {
@@ -174,6 +194,8 @@ export interface TypertGateway {
 
 declare module '@deepseek-ai/cordis' {
   interface Context {
+    /** Pending interactions for Host consumers that enforce their own Agent authorization. */
+    remoteEventAccess: RemoteEventAccess
     /** Host dispatcher for Typert Remote calls. */
     typertGateway: TypertGateway
   }

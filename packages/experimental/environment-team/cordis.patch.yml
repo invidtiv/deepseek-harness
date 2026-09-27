@@ -11,5 +11,7 @@
         approvalPolicy: ask
         workspaces: {}
         peers: []
+    - id: environment-team-pairing
+      name: '@deepseek-ai/dsh-experimental-environment-team/pairing'
     - id: environment-team-settings
       name: '@deepseek-ai/dsh-experimental-environment-team/management'

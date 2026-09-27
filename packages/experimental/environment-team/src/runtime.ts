@@ -14,10 +14,14 @@ import type { MessageId, UserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { defineDomain, type Domain } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
+import type { TeamDashboardRequest, TeamDashboardResult } from './team-types.ts'
 import type { ResolvedConfig } from './config.ts'
 import { assignmentSchema, environmentIdSchema, teamSchema } from './protocol.ts'
 import { EnvironmentWorkspaceBrowser } from './workspace-browser.ts'
 import { EnvironmentSessions } from './session-service.ts'
+import { EnvironmentSessionInteractions } from './session-interactions.ts'
+import { terminalFrameStream, type TerminalFrameStream } from './terminal-stream.ts'
+import type { EnvironmentTerminalFollowRequest } from './interaction-types.ts'
 import { sessionFrameStream, type SessionFrameStream } from './session-stream.ts'
 import type { EnvironmentSessionFollowRequest } from './session-types.ts'
 import type { Assignment, Delivery, DistributedTeamId, EnvironmentDescriptor, EnvironmentId, Member, OperationId, PeerRequest, Team, TeamCommand } from './protocol.ts'
@@ -91,7 +95,7 @@ export class EnvironmentTeams {
   descriptor(): EnvironmentDescriptor {
     return {
       environmentId: this.environmentId, label: this.config.label, platform: platform(),
-      protocol: 1, capabilities: { distributedTeams: true, workspaceBrowser: true, ...(this.ctx.get('sessionController') ? { workspaceSessions: true as const, workspaceSessionFollow: true as const } : {}) },
+      protocol: 1, capabilities: { distributedTeams: true, teamDashboard: true, workspaceBrowser: true, ...(this.ctx.get('sessionController') ? { workspaceSessions: true as const, workspaceSessionFollow: true as const, workspaceSessionInteractions: true as const } : {}) },
     }
   }
 
@@ -126,6 +130,8 @@ export class EnvironmentTeams {
     return this.track(async () => {
       if (request.environmentId !== this.environmentId) throw new Error('environment identity mismatch')
       switch (request.kind) {
+        case 'session-interaction': return JSON.stringify(await new EnvironmentSessionInteractions(this.ctx, this.environmentId, this.config).run(peer, request.request, AbortSignal.any([signal, this.abort.signal])))
+        case 'team-dashboard': return JSON.stringify(await this.dashboard(peer, request.request, signal))
         case 'session': return JSON.stringify(await this.workspaceSessions.run(peer, request.request, AbortSignal.any([signal, this.abort.signal])))
         case 'workspace': return JSON.stringify(await new EnvironmentWorkspaceBrowser(this.ctx, this.environmentId, this.config).run(peer, request.request))
         case 'command': return this.command(peer, request)
@@ -156,6 +162,75 @@ export class EnvironmentTeams {
     this.active.add(stream.done)
     void stream.done.then(() => this.active.delete(stream.done))
     return stream
+  }
+
+  /** Follow ordered terminal output without retaining unbounded viewer data.
+   * @param peer - authenticated caller environment.
+   * @param request - ordinary Session, terminal and exclusive input attachment.
+   * @param signal - viewer cancellation.
+   * @returns a bounded subscription whose teardown is owned by this runtime.
+   */
+  followTerminal(peer: EnvironmentId, request: EnvironmentTerminalFollowRequest, signal: AbortSignal): TerminalFrameStream {
+    const stream = terminalFrameStream(
+      lifetime => new EnvironmentSessionInteractions(this.ctx, this.environmentId, this.config).followTerminal(peer, request, lifetime),
+      AbortSignal.any([signal, this.abort.signal]), this.config.maxBytes,
+    )
+    this.active.add(stream.done)
+    void stream.done.then(() => this.active.delete(stream.done))
+    return stream
+  }
+
+  /** Read coordinator records or interrupt a member using explicit operator grants.
+   * @param peer - authenticated environment; this installation denotes its local operator.
+   * @param request - requested dashboard operation.
+   * @param signal - cancellation before admission and during remote interruption.
+   * @returns bounded coordinator-owned data, without creating membership or Sessions.
+   */
+  dashboard(peer: EnvironmentId, request: TeamDashboardRequest, signal: AbortSignal): Promise<TeamDashboardResult> {
+    return this.track(async () => {
+      const lifetime = AbortSignal.any([signal, this.abort.signal])
+      lifetime.throwIfAborted()
+      const grant = this.config.peers.find(item => item.environmentId === peer)
+      const local = peer === this.environmentId
+      if (!local && !grant?.teamAccess) throw new Error('peer team access is not granted')
+      const visible = (team: Team): boolean => {
+        const lead = team.members.find(member => member.name === 'lead')
+        return lead !== undefined && lead.environmentId === this.environmentId
+          && (local || grant?.workspaces.includes(lead.workspace) === true)
+      }
+      let result: TeamDashboardResult
+      if (request.action === 'catalog') {
+        result = { kind: 'catalog', environmentId: this.environmentId,
+          teams: [...this.domain.table('teams').entries()].map(([, team]) => team).filter(visible).flatMap(team => team.members.filter(member => member.name === 'lead').map(lead => ({
+            teamId: team.id, workspace: lead.workspace, members: team.members.length,
+            tasks: team.tasks.length, queuedMessages: team.pending.length,
+          }))) }
+      } else {
+        const team = this.domain.table('teams').get(request.teamId)
+        const lead = team?.members.find(member => member.name === 'lead')
+        if (!team || !lead || !visible(team)) throw new Error('team is not available in granted workspaces')
+        if (request.action === 'read') {
+          result = { kind: 'team', environmentId: this.environmentId, teamId: team.id,
+            workspace: lead.workspace,
+            members: structuredClone(team.members), tasks: structuredClone(team.tasks),
+            outbox: team.pending.map(({ id, sender, target }) => ({ id, sender, target })) }
+        } else {
+          if (!local && !grant?.teamOperate) throw new Error('peer team operation is not granted')
+          const member = team.members.find(item => item.sessionId === request.sessionId && item.name !== 'lead')
+          if (!member) throw new Error('interrupt target must be a non-lead team member')
+          const outgoing: PeerRequest = { kind: 'interrupt', environmentId: member.environmentId,
+            teamId: team.id, sessionId: member.sessionId }
+          const text = member.environmentId === this.environmentId
+            ? await this.receive(this.environmentId, outgoing, lifetime)
+            : await this.call(member.environmentId, outgoing, lifetime)
+          const status = z.object({ status: z.enum(['interrupt-requested', 'inactive']) }).strict().parse(JSON.parse(text)).status
+          result = { kind: 'interrupted', environmentId: this.environmentId, teamId: team.id,
+            sessionId: member.sessionId, status }
+        }
+      }
+      if (Buffer.byteLength(JSON.stringify(result)) > this.config.maxBytes) throw new Error('team dashboard byte limit reached')
+      return result
+    })
   }
 
   /**

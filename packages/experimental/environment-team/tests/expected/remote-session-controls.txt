@@ -1,0 +1,1 @@
+Could not refresh session controls. The last received data remains visible.Attach a file or imageresult.txt · 42 bytesDownloadTool activity and errorsbashdoneThis operation failed on the destination.Only recent tool details are shown. Increase the session page size in Plugins for more.Terminals on this machineShell · RunningConnectClose terminalColumnsRowsNew terminal

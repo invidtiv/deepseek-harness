@@ -7,6 +7,7 @@ import { Page, type PageProps } from '../src/client/Page.tsx'
 import { en } from '../src/client/locales.ts'
 import { en as commonEn } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 import { Notice, type NoticeState } from '../src/client/Notice.tsx'
+import type { PairingCredentialChange } from '../src/pairing-types.ts'
 import type { EnvironmentConfiguration } from '../src/settings-types.ts'
 
 afterEach(cleanup)
@@ -16,22 +17,40 @@ const initial: EnvironmentConfiguration = {
   environmentId: brandString<EnvironmentConfiguration['environmentId']>('11111111-1111-4111-8111-111111111111'), revision: brandString<EnvironmentConfiguration['revision']>('revision'),
   config: { stateDirectory: '/private', label: 'machine', provider: 'provider', model: 'model', agentPreset: 'standard', sandboxMode: 'read-only', approvalPolicy: 'ask',
     workspaces: { project: '/checkout' }, peers: [{ environmentId: '22222222-2222-4222-8222-222222222222', url: 'https://worker.example.ts.net', tokenEnv: 'DSH_PAIR', workspaces: ['project'] }],
+    publicUrl: '', invitationLifetimeMs: 600000, maxInvitations: 32, terminalCols: 80, terminalRows: 24, maxUploadBytes: 1048576,
     requestTimeoutMs: 15000, retryIntervalMs: 5000, maxBytes: 1048576, maxTeams: 64, maxMembers: 16,
     maxTasks: 256, maxOperations: 2048, workspacePageSize: 100, sessionPageSize: 100,
     sessionSyncIntervalMs: 2000, sessionStreamHeartbeatMs: 2000, sessionStreamIdleTimeoutMs: 10000 },
 }
 function mount(options: { read?: () => Promise<EnvironmentConfiguration>; view?: PageProps['view'] } = {}) {
   const read = vi.fn(options.read ?? (async () => structuredClone(initial)))
-  const save = vi.fn(async (value: EnvironmentConfiguration) => value)
-  const credential = vi.fn().mockResolvedValue(undefined)
+  const save = vi.fn(async (value: EnvironmentConfiguration, _changes: PairingCredentialChange[]) => value)
+  const pairingCreate = vi.fn()
+  const pairingList = vi.fn().mockResolvedValue([])
+  const pairingRevoke = vi.fn().mockResolvedValue(undefined)
+  const pairingAccept = vi.fn()
+  const pairingAttempts = vi.fn().mockResolvedValue([])
+  const pairingForget = vi.fn().mockResolvedValue(undefined)
   const notify = vi.fn()
-  const props = { view: options.view ?? 'page', t: translate, read, save, credential, notify } satisfies PageProps
+  const props = { view: options.view ?? 'page', t: translate, read, save, pairingCreate, pairingList, pairingRevoke, pairingAccept, pairingAttempts, pairingForget, notify } satisfies PageProps
   const rendered = render(<Page {...props} />)
-  return { read, save, credential, notify, ...rendered }
+  return { read, save, pairingCreate, pairingList, pairingRevoke, pairingAccept, pairingAttempts, pairingForget, notify, ...rendered }
 }
 
+it('discards a disconnected acceptance attempt without changing configured peers', async () => {
+  const { pairingAttempts, pairingForget, save } = mount()
+  await screen.findByLabelText('Machine label')
+  const id = '44444444-4444-4444-8444-444444444444'
+  pairingAttempts.mockResolvedValue([{ id, issuer: { environmentId: '33333333-3333-4333-8333-333333333333', url: 'https://pending.example' }, expiresAt: 1000, status: 'pending' }])
+  fireEvent.click(screen.getByRole('button', { name: 'Refresh invitations' }))
+  fireEvent.click(await screen.findByRole('button', { name: 'Discard unfinished pairing' }))
+  await waitFor(() => { expect(pairingForget).toHaveBeenCalledWith(id) })
+  expect(save).not.toHaveBeenCalled()
+})
+
+
 it('saves machine and checkout edits without rewriting an existing pairing secret', async () => {
-  const { save, credential, notify } = mount()
+  const { save, notify } = mount()
   fireEvent.change(await screen.findByLabelText('Machine label'), { target: { value: 'linux' } })
   fireEvent.change(screen.getByLabelText('Local directory'), { target: { value: '/srv/repository' } })
   fireEvent.change(screen.getByLabelText('Tailscale HTTPS URL'), { target: { value: 'https://new-host.example.ts.net' } })
@@ -39,18 +58,18 @@ it('saves machine and checkout edits without rewriting an existing pairing secre
   fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
   await waitFor(() => { expect(save).toHaveBeenCalledOnce() })
   expect(save.mock.calls[0]?.[0].config).toMatchObject({ label: 'linux', workspaces: { project: '/srv/repository' }, peers: [{ url: 'https://new-host.example.ts.net', tokenEnv: 'DSH_PAIR', sessionAccess: true }] })
-  expect(credential).not.toHaveBeenCalled()
+  expect(save.mock.calls[0]?.[1]).toEqual([])
   expect(notify).toHaveBeenCalledWith('saved')
 })
 
 it('stores a typed secret separately and preserves the draft when the profile refuses the save', async () => {
-  const { save, credential, notify } = mount()
+  const { save, notify } = mount()
   save.mockRejectedValueOnce(new Error('stale revision'))
   fireEvent.change(await screen.findByLabelText('Pairing secret'), { target: { value: 'private-pair-secret' } })
   fireEvent.click(screen.getByRole('button', { name: 'Save configuration' }))
   await waitFor(() => { expect(notify).toHaveBeenCalledWith('saveFailed') })
-  expect(credential).toHaveBeenCalledWith('DSH_PAIR', 'private-pair-secret')
-  expect(JSON.stringify(save.mock.calls[0])).not.toContain('private-pair-secret')
+  expect(save.mock.calls[0]?.[1]).toEqual([{ environmentId: initial.config.peers[0]?.environmentId, secret: 'private-pair-secret' }])
+  expect(JSON.stringify(save.mock.calls[0]?.[0])).not.toContain('private-pair-secret')
   expect(screen.getByLabelText('Pairing secret')).toHaveProperty('value', 'private-pair-secret')
 })
 
@@ -65,7 +84,7 @@ it('refuses duplicate checkout aliases without writing configuration', async () 
 })
 
 it('edits worker policy, project grants, and limits while retaining other peer secret drafts', async () => {
-  const { save, credential } = mount()
+  const { save } = mount()
   await screen.findByLabelText('Machine label')
   fireEvent.change(screen.getByLabelText('Model provider'), { target: { value: 'local-provider' } })
   fireEvent.change(screen.getByLabelText('Model'), { target: { value: 'local-model' } })
@@ -93,7 +112,7 @@ it('edits worker policy, project grants, and limits while retaining other peer s
   await waitFor(() => { expect(save).toHaveBeenCalledOnce() })
   expect(save.mock.calls[0]?.[0].config).toMatchObject({ provider: 'local-provider', model: 'local-model', agentPreset: 'worker', sandboxMode: 'workspace-write', approvalPolicy: 'never', workspaces: { second: '/second' }, requestTimeoutMs: 20000,
     peers: [{ environmentId: '33333333-3333-4333-8333-333333333333', workspaces: ['second', 'shared'], workspaceManagement: true }] })
-  expect(credential).toHaveBeenCalledExactlyOnceWith('DSH_PEER_33333333_3333_4333_8333_333333333333', 'second-secret')
+  expect(save.mock.calls[0]?.[1]).toEqual([{ environmentId: '33333333-3333-4333-8333-333333333333', secret: 'second-secret' }])
 })
 
 it('rejects empty aliases and non-positive limits, and reload discards unsaved edits', async () => {

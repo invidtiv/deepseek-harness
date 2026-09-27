@@ -68,6 +68,21 @@
     },
     {
       "path": "../../api/session-controller/tsconfig.host.json"
+    },
+    {
+      "path": "../../interaction/user-questions"
+    },
+    {
+      "path": "../../attachment/attachment"
+    },
+    {
+      "path": "../../client/file-upload/tsconfig.host.json"
+    },
+    {
+      "path": "../../api/terminal-controller/tsconfig.host.json"
+    },
+    {
+      "path": "../../api/gateway/tsconfig.host.json"
     }
   ]
 }

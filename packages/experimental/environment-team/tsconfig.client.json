@@ -9,8 +9,11 @@
     "src/client",
     "src/config-types.ts",
     "src/settings-types.ts",
+    "src/team-types.ts",
     "src/workspace-types.ts",
-    "src/session-types.ts"
+    "src/session-types.ts",
+    "src/interaction-types.ts",
+    "src/pairing-types.ts"
   ],
   "references": [
     {
@@ -54,6 +57,18 @@
     },
     {
       "path": "../../client/ui-sidebar"
+    },
+    {
+      "path": "../../interaction/user-questions"
+    },
+    {
+      "path": "../../attachment/attachment"
+    },
+    {
+      "path": "../../client/file-upload/tsconfig.client.json"
+    },
+    {
+      "path": "../../api/terminal-controller/tsconfig.client.json"
     }
   ]
 }

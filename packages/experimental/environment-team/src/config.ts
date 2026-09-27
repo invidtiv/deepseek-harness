@@ -4,18 +4,26 @@ import { z } from 'zod'
 import { isAbsolute, resolve } from 'node:path'
 import { environmentIdSchema } from './protocol.ts'
 
+/** Validate a shareable HTTPS origin or literal loopback test origin. */
+export const environmentUrlSchema = z.url().transform((value) => {
+  const url = new URL(value)
+  if (url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('peer URL must be an origin without credentials')
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(url.hostname))) throw new Error('peer URL requires HTTPS, except literal loopback HTTP')
+  return url.origin
+})
+
 const peer = z.object({
   environmentId: environmentIdSchema,
-  url: z.url().transform((value) => {
-    const url = new URL(value)
-    if (url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Error('peer URL must be an origin without credentials')
-    if (url.protocol !== 'https:' && !(url.protocol === 'http:' && ['127.0.0.1', '[::1]'].includes(url.hostname))) throw new Error('peer URL requires HTTPS, except literal loopback HTTP')
-    return url.origin
-  }),
+  url: environmentUrlSchema,
   tokenEnv: z.string().min(1),
   workspaces: z.array(z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/u)),
   workspaceManagement: z.boolean().default(false),
   sessionAccess: z.boolean().default(false),
+  attachmentAccess: z.boolean().default(false),
+  approvalAccess: z.boolean().default(false),
+  terminalAccess: z.boolean().default(false),
+  teamAccess: z.boolean().default(false),
+  teamOperate: z.boolean().default(false),
 })
 
 const schema = z.object({
@@ -28,6 +36,9 @@ const schema = z.object({
   approvalPolicy: z.enum(['ask', 'never']),
   peers: z.array(peer).default([]),
   workspaces: z.record(z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/u), z.string().refine(isAbsolute, 'workspace must be absolute').transform(value => resolve(value))),
+  publicUrl: z.union([z.literal(''), environmentUrlSchema]).default(''),
+  invitationLifetimeMs: z.number().int().positive().max(2147483647).default(600000),
+  maxInvitations: z.number().int().positive().default(32),
   requestTimeoutMs: z.number().int().positive().max(2147483647).default(15000),
   retryIntervalMs: z.number().int().positive().max(2147483647).default(5000),
   maxBytes: z.number().int().positive().default(1048576),
@@ -37,6 +48,9 @@ const schema = z.object({
   maxOperations: z.number().int().positive().default(2048),
   workspacePageSize: z.number().int().positive().default(100),
   sessionPageSize: z.number().int().positive().default(100),
+  terminalCols: z.number().int().positive().default(80),
+  terminalRows: z.number().int().positive().default(24),
+  maxUploadBytes: z.number().int().positive().default(1048576),
   sessionSyncIntervalMs: z.number().int().positive().max(2147483647).default(2000),
   sessionStreamHeartbeatMs: z.number().int().positive().max(2147483647).default(2000),
   sessionStreamIdleTimeoutMs: z.number().int().positive().max(2147483647).default(10000),
@@ -58,13 +72,21 @@ export const Config: s<Config> = s.object({
     tokenEnv: s.string().required(), workspaces: s.array(String).required(),
     workspaceManagement: s.boolean().default(false),
     sessionAccess: s.boolean().default(false),
+    attachmentAccess: s.boolean().default(false),
+    approvalAccess: s.boolean().default(false),
+    terminalAccess: s.boolean().default(false),
+    teamAccess: s.boolean().default(false),
+    teamOperate: s.boolean().default(false),
   })).default([]),
   workspaces: s.dict(String).required(),
+  publicUrl: s.string().default(''), invitationLifetimeMs: s.number().default(600000), maxInvitations: s.number().default(32),
   requestTimeoutMs: s.number().default(15000), retryIntervalMs: s.number().default(5000),
   maxBytes: s.number().default(1048576), maxTeams: s.number().default(64),
   maxMembers: s.number().default(16), maxTasks: s.number().default(256), maxOperations: s.number().default(2048),
   workspacePageSize: s.number().default(100),
   sessionPageSize: s.number().default(100),
+  terminalCols: s.number().default(80), terminalRows: s.number().default(24),
+  maxUploadBytes: s.number().default(1048576),
   sessionSyncIntervalMs: s.number().default(2000),
   sessionStreamHeartbeatMs: s.number().default(2000),
   sessionStreamIdleTimeoutMs: s.number().default(10000),

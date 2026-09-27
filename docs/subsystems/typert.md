@@ -6,6 +6,8 @@ Types shared by generated Remote artifacts, the Host Gateway, and consumer API a
 
 ## Lookup and Context declarations
 
+The Gateway's Host-only `remoteEventAccess` service reads and settles pending human interactions for an explicitly authorized Agent. `RemoteEventId` identifies one pending invocation. A `RemoteEventInvocationFrame` carries that identifier, the event name, Agent identity, and projected request fields. Reads return detached values and do not claim delivery; settlement competes with ordinary browser answers and returns false for stale or mismatched identifiers. Consumers must authorize the Agent and validate the event-specific answer before calling the service.
+
 Business-object packages extend two empty maps through declaration merging. A lookup associates one Host object type with its wire identity; a Context declaration associates one scoped Context kind with its wire identity. Generated descriptors name these keys, while runtime providers supply the live resolution behavior.
 
 ```ts type-equiv
@@ -379,6 +381,34 @@ interface TypertClientRemote extends TypertRemoteNamespaceMap {
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxremoteeventaccess--remoteeventaccess"></a>
+
+### `ctx.remoteEventAccess` — `RemoteEventAccess`
+
+Host-only access to pending interactions after the caller authorizes the owning Agent.
+
+```ts cordis-catalog
+/**
+ * Read pending waterfalls for one authorized Agent and explicit event names without claiming delivery.
+ * @param agentId - authorized owning Agent identity.
+ * @param events - event names understood by the caller's request and answer validators.
+ * @returns detached pending invocation frames; an empty list includes already settled requests.
+ */
+pending(agentId: string, events: readonly string[]): readonly RemoteEventInvocationFrame[]
+
+/**
+ * Resolve a still-pending waterfall; normal Client settlement races use the same broker.
+ * @param agentId - authorized owning Agent identity.
+ * @param eventId - pending identity previously returned by the broker.
+ * @param event - expected event name validated by the consumer.
+ * @param value - event-specific answer validated by the consumer.
+ * @returns false if another client settled or cancelled the request first.
+ */
+respond(agentId: string, eventId: RemoteEventId, event: string, value: unknown): boolean
+```
+
+Source: [`packages/api/gateway/src/types.ts`](../../packages/api/gateway/src/types.ts)
 
 <a id="ctxtypert--typertregistry"></a>
 

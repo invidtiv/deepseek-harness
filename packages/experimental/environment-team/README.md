@@ -51,6 +51,11 @@ Configure `agentPreset`, `sandboxMode`, and `approvalPolicy` explicitly. New mem
 | `sessionSyncIntervalMs` | `2000` | Session catalog refresh and disconnected follow retry interval |
 | `sessionStreamHeartbeatMs` | `2000` | Peer stream heartbeat and credential recheck interval |
 | `sessionStreamIdleTimeoutMs` | `10000` | Maximum peer stream silence; must exceed its heartbeat interval |
+| `publicUrl` | empty | Reachable HTTPS origin required to create or accept invitations |
+| `invitationLifetimeMs` | `600000` | Lifetime of a new pairing invitation |
+| `maxInvitations` | `32` | Combined retained invitation and acceptance-attempt limit |
+| `maxUploadBytes` | `1048576` | Attachment transfer limit, also constrained by `maxBytes` after encoding |
+| `terminalCols` / `terminalRows` | `80` / `24` | Initial remote terminal dimensions |
 
 ### Workspace browser
 
@@ -66,13 +71,25 @@ Enable the calling peer's separate `sessionAccess` grant on the destination to l
 
 Select **Open sessions** on a registered workspace. The panel follows saved user and assistant text, unfinished assistant text, and running status from the destination. It retains its last view during disconnection; reconnect replaces that view with the destination's current saved messages and active assistant prefix. Catalog refresh and prompt submission do not restart the selected stream. The destination remains the sole owner of its Session log, credentials, execution, and files. Every request includes environment and workspace identity; a foreign Session ID never enters the local conversation controller. Creation and prompt retries retain their operation identities to avoid duplicate admission after an uncertain response.
 
-Both installations must support `workspaceSessionFollow` for live text. Following a cold Session can activate it on the destination; closing the panel releases its subscription without cancelling the Agent. Full replacement frames have configurable message and byte limits, and slow peers receive the latest available view. Tool details, attachments, approval responses, and terminals remain in the destination's full Web app. Stopping a Session requests interruption of active work and preserves its queued inbox. Configuration reload closes active streams; credential rotation closes them at the next heartbeat check. Already accepted work continues.
+Both installations must support `workspaceSessionFollow` for live text. Following a cold Session can activate it on the destination; closing the panel releases its subscription without cancelling the Agent. Full replacement frames have configurable message and byte limits, and slow peers receive the latest available view. Stopping a Session requests interruption of active work and preserves its queued inbox. Configuration reload closes active streams; credential rotation closes them at the next heartbeat check. Already accepted work continues.
+
+The conversation controls show committed tool results and errors. The separate destination grants `attachmentAccess`, `approvalAccess`, and `terminalAccess` default to `false`. Attachments upload into the owning Agent's staged receipts; images enter model requests as images. Downloads require a reference in the authorized Session log. Prompt retry fingerprints persist below `stateDirectory/prompt-receipts` and reject changed submissions after receipts expire. Pending approvals and questions share the ordinary Web settlement broker, so the first valid answer wins across viewers.
+
+Terminals execute with the destination user's permissions and remain on that machine after the viewer disconnects. A connection receives a recovery screen followed by ordered output; a viewer exceeding its bounded queue must reconnect. Only the current terminal attachment may write or resize. Terminal input is never automatically replayed. The destination's terminal service owns process limits and retention; closing a terminal explicitly stops that process.
+
+### Pairing invitations
+
+Save each machine's reachable `publicUrl` in Plugins. Create an invitation with the intended machine's identity, URL, and explicit local grants, then privately transfer it to that machine's Plugins page. Acceptance chooses the reciprocal grants. Invitations are identity-pinned and one-time; inventory reads contain metadata without the invitation secret. A lost response can retry the same invitation and grants. An ambiguous configuration commit fails closed if the peer was removed; discard an unfinished acceptance before starting again. Removing a configured peer revokes its access independently of invitation expiration. Manual secret edits stage fresh credential references and commit them with the configuration revision.
 
 ### Team operations
 
 `environment_list` lists local identity, workspace aliases, and configured peers without credentials or local paths. `environment_team` supports `list`, `spawn`, `send`, `task-create`, `task-update`, and `interrupt`. Only the lead spawns or interrupts teammates. Members can send to `lead` or another immutable member name and can create or claim shared tasks. Task updates require the observed revision; a competing update rejects. A member cannot change another member's owned task, while the lead can manage ownership through release and claim. Completing a task requires an in-progress task.
 
 A spawn or send result acknowledges durable queueing, not execution or completion. The coordinator retries pending deliveries. The destination deduplicates message acceptance through its Session log, including after restart, and acknowledges only after flushing that log. Retrying the same tool-call identity with the same arguments returns the committed mutation result; changing its arguments rejects. A new tool call is a new command. An interrupted member preserves its pending inbox; interruption is an observed request, not proof that remote execution has stopped.
+
+### Operator team dashboard
+
+The coordinator provides catalog and detail reads through `environmentTeamSettings.teamDashboard`. Reads do not create teams, memberships, or Sessions. Detail responses include roster, revisioned tasks, and queued delivery identifiers with sender and target names; delivery text and mutation receipts remain private. A peer needs `teamAccess` and the coordinator lead's workspace alias in its grants. Roster visibility does not grant access to member workspaces. Interrupting a non-lead member additionally requires `teamOperate`; the coordinator authorizes the operator directly rather than attributing the action to an Agent. Both grants default to false. Local operators use the same live runtime without opening another durable store.
 
 ### Storage and deployment
 
@@ -129,8 +146,8 @@ Messages append to each member's independent history. No conversation prefix or 
 
 - The coordinator must recover before authoritative task updates and member messaging can resume. There is no leader election, failover, automatic reassignment, or session migration.
 - Remote members start fresh. They exchange text, commits, or patches; the plugin does not copy conversation history, attachments, repositories, or credentials.
-- Peer credentials are configured in Plugins and host-scoped. Automatic pairing invitations, individual browser-session revocation, and per-method read-only grants are not provided.
-- The distributed roster and task board appear through tool results. The Environments panel provides workspace management and live-text Session access; ordinary conversation tabs, remote terminals, and the local Agent Teams graphical roster do not project this separate domain.
+- Peer credentials are host-scoped and configured through Plugins or invitations. Individual browser-session revocation is not provided.
+- The Environments panel displays distributed teams and remote conversation controls. Ordinary conversation tabs and the local Agent Teams roster remain machine-local.
 - Retained teams, tasks, and command receipts have explicit limits. There is no automatic history eviction or team deletion; start a new lead Session when a team's operation budget is exhausted.
 
 <a id="dev-note"></a>

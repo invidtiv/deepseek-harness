@@ -28,9 +28,10 @@ import { resolveConfig } from '../src/config.ts'
 
 /**
  * Boot an isolated Loader destination; callers must register close immediately.
+ * @param prepare - optional owning services installed before the Session Controller.
  * @returns destination services and a quiescent cleanup operation.
  */
-export async function sessionHost() {
+export async function sessionHost(prepare?: (ctx: Context, root: string) => Promise<void>) {
   const root = await realpath(await mkdtemp(join(tmpdir(), 'dsh-session-peer-')))
   const ctx = new Context()
   const close = async () => { await ctx.fiber.dispose(); await rm(root, { recursive: true, force: true, maxRetries: 5 }) }
@@ -61,8 +62,9 @@ export async function sessionHost() {
     for (const entry of ctx.loader.entries()) await entry.fiber?.await()
     const adapter = new MockAdapter(Array.from({ length: 30 }, () => textResponse('destination reply')))
     ctx.llm.registerAdapter(['mock'], adapter)
+    await prepare?.(ctx, root)
     await ctx.plugin({
-      inject: ['sessions', 'agents', 'llm', 'workspaceRegistry', 'sessionProjections', 'sessionPersistence'],
+      inject: ['sessions', 'agents', 'llm', 'workspaceRegistry', 'sessionProjections', 'sessionPersistence', ...(prepare ? ['typert', 'attachments', 'fileUploads'] : [])],
       apply(scope) { createSessionTestController(scope, { cwd, defaultModelSelection: () => ({ provider: 'mock', model: 'mock' }) }) },
     })
     const controller = ctx.sessionController

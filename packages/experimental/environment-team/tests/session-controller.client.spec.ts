@@ -27,6 +27,46 @@ function fixture(call: SessionCall = async (_environment, request) => request.ac
   return { controller, notify, interval }
 }
 
+it('retains exact attachment receipts and image bytes through an uncertain prompt retry', async () => {
+  let attempts = 0
+  const call = vi.fn<SessionCall>(async (_environment, request) => {
+    if (request.action === 'prompt') {
+      if (++attempts === 1) throw new Error('response lost')
+      return { ...base, kind: 'accepted', sessionId }
+    }
+    return request.action === 'list' ? list : snapshot
+  })
+  const { controller } = fixture(call)
+  controller.select(sessionId)
+  const receipt = brandString<NonNullable<Extract<import('../src/session-types.ts').SessionRequest, { action: 'prompt' }>['attachments']>[number]>('receipt')
+  const image = { data: 'aGVsbG8=', mediaType: 'image/png' as const, name: 'picture.png' }
+  controller.stage(sessionId, { name: 'notes.txt', receipt })
+  controller.stage(sessionId, { name: 'picture.png', image })
+  await controller.send()
+  expect(controller.state.getSnapshot().uncertain).toBe(true)
+  controller.removeAttachment(0)
+  expect(controller.state.getSnapshot().attachments).toHaveLength(2)
+  await controller.send()
+  const prompts = call.mock.calls.map(([, request]) => request).filter(request => request.action === 'prompt')
+  expect(prompts).toHaveLength(2)
+  expect(prompts[0]).toEqual(prompts[1])
+  expect(prompts[0]).toMatchObject({ text: '', attachments: [receipt], images: [image] })
+  expect(controller.state.getSnapshot().attachments).toBeUndefined()
+})
+
+it('discards uploads after selection changes and allows removing unsent attachments', async () => {
+  const { controller } = fixture()
+  controller.select(sessionId)
+  const attachment = { name: 'image.png', image: { data: 'aGVsbG8=', mediaType: 'image/png' as const } }
+  controller.stage(brandString<EnvironmentSessionSummary['sessionId']>('other'), attachment)
+  expect(controller.state.getSnapshot().attachments).toBeUndefined()
+  controller.stage(sessionId, attachment); controller.removeAttachment(0)
+  expect(controller.state.getSnapshot().attachments).toEqual([])
+  controller.stage(sessionId, attachment)
+  controller.select(brandString<EnvironmentSessionSummary['sessionId']>('other'))
+  expect(controller.state.getSnapshot().attachments).toBeUndefined()
+})
+
 it('polls destination snapshots and retains messages while disconnected, then recovers', async () => {
   vi.useFakeTimers()
   let offline = false

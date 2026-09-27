@@ -14,7 +14,7 @@ export const sessionRequestSchema: z.ZodType<SessionRequest> = z.discriminatedUn
   z.object({ action: z.literal('create'), workspaceId, sessionId }).strict(),
   z.object({ action: z.literal('read'), workspaceId, sessionId }).strict(),
   z.object({ action: z.literal('cancel'), workspaceId, sessionId }).strict(),
-  z.object({ action: z.literal('prompt'), workspaceId, sessionId, requestId, text: z.string().refine(value => value.trim().length > 0) }).strict(),
+  z.object({ action: z.literal('prompt'), workspaceId, sessionId, requestId, text: z.string().refine(value => value.trim().length > 0), attachments: z.array(z.string().min(1).transform(value => brandString<NonNullable<Extract<SessionRequest, { action: 'prompt' }>['attachments']>[number]>(value))).optional(), images: z.array(z.object({ data: z.string(), mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/gif']), name: z.string().optional() }).strict()).optional() }).strict(),
 ])
 
 const scope = { environmentId, workspaceId }

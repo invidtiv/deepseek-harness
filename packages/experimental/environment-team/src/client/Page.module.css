@@ -9,3 +9,6 @@
 @media (max-width: 600px) { .row { grid-template-columns: 1fr; } }
 
 .loading { display: flex; justify-content: center; padding: 32px; }
+
+.pairing { display: grid; gap: 16px; padding: 16px 0; border-top: 1px solid var(--dsw-alias-border-l4); }
+.transfer { width: 100%; min-height: 96px; box-sizing: border-box; resize: vertical; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l4); border-radius: 8px; padding: 8px; font: inherit; }

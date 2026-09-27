@@ -23,7 +23,7 @@ export async function pairedSessionHosts(own: (close: () => Promise<void>) => vo
     Object.assign(host.config, overrides)
     await host.ctx.plugin(Credentials, { path: join(host.root, 'credentials.yml'), watch: false })
     await host.ctx.credentials.set(credentialRef('SESSION_PAIR'), token)
-    host.config.peers.push({ environmentId: peer.id, url: peer.url, tokenEnv: 'SESSION_PAIR', workspaces: ['project'], workspaceManagement: true, sessionAccess: true })
+    host.config.peers.push({ environmentId: peer.id, url: peer.url, tokenEnv: 'SESSION_PAIR', workspaces: ['project'], workspaceManagement: true, sessionAccess: true, teamAccess: false, teamOperate: false, attachmentAccess: false, approvalAccess: false, terminalAccess: false })
     await host.ctx.plugin(Plugin, host.config)
   }
   return { caller, destination, token }

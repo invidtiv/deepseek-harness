@@ -20,7 +20,7 @@ async function fixture() {
   const host = await sessionHost()
   closers.push(host.close)
   const peer = environmentIdSchema.parse(randomUUID())
-  host.config.peers.push({ environmentId: peer, url: 'https://peer.example.test', tokenEnv: 'UNUSED', workspaces: ['project'], workspaceManagement: false, sessionAccess: true })
+  host.config.peers.push({ environmentId: peer, url: 'https://peer.example.test', tokenEnv: 'UNUSED', workspaces: ['project'], workspaceManagement: false, sessionAccess: true, teamAccess: false, teamOperate: false, attachmentAccess: false, approvalAccess: false, terminalAccess: false })
   return { ...host, peer, executor: new EnvironmentSessions(host.ctx, host.id, host.config) }
 }
 

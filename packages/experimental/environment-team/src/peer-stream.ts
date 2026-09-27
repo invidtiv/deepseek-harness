@@ -7,12 +7,17 @@ import { z } from 'zod'
 import type { ResolvedConfig } from './config.ts'
 import { environmentIdSchema, type EnvironmentId } from './protocol.ts'
 import type { EnvironmentTeams } from './runtime.ts'
+import { terminalFollowRequestSchema, environmentTerminalFrameSchema } from './interaction-protocol.ts'
+import type { EnvironmentTerminalFollowRequest, EnvironmentTerminalFrame } from './interaction-types.ts'
 import type { PeerTransport } from './transport.ts'
 import { environmentSessionFrameSchema, sessionFollowRequestSchema } from './session-protocol.ts'
 import type { EnvironmentSessionFollowRequest, EnvironmentSessionFrame } from './session-types.ts'
 
 /** Peer-only Session follow route; browser callers continue through their authenticated BFF. */
 export const SESSION_FOLLOW_PATH = '/dsh/environment-team/session-follow'
+/** Peer-only terminal route, retaining ordered output independently of conversation snapshots. */
+export const TERMINAL_FOLLOW_PATH = '/dsh/environment-team/terminal-follow'
+const terminalRequestSchema = z.object({ environmentId: environmentIdSchema, request: terminalFollowRequestSchema }).strict()
 const requestSchema = z.object({ environmentId: environmentIdSchema, request: sessionFollowRequestSchema }).strict()
 const terminalSchema = z.object({ code: z.enum(['environment/session-denied', 'environment/session-unsupported', 'environment/session-protocol', 'environment/session-unavailable']) }).strict()
 
@@ -25,10 +30,52 @@ const terminalSchema = z.object({ code: z.enum(['environment/session-denied', 'e
  * @param signal - operator and management lifetime.
  * @returns strict replacement frames from this destination only.
  */
-export async function* followPeerSession(
+export function followPeerSession(
   transport: PeerTransport, config: ResolvedConfig, environment: EnvironmentId,
   request: EnvironmentSessionFollowRequest, signal: AbortSignal,
 ): AsyncIterable<EnvironmentSessionFrame> {
+  return followPeerFrames(transport, config, environment, request, signal, SESSION_FOLLOW_PATH,
+    'workspaceSessionFollow', value => environmentSessionFrameSchema.parse(value), () => true)
+}
+
+/** Open one ordered terminal generation; reconnect must request a fresh screen snapshot.
+ * @param transport - identity-pinned authenticated peer transport.
+ * @param config - deployment-owned size and lifetime limits.
+ * @param environment - destination installation identity.
+ * @param request - destination terminal and input attachment.
+ * @param signal - viewer lifetime.
+ * @returns ordered, destination-validated terminal frames.
+ */
+export function followPeerTerminal(
+  transport: PeerTransport, config: ResolvedConfig, environment: EnvironmentId,
+  request: EnvironmentTerminalFollowRequest, signal: AbortSignal,
+): AsyncIterable<EnvironmentTerminalFrame> {
+  let sequence: number | undefined
+  return followPeerFrames(transport, config, environment, request, signal, TERMINAL_FOLLOW_PATH,
+    'workspaceSessionInteractions', value => environmentTerminalFrameSchema.parse(value), (value) => {
+      if (value.terminalId !== request.terminalId) return false
+      const frame = value.frame
+      if (frame.type !== 'output' && frame.info.id !== request.terminalId) return false
+      if (sequence === undefined) {
+        if (frame.type !== 'snapshot') return false
+        sequence = frame.sequence
+        return true
+      }
+      if (frame.type === 'snapshot') return false
+      if (frame.type === 'output') {
+        if (frame.sequence !== sequence + 1) return false
+        sequence = frame.sequence
+      }
+      return true
+    })
+}
+
+async function* followPeerFrames<Frame extends EnvironmentSessionFollowRequest & { environmentId: EnvironmentId }>(
+  transport: PeerTransport, config: ResolvedConfig, environment: EnvironmentId,
+  request: EnvironmentSessionFollowRequest, signal: AbortSignal,
+  path: string, capability: 'workspaceSessionFollow' | 'workspaceSessionInteractions', parse: (value: unknown) => Frame,
+  matches: (frame: Frame) => boolean,
+): AsyncIterable<Frame> {
   const abort = new AbortController()
   const lifetime = AbortSignal.any([signal, abort.signal])
   let timer: ReturnType<typeof setTimeout> | undefined
@@ -44,10 +91,10 @@ export async function* followPeerSession(
     const token = (await transport.tokens()).get(environment)
     if (!peer || !token) throw new RemoteError('environment/session-denied', 'Peer is not configured', {})
     const descriptor = await transport.describe(environment, lifetime)
-    if (!descriptor.capabilities.workspaceSessionFollow) throw new RemoteError('environment/session-unsupported', 'Peer does not support live Sessions', {})
+    if (!descriptor.capabilities[capability]) throw new RemoteError('environment/session-unsupported', 'Peer does not support live Sessions', {})
     const body = JSON.stringify({ environmentId: environment, request })
     if (Buffer.byteLength(body) > config.maxBytes) throw new RemoteError('environment/session-protocol', 'Peer request byte limit reached', {})
-    const response = await fetch(`${peer.url}${SESSION_FOLLOW_PATH}`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body, redirect: 'error', signal: lifetime })
+    const response = await fetch(`${peer.url}${path}`, { method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' }, body, redirect: 'error', signal: lifetime })
     if (!response.ok) {
       await response.body?.cancel()
       if (response.status === 401 || response.status === 403) throw new RemoteError('environment/session-denied', 'Peer refused Session access', {})
@@ -78,11 +125,11 @@ export async function* followPeerSession(
         throw new RemoteError(terminal.data.code, 'Peer Session stream closed', {})
       }
       if (next.value.event !== undefined && next.value.event !== 'message') throw new RemoteError('environment/session-protocol', 'Peer sent an unknown stream event', {})
-      let frame: EnvironmentSessionFrame
-      try { frame = environmentSessionFrameSchema.parse(JSON.parse(next.value.data)) } catch (error) {
+      let frame: Frame
+      try { frame = parse(JSON.parse(next.value.data)) } catch (error) {
         throw new RemoteError('environment/session-protocol', 'Peer sent an invalid Session frame', {}, { cause: error })
       }
-      if (frame.environmentId !== environment || frame.workspaceId !== request.workspaceId || frame.sessionId !== request.sessionId) throw new RemoteError('environment/session-protocol', 'Peer Session identity mismatch', {})
+      if (frame.environmentId !== environment || frame.workspaceId !== request.workspaceId || frame.sessionId !== request.sessionId || !matches(frame)) throw new RemoteError('environment/session-protocol', 'Peer Session identity mismatch', {})
       lifetime.throwIfAborted()
       yield frame
     }
@@ -111,9 +158,37 @@ export async function* followPeerSession(
  * @param response - response owned until source and pending writes stop.
  * @param signal - route registration lifetime; unloading joins admitted handlers.
  */
-export async function handlePeerSession(
+export function handlePeerSession(
   transport: PeerTransport, runtime: EnvironmentTeams, id: EnvironmentId, config: ResolvedConfig,
   request: IncomingMessage, response: ServerResponse, signal: AbortSignal,
+): Promise<void> {
+  return handlePeerFrames(transport, id, config, request, response, signal,
+    value => requestSchema.parse(value), (peer, input, lifetime) => runtime.follow(peer, input, lifetime))
+}
+
+/** Serve ordered terminal frames with the same credential and lifetime checks as Session streams.
+ * @param transport - pairwise credential owner.
+ * @param runtime - destination subscription owner.
+ * @param id - pinned installation identity.
+ * @param config - deployment limits.
+ * @param request - incoming peer HTTP request.
+ * @param response - response retained until source teardown.
+ * @param signal - route registration lifetime.
+ * @returns completion after the terminal viewer releases its subscription.
+ */
+export function handlePeerTerminal(
+  transport: PeerTransport, runtime: EnvironmentTeams, id: EnvironmentId, config: ResolvedConfig,
+  request: IncomingMessage, response: ServerResponse, signal: AbortSignal,
+): Promise<void> {
+  return handlePeerFrames(transport, id, config, request, response, signal,
+    value => terminalRequestSchema.parse(value), (peer, input, lifetime) => runtime.followTerminal(peer, input, lifetime))
+}
+
+async function handlePeerFrames<Request, Frame>(
+  transport: PeerTransport, id: EnvironmentId, config: ResolvedConfig,
+  request: IncomingMessage, response: ServerResponse, signal: AbortSignal,
+  parse: (value: unknown) => { environmentId: EnvironmentId; request: Request },
+  open: (peer: EnvironmentId, request: Request, signal: AbortSignal) => { frames: AsyncIterable<Frame>; signal: AbortSignal },
 ): Promise<void> {
   response.setHeader('cache-control', 'no-store')
   let peer: EnvironmentId | undefined
@@ -133,7 +208,7 @@ export async function handlePeerSession(
   let checking: Promise<void> | undefined
   const heartbeatState: { pulse: Promise<void> | undefined } = { pulse: undefined }
   let writes = Promise.resolve()
-  let iterator: AsyncIterator<EnvironmentSessionFrame> | undefined
+  let iterator: AsyncIterator<Frame> | undefined
   try {
     const chunks: Buffer[] = []
     let size = 0
@@ -142,9 +217,9 @@ export async function handlePeerSession(
       if (size > config.maxBytes) { response.writeHead(413).end(); return }
       chunks.push(chunk)
     }
-    const input = requestSchema.parse(JSON.parse(Buffer.concat(chunks).toString('utf8')))
+    const input = parse(JSON.parse(Buffer.concat(chunks).toString('utf8')))
     if (input.environmentId !== id) { response.writeHead(409).end(); return }
-    const stream = runtime.follow(peer, input.request, abort.signal)
+    const stream = open(peer, input.request, abort.signal)
     iterator = stream.frames[Symbol.asyncIterator]()
     const first = await iterator.next()
     if (first.done || stream.signal.aborted) throw new RemoteError('environment/session-unavailable', 'Session stream stopped before opening', {})
@@ -153,7 +228,7 @@ export async function handlePeerSession(
       writes = next.catch((_failedWrite: unknown) => { /* The submitting frame or heartbeat observes this rejection. */ })
       return next
     }
-    const encode = (frame: EnvironmentSessionFrame): string => {
+    const encode = (frame: Frame): string => {
       const data = `data: ${JSON.stringify(frame)}\n\n`
       if (Buffer.byteLength(data) > config.maxBytes) throw new RemoteError('environment/session-protocol', 'Session frame byte limit reached', {})
       return data

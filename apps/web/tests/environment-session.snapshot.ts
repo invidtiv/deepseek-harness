@@ -27,6 +27,7 @@ it.skipIf(webSnapshotMode() === 'record')('streams remote-session text before se
   })
   const management = scaffold.ctx.get('environmentTeamSettings') as EnvironmentTeamSettings | undefined
   if (!management) throw new Error('The published environment management plugin did not activate')
+  expect(scaffold.ctx.get('environmentPairing')).toBeDefined()
   const { environmentId } = await management.read()
   const registered = await management.workspace(environmentId, { action: 'register', alias: 'project', relativePath: '' })
   if (registered.kind !== 'registered') throw new Error('The destination did not register its workspace')
@@ -74,10 +75,14 @@ it.skipIf(webSnapshotMode() === 'record')('streams remote-session text before se
   if (catchup.done) throw new Error('The destination omitted its reconnect snapshot')
   expect(catchup.value.messages).toEqual(final.messages)
   expect(catchup.value.live).toBeUndefined()
+  const controls = await management.sessionInteraction(environmentId, { action: 'snapshot', workspaceId, sessionId }, abort.signal)
+  if (controls.kind !== 'snapshot') throw new Error('The destination omitted conversation controls')
+  expect(controls).toMatchObject({ environmentId, workspaceId, sessionId, pending: [], attachments: [] })
   await compareOrRefreshGolden(expected, [
     `live assistant: ${liveTexts.at(-1)}`,
     ...final.messages.map(message => `${message.role}: ${message.text}`),
     'reconnected: same committed messages; no live duplicate',
+    `conversation controls: ${JSON.stringify(controls.capabilities)}`,
   ].join('\n'), webSnapshotMode())
   // The borrowed fixture also owns this command's persisted lifecycle.
   const feedback = await scaffold.hostFetch('/api/commands/execute', {
