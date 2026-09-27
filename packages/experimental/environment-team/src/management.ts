@@ -14,9 +14,10 @@ import { environmentIdSchema } from './protocol.ts'
 import { PeerTransport } from './transport.ts'
 import { EnvironmentWorkspaceBrowser } from './workspace-browser.ts'
 import { workspaceRequestSchema, workspaceResultSchema } from './workspace-protocol.ts'
-import type { SessionRequest, SessionResult } from './session-types.ts'
-import { sessionRequestSchema, sessionResultSchema } from './session-protocol.ts'
+import type { SessionRequest, SessionResult, EnvironmentSessionFollowRequest, EnvironmentSessionFrame } from './session-types.ts'
+import { sessionRequestSchema, sessionResultSchema, sessionFollowRequestSchema } from './session-protocol.ts'
 import { EnvironmentSessions } from './session-service.ts'
+import { sessionFrameStream } from './session-stream.ts'
 
 /** Operator-only configuration namespace, separate from peer execution routes. */
 export default class EnvironmentTeamSettings extends TypertRemoteService {
@@ -106,7 +107,38 @@ export default class EnvironmentTeamSettings extends TypertRemoteService {
   private entry() {
     const entry = this.ctx.configEditor.entries().find(item => item.options.id === 'environment-team')
     if (!entry?.fiber) throw new Error('Environment teams is not enabled')
-    return { entry, config: resolveConfig(entry.fiber.config) }
+    return { entry, fiber: entry.fiber, config: resolveConfig(entry.fiber.config) }
+  }
+
+  /** Follow one destination's sanitized Session snapshots through the operator's authenticated connection.
+   * @param environmentId - installation selected by the operator.
+   * @param request - registered workspace and Session identities.
+   * @param signal - operator stream cancellation.
+   * @returns replacement snapshots; destination failures never select a local Session.
+   */
+  @Remote({ mode: 'stream' })
+  sessionFollow(environmentId: EnvironmentTarget['environmentId'], request: EnvironmentSessionFollowRequest, signal: AbortSignal): AsyncIterable<EnvironmentSessionFrame> {
+    const { fiber, config } = this.entry()
+    const owner = new AbortController()
+    let done = Promise.resolve()
+    let settled = false
+    const release = fiber.effect(() => async () => { if (!settled) { owner.abort(); await done } }, 'environmentTeamSettings.follow')
+    const lifetime = AbortSignal.any([signal, this.abort.signal, owner.signal])
+    const open = async function* (this: EnvironmentTeamSettings, active: AbortSignal): AsyncIterable<EnvironmentSessionFrame> {
+      active.throwIfAborted()
+      const target = environmentIdSchema.parse(environmentId)
+      const operation = sessionFollowRequestSchema.parse(request)
+      const local = await loadIdentity(config.stateDirectory)
+      active.throwIfAborted()
+      if (target === local) yield* new EnvironmentSessions(this.ctx, local, config).follow(local, operation, active)
+      else yield* new PeerTransport(local, config, this.ctx.credentials).follow(target, operation, active)
+    }
+    const stream = sessionFrameStream(active => open.call(this, active), lifetime)
+    done = stream.done
+    void done.then(() => { settled = true; void release() })
+    this.pending.add(stream.done)
+    void stream.done.then(() => this.pending.delete(stream.done))
+    return stream.frames
   }
 
   /** Read editable configuration and public identity without credential values.

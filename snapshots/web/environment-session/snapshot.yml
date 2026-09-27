@@ -1,0 +1,9 @@
+version: 1
+scenario: environment-session
+profile: web
+composition: web-default
+recording: authored
+header:
+  class: web-default
+session:
+  source: ../feedback-command/session.v3.jsonl

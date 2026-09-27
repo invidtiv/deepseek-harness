@@ -18,6 +18,8 @@ import type { ResolvedConfig } from './config.ts'
 import { assignmentSchema, environmentIdSchema, teamSchema } from './protocol.ts'
 import { EnvironmentWorkspaceBrowser } from './workspace-browser.ts'
 import { EnvironmentSessions } from './session-service.ts'
+import { sessionFrameStream, type SessionFrameStream } from './session-stream.ts'
+import type { EnvironmentSessionFollowRequest } from './session-types.ts'
 import type { Assignment, Delivery, DistributedTeamId, EnvironmentDescriptor, EnvironmentId, Member, OperationId, PeerRequest, Team, TeamCommand } from './protocol.ts'
 
 const domainSpec = defineDomain({
@@ -89,7 +91,7 @@ export class EnvironmentTeams {
   descriptor(): EnvironmentDescriptor {
     return {
       environmentId: this.environmentId, label: this.config.label, platform: platform(),
-      protocol: 1, capabilities: { distributedTeams: true, workspaceBrowser: true, ...(this.ctx.get('sessionController') ? { workspaceSessions: true as const } : {}) },
+      protocol: 1, capabilities: { distributedTeams: true, workspaceBrowser: true, ...(this.ctx.get('sessionController') ? { workspaceSessions: true as const, workspaceSessionFollow: true as const } : {}) },
     }
   }
 
@@ -139,6 +141,21 @@ export class EnvironmentTeams {
         default: return assertNever(request)
       }
     })
+  }
+
+  /** Follow one authorized destination Session without retaining an unbounded writer queue.
+   * @param peer - authenticated caller installation.
+   * @param request - registered workspace and Session identities.
+   * @param signal - HTTP client cancellation.
+   * @returns replacement snapshots and the runtime-owned writer lifetime.
+   */
+  follow(peer: EnvironmentId, request: EnvironmentSessionFollowRequest, signal: AbortSignal): SessionFrameStream {
+    const stream = sessionFrameStream(
+      lifetime => this.workspaceSessions.follow(peer, request, lifetime), AbortSignal.any([signal, this.abort.signal]),
+    )
+    this.active.add(stream.done)
+    void stream.done.then(() => this.active.delete(stream.done))
+    return stream
   }
 
   /**

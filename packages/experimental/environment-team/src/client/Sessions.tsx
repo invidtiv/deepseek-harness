@@ -1,4 +1,4 @@
-/** Destination session catalog and synchronized committed-message view. */
+/** Destination session catalog, durable messages and live assistant text. */
 import { useEffect } from 'react'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
@@ -30,7 +30,7 @@ export function Sessions(props: PropsLocale<'environmentTeams'> & InjectFace<Ses
   return <section className={css.page} aria-busy={state.loading || state.busy}>
     <header className={css.header}><div><h1>{state.workspace?.title ?? t('remoteSessions')}</h1><p>{t('sessionSyncHelp')}</p><code>{state.workspace?.environmentId}</code></div><Button disabled={state.busy} onClick={props.back}>{t('allWorkspaces')}</Button></header>
     <div className={css.toolbar}><Button disabled={state.busy} onClick={props.refresh}>{t('refresh')}</Button><Button disabled={state.busy} onClick={props.create}>{t('newSession')}</Button>{state.webUrl && <a href={state.webUrl} target="_blank" rel="noopener noreferrer">{t('openDestination')}</a>}</div>
-    {state.offline && <p role="alert">{t('sessionOffline')}</p>}
+    {state.streamFailure ? <p role="alert">{t(state.streamFailure)}</p> : state.offline && <p role="alert">{t('sessionOffline')}</p>}
     {state.loading && !state.list && <div className={css.loading}><IconLoadingOutlineRegular /></div>}
     {state.list?.sessions.length === 0 && <p>{t('noRemoteSessions')}</p>}
     {state.list?.sessions.map(session => <div className={css.row} key={session.sessionId}><div><strong>{session.title}</strong><span>{t(session.running ? 'sessionRunning' : 'sessionIdle')}</span></div><Button disabled={state.busy} aria-pressed={session.sessionId === state.sessionId} onClick={() =>{  props.select(session.sessionId) }}>{t('openSession')}</Button></div>)}
@@ -40,6 +40,7 @@ export function Sessions(props: PropsLocale<'environmentTeams'> & InjectFace<Ses
       {state.loading && !state.transcript && <div className={css.loading}><IconLoadingOutlineRegular /></div>}
       {state.transcript?.messages.length === 0 && <p>{t('noSessionMessages')}</p>}
       <div className={css.messages}>{state.transcript?.messages.map(message => <article key={message.seq}><strong>{t(message.role === 'user' ? 'sessionUser' : 'sessionAssistant')}</strong><pre>{message.text}</pre></article>)}</div>
+      {state.transcript?.live && <div className={css.messages}><article><strong>{t('sessionAssistant')} · {t('sessionStreaming')}</strong><pre>{state.transcript.live.text}</pre></article></div>}
       {state.transcript?.truncated && <p>{t('messagesTruncated')}</p>}
       <label className={css.composer}>{t('sessionMessage')}<textarea value={state.draft} disabled={state.busy || state.uncertain} onChange={(event) =>{  props.draft(event.target.value) }} rows={4} /></label>
       {state.uncertain && <p role="alert">{t('sessionUncertain')}</p>}

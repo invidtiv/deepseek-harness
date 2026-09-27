@@ -1,11 +1,7 @@
 /** Authenticated HTTP clients share destination-owned Sessions without caller-side copies. */
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
-import Credentials from '@deepseek-ai/dsh-credentials-local'
-import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { sessionHost } from './session-host.ts'
-import * as Plugin from '../src/index.ts'
+import { pairedSessionHosts } from './session-peer-host.ts'
 import { PeerTransport, PEER_PATH } from '../src/transport.ts'
 import { sessionRequestSchema, sessionResultSchema } from '../src/session-protocol.ts'
 import { EnvironmentSessions } from '../src/session-service.ts'
@@ -15,23 +11,8 @@ import { SessionController } from '@deepseek-ai/dsh-api-session-controller'
 const closes: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of closes.splice(0).reverse()) await close() })
 
-async function pairedHosts() {
-  const caller = await sessionHost()
-  closes.push(caller.close)
-  const destination = await sessionHost()
-  closes.push(destination.close)
-  const token = randomUUID() + randomUUID()
-  for (const [host, peer] of [[caller, destination], [destination, caller]] as const) {
-    await host.ctx.plugin(Credentials, { path: join(host.root, 'credentials.yml'), watch: false })
-    await host.ctx.credentials.set(credentialRef('SESSION_PAIR'), token)
-    host.config.peers.push({ environmentId: peer.id, url: peer.url, tokenEnv: 'SESSION_PAIR', workspaces: ['project'], workspaceManagement: true, sessionAccess: true })
-    await host.ctx.plugin(Plugin, host.config)
-  }
-  return { caller, destination, token }
-}
-
 it('creates remotely and converges two clients on one persisted prompt after a concurrent retry', async () => {
-  const { caller, destination, token } = await pairedHosts()
+  const { caller, destination, token } = await pairedSessionHosts((close) => { closes.push(close) })
   const signal = new AbortController().signal
   const first = new PeerTransport(caller.id, caller.config, caller.ctx.credentials)
   const second = new PeerTransport(caller.id, caller.config, caller.ctx.credentials)
@@ -63,7 +44,7 @@ it('creates remotely and converges two clients on one persisted prompt after a c
 })
 
 it('aborts the destination read when its authenticated HTTP client disconnects', async () => {
-  const { caller, destination } = await pairedHosts()
+  const { caller, destination } = await pairedSessionHosts((close) => { closes.push(close) })
   let started!: () => void
   let cancelled!: () => void
   const reading = new Promise<void>((resolve) => { started = resolve })

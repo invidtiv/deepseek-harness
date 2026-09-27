@@ -1,0 +1,25 @@
+{
+  "opening": {
+    "messages": [
+      {
+        "seq": 5,
+        "role": "user",
+        "text": "hello"
+      }
+    ],
+    "live": "partial"
+  },
+  "settled": {
+    "messages": [
+      {
+        "role": "user",
+        "text": "hello"
+      },
+      {
+        "role": "assistant",
+        "text": "partial complete"
+      }
+    ],
+    "running": false
+  }
+}

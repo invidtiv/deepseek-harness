@@ -1,11 +1,13 @@
 /** English and Chinese copy for environment deployment configuration. */
 export const en = {
+  sessionStreaming: 'Generating', sessionDenied: 'Session access was refused. Check access on the destination, then refresh.', sessionUnsupported: 'Update the destination to enable live sessions, then refresh.', sessionProtocol: 'The session stream could not be verified. Check both installations, then refresh.',
+  sessionStreamHeartbeatMs: 'Session stream heartbeat interval (ms)', sessionStreamIdleTimeoutMs: 'Session stream idle timeout (ms)',
   sessionAccess: 'Allow workspace session access', sessionPageSize: 'Session list and message limit', sessionSyncIntervalMs: 'Session refresh interval (ms)',
-  openDestination: 'Open destination Web app', openSessions: 'Open sessions', remoteSessions: 'Remote sessions', sessionSyncHelp: 'Sessions run on the selected machine. Saved text messages refresh automatically; attachments, tool details, approval prompts and errors remain in its full Web app.',
+  openDestination: 'Open destination Web app', openSessions: 'Open sessions', remoteSessions: 'Remote sessions', sessionSyncHelp: 'Sessions run on the selected machine. Messages and live assistant text synchronize automatically; attachments, tool details, approval prompts and errors remain in its full Web app.',
   newSession: 'New session', noRemoteSessions: 'No sessions in this workspace.', openSession: 'Open session', sessionRunning: 'Running', sessionIdle: 'Idle',
   sessionOffline: 'Could not synchronize. The last received messages remain visible. Reconnecting automatically; check session access in Plugins if this continues.',
   sessionsTruncated: 'The session list limit was reached. Increase it in Plugins to see more sessions.',
-  sessionMessages: 'Saved messages', noSessionMessages: 'No saved messages yet.', sessionUser: 'You', sessionAssistant: 'Assistant', sessionMessage: 'Message',
+  sessionMessages: 'Messages', noSessionMessages: 'No saved messages yet.', sessionUser: 'You', sessionAssistant: 'Assistant', sessionMessage: 'Message',
   messagesTruncated: 'Only the most recent messages are shown. Increase the session message limit in Plugins to see more.',
   sessionUncertain: 'Delivery was not confirmed. Retry sends the same request, so an accepted message is not submitted twice.',
   retryMessage: 'Retry message', sendMessage: 'Send message', stopSession: 'Stop', sessionChanged: 'Session updated on the selected machine.', sessionChangeFailed: 'Could not confirm the session change.',
@@ -37,12 +39,14 @@ export const en = {
 export type EnvironmentSettingsKey = keyof typeof en
 /** Chinese translation of the configuration page. */
 export const zh: Record<EnvironmentSettingsKey, string> = {
+  sessionStreaming: '生成中', sessionDenied: '会话访问被拒绝。请检查目标机器上的权限，然后刷新', sessionUnsupported: '请更新目标机器以启用实时会话，然后刷新', sessionProtocol: '无法验证会话流。请检查两端安装，然后刷新',
+  sessionStreamHeartbeatMs: '会话流心跳间隔（毫秒）', sessionStreamIdleTimeoutMs: '会话流空闲超时（毫秒）',
   sessionAccess: '允许访问工作区会话', sessionPageSize: '会话列表和消息上限', sessionSyncIntervalMs: '会话刷新间隔（毫秒）',
-  openDestination: '打开目标机器的 Web 应用', openSessions: '打开会话', remoteSessions: '远程会话', sessionSyncHelp: '会话在所选机器上运行。已保存的文本消息会自动刷新；附件、工具详情、审批提示和错误请使用该机器的完整 Web 应用。',
+  openDestination: '打开目标机器的 Web 应用', openSessions: '打开会话', remoteSessions: '远程会话', sessionSyncHelp: '会话在所选机器上运行。消息和助手的实时文本会自动同步；附件、工具详情、审批提示和错误请使用该机器的完整 Web 应用。',
   newSession: '新建会话', noRemoteSessions: '此工作区没有会话', openSession: '打开会话', sessionRunning: '运行中', sessionIdle: '空闲',
   sessionOffline: '无法同步，仍显示上次收到的消息。正在自动重连；若持续失败，请检查插件中的会话访问权限',
   sessionsTruncated: '已达到会话列表上限。可在插件中提高上限以显示更多会话',
-  sessionMessages: '已保存的消息', noSessionMessages: '尚无已保存的消息', sessionUser: '你', sessionAssistant: '助手', sessionMessage: '消息',
+  sessionMessages: '消息', noSessionMessages: '尚无已保存的消息', sessionUser: '你', sessionAssistant: '助手', sessionMessage: '消息',
   messagesTruncated: '仅显示最近的消息。可在插件中提高会话消息上限以显示更多内容',
   sessionUncertain: '尚未确认投递。重试将使用同一请求，不会重复提交已接受的消息',
   retryMessage: '重试消息', sendMessage: '发送消息', stopSession: '停止', sessionChanged: '所选机器上的会话已更新', sessionChangeFailed: '无法确认会话操作结果',

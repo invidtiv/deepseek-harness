@@ -6,6 +6,8 @@ import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credent
 import type { ResolvedConfig } from './config.ts'
 import { descriptorSchema, requestSchema, type EnvironmentId, type PeerRequest } from './protocol.ts'
 import type { EnvironmentDescriptor } from './protocol.ts'
+import { followPeerSession } from './peer-stream.ts'
+import type { EnvironmentSessionFollowRequest, EnvironmentSessionFrame } from './session-types.ts'
 import type { EnvironmentTeams } from './runtime.ts'
 
 /** Public discovery URL; callers must still authenticate every operation. */
@@ -17,6 +19,18 @@ const responseSchema = z.object({ environmentId: z.string(), result: z.string() 
 /** Resolves current secrets without copying them into persisted records or model output. */
 export class PeerTransport {
   constructor(private readonly id: EnvironmentId, private readonly config: ResolvedConfig, private readonly credentials: Pick<CredentialProvider, 'resolve'>) {}
+
+  /** Follow sanitized replacement frames on an identity-pinned authenticated peer.
+   * @param environment - configured destination identity.
+   * @param request - registered destination workspace and Session.
+   * @param signal - owner cancellation.
+   * @returns one physical stream generation; callers own retries.
+   */
+  follow(
+    environment: EnvironmentId, request: EnvironmentSessionFollowRequest, signal: AbortSignal,
+  ): AsyncIterable<EnvironmentSessionFrame> {
+    return followPeerSession(this, this.config, environment, request, signal)
+  }
 
   /** Resolve the current peer credentials before one operation.
    * @returns validated pairwise secrets, never persisted with configuration.

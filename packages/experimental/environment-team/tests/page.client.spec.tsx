@@ -17,7 +17,8 @@ const initial: EnvironmentConfiguration = {
   config: { stateDirectory: '/private', label: 'machine', provider: 'provider', model: 'model', agentPreset: 'standard', sandboxMode: 'read-only', approvalPolicy: 'ask',
     workspaces: { project: '/checkout' }, peers: [{ environmentId: '22222222-2222-4222-8222-222222222222', url: 'https://worker.example.ts.net', tokenEnv: 'DSH_PAIR', workspaces: ['project'] }],
     requestTimeoutMs: 15000, retryIntervalMs: 5000, maxBytes: 1048576, maxTeams: 64, maxMembers: 16,
-    maxTasks: 256, maxOperations: 2048, workspacePageSize: 100, sessionPageSize: 100, sessionSyncIntervalMs: 2000 },
+    maxTasks: 256, maxOperations: 2048, workspacePageSize: 100, sessionPageSize: 100,
+    sessionSyncIntervalMs: 2000, sessionStreamHeartbeatMs: 2000, sessionStreamIdleTimeoutMs: 10000 },
 }
 function mount(options: { read?: () => Promise<EnvironmentConfiguration>; view?: PageProps['view'] } = {}) {
   const read = vi.fn(options.read ?? (async () => structuredClone(initial)))

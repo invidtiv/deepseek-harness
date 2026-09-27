@@ -50,6 +50,10 @@ export interface EnvironmentTeamConfig {
   workspacePageSize?: number
   /** Maximum Session summaries or committed messages returned in one view. */
   sessionPageSize?: number
-  /** Milliseconds between refreshes of an open destination Session view. */
+  /** Milliseconds between Session catalog refreshes and disconnected follow retries. */
   sessionSyncIntervalMs?: number
+  /** Milliseconds between authenticated peer stream heartbeats and credential rechecks. */
+  sessionStreamHeartbeatMs?: number
+  /** Milliseconds without a complete peer frame or heartbeat before reconnecting. */
+  sessionStreamIdleTimeoutMs?: number
 }
