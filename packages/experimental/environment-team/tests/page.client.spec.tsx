@@ -95,6 +95,7 @@ it('edits worker policy, project grants, and limits while retaining other peer s
   fireEvent.change(screen.getAllByLabelText('Project alias')[1]!, { target: { value: 'second' } })
   fireEvent.change(screen.getAllByLabelText('Local directory')[1]!, { target: { value: '/second' } })
   fireEvent.click(screen.getAllByRole('button', { name: 'Remove' })[0]!)
+  fireEvent.click(screen.getByText(en.pairingAdvanced))
   fireEvent.click(screen.getByRole('button', { name: 'Add machine' }))
   fireEvent.click(screen.getByRole('button', { name: 'Add machine' }))
   fireEvent.change(screen.getAllByLabelText('Peer environment ID')[1]!, { target: { value: '33333333-3333-4333-8333-333333333333' } })
@@ -177,4 +178,59 @@ it('renders global success and failure feedback and acknowledges the completed t
     expect(screen.getByRole('alert').textContent).toBe(en.saveFailed)
     view.unmount()
   } finally { vi.useRealTimers() }
+})
+
+it('generates a transferable code without asking for client identity and connects by pasting once', async () => {
+  const config = structuredClone(initial)
+  config.config.publicUrl = 'https://target.example.ts.net'
+  config.config.invitationLifetimeMs = 1800000
+  const page = mount({ read: async () => config })
+  await screen.findByRole('button', { name: en.pairingCreate })
+  expect(screen.queryByLabelText(en.pairingTargetId)).toBeNull()
+  expect(screen.queryByLabelText(en.pairingTargetUrl)).toBeNull()
+  expect(screen.getByText(`${en.pairingLifetime}: 30 ${en.pairingMinutes}`)).toBeTruthy()
+  const invitation = { id: 'invitation', expiresAt: Date.now() + 1800000, issuer: { label: '机器' }, token: 'private-token' }
+  page.pairingCreate.mockResolvedValue(invitation)
+  fireEvent.click(screen.getByLabelText(en.pairingSessionAccess))
+  fireEvent.click(screen.getByRole('button', { name: en.pairingCreate }))
+  const output = await screen.findByLabelText<HTMLTextAreaElement>(en.pairingOutput)
+  expect(output.value).toMatch(/^dsh-pair:/)
+  expect(JSON.parse(Buffer.from(output.value.slice('dsh-pair:'.length), 'base64url').toString('utf8'))).toEqual(invitation)
+  expect(page.pairingCreate).toHaveBeenCalledWith(expect.objectContaining({ sessionAccess: true }))
+  expect(Array.from(page.container.querySelector('section')!.querySelectorAll('button'), button => button.textContent)).toMatchInlineSnapshot(`
+    [
+      "Generate code on target",
+      "Enter code on client",
+      "Generate pairing code",
+      "Copy code",
+      "Hide code",
+      "Refresh invitations",
+    ]
+  `)
+  const writeText = vi.fn().mockResolvedValue(undefined)
+  Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { writeText } })
+  fireEvent.click(screen.getByRole('button', { name: en.pairingCopy }))
+  await waitFor(() => { expect(writeText).toHaveBeenCalledWith(output.value) })
+  fireEvent.click(screen.getByRole('button', { name: en.pairingEnterMode }))
+  fireEvent.change(screen.getByLabelText(en.pairingInput), { target: { value: output.value } })
+  page.pairingAccept.mockResolvedValue({})
+  fireEvent.click(screen.getByRole('button', { name: en.pairingAccept }))
+  await waitFor(() => { expect(page.pairingAccept).toHaveBeenCalledWith(output.value, expect.objectContaining({ sessionAccess: true })) })
+  await waitFor(() => { expect(page.read).toHaveBeenCalledTimes(2) })
+})
+
+it('keeps a rejected code available for retry and explains the missing public URL', async () => {
+  const config = structuredClone(initial)
+  const page = mount({ read: async () => config })
+  expect(await screen.findByText(en.pairingNeedsUrl)).toBeTruthy()
+  expect(screen.getByRole('button', { name: en.pairingCreate }).closest('fieldset')?.disabled).toBe(true)
+  config.config.publicUrl = 'https://client.example.ts.net'
+  fireEvent.click(screen.getByRole('button', { name: en.reload }))
+  await waitFor(() => { expect(screen.queryByText(en.pairingNeedsUrl)).toBeNull() })
+  fireEvent.click(screen.getByRole('button', { name: en.pairingEnterMode }))
+  fireEvent.change(screen.getByLabelText(en.pairingInput), { target: { value: 'dsh-pair:retry-code' } })
+  page.pairingAccept.mockRejectedValue(new Error('offline'))
+  fireEvent.click(screen.getByRole('button', { name: en.pairingAccept }))
+  await waitFor(() => { expect(page.notify).toHaveBeenCalledWith('pairingFailed') })
+  expect(screen.getByLabelText(en.pairingInput)).toHaveProperty('value', 'dsh-pair:retry-code')
 })

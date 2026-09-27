@@ -15,7 +15,7 @@ export interface PairingGrants {
   teamAccess: boolean
   teamOperate: boolean
 }
-/** Identity and route pinned before an invitation is issued. */
+/** Durable identity and reachable route of one installation. */
 export interface PairingTarget {
   environmentId: EnvironmentId
   url: string
@@ -28,7 +28,7 @@ export interface PairingCredentialChange {
 /** Invitation metadata returned by authenticated management reads. */
 export interface PairingInvitationMetadata {
   id: PairingInvitationId
-  target: PairingTarget
+  target?: PairingTarget
   grants: PairingGrants
   createdAt: number
   expiresAt: number
@@ -38,7 +38,7 @@ export interface PairingInvitationMetadata {
 export interface PairingInvitation {
   id: PairingInvitationId
   issuer: PairingTarget
-  target: PairingTarget
+  target?: PairingTarget
   expiresAt: number
   token: string
 }

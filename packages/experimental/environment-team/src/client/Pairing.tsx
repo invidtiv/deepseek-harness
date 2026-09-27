@@ -1,16 +1,14 @@
 /** Private invitation transfer and explicit grants in the existing Plugins configuration surface. */
-import { useEffect, useState } from 'react'
-import { z } from 'zod'
-import { brandString } from '@deepseek-ai/dsh-brand'
-import { Button, Input, IconLoadingOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
+import { useEffect, useRef, useState } from 'react'
+import { Button, IconLoadingOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { EnvironmentConfiguration } from '../settings-types.ts'
-import type { PairingTarget, PairingGrants, PairingInvitation, PairingInvitationMetadata, PairingInvitationId, PairingReceipt, PairingAttemptMetadata } from '../pairing-types.ts'
+import type { PairingGrants, PairingInvitation, PairingInvitationMetadata, PairingInvitationId, PairingReceipt, PairingAttemptMetadata } from '../pairing-types.ts'
 import css from './Page.module.css'
 
 /** Authenticated invitation operations; credential material is never read from inventory. */
 export interface PairingActions {
-  pairingCreate(target: PairingTarget, grants: PairingGrants): Promise<PairingInvitation>
+  pairingCreate(grants: PairingGrants): Promise<PairingInvitation>
   pairingList(this: void): Promise<PairingInvitationMetadata[]>
   pairingRevoke(id: PairingInvitationId): Promise<void>
   pairingAccept(invitation: string, grants: PairingGrants): Promise<PairingReceipt>
@@ -32,14 +30,19 @@ const statuses = { pending: 'pairingPending', redeeming: 'pairingRedeeming', con
  */
 export function Pairing(props: PairingActions & PropsLocale<'environmentTeams'> & { configuration: EnvironmentConfiguration; changed(): void }) {
   const { t } = props
-  const [targetId, setTargetId] = useState('')
-  const [url, setUrl] = useState('')
+  const generatedId = useRef<PairingInvitationId | undefined>(undefined)
+  const consumed = useRef<Set<string>>(new Set())
+  const changed = useRef(props.changed)
+  changed.current = props.changed
+  const [mode, setMode] = useState<'generate' | 'enter'>('generate')
+  const [expiresAt, setExpiresAt] = useState<number>()
+  const [copied, setCopied] = useState(false)
+  const [now, setNow] = useState(Date.now())
   const [incoming, setIncoming] = useState('')
   const [outgoing, setOutgoing] = useState('')
   const [items, setItems] = useState<PairingInvitationMetadata[]>()
   const [attempts, setAttempts] = useState<PairingAttemptMetadata[]>()
   const [readFailed, setReadFailed] = useState(false)
-  const [invalid, setInvalid] = useState(false)
   const [busy, setBusy] = useState(false)
   const [generation, setGeneration] = useState(0)
   const [grants, setGrants] = useState<PairingGrants>({
@@ -49,31 +52,53 @@ export function Pairing(props: PairingActions & PropsLocale<'environmentTeams'> 
   useEffect(() => {
     let active = true
     void Promise.all([props.pairingList(), props.pairingAttempts()]).then(([value, pending]) => {
-      if (active) { setItems(value); setAttempts(pending); setReadFailed(false) }
+      if (active) {
+        const newlyConnected = value.some(item => item.status === 'consumed' && !consumed.current.has(item.id) && item.target && !props.configuration.config.peers.some(peer => peer.environmentId === item.target?.environmentId))
+        consumed.current = new Set(value.filter(item => item.status === 'consumed').map(item => item.id))
+        setItems(value); setAttempts(pending); setReadFailed(false)
+        if (value.some(item => item.id === generatedId.current && item.status !== 'pending' && item.status !== 'redeeming')) setOutgoing('')
+        if (newlyConnected) changed.current()
+      }
     }, () => { if (active) setReadFailed(true) })
     return () => { active = false }
-  }, [generation, props.pairingList, props.pairingAttempts])
+  }, [generation, props.pairingList, props.pairingAttempts, props.configuration.config.peers])
+  useEffect(() => {
+    if (!outgoing || expiresAt === undefined) return
+    const timer = setInterval(() => {
+      const time = Date.now()
+      setNow(time); setGeneration(value => value + 1)
+      if (time >= expiresAt) clearInterval(timer)
+    }, props.configuration.config.sessionSyncIntervalMs)
+    return () => { clearInterval(timer) }
+  }, [outgoing, expiresAt, props.configuration.config.sessionSyncIntervalMs])
   const run = async (operation: () => Promise<void>) => {
     setBusy(true)
     try { await operation(); setGeneration(value => value + 1); props.notify('pairingChanged') }
     catch { props.notify('pairingFailed') }
     finally { setBusy(false) }
   }
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(outgoing); setCopied(true) }
+    catch { props.notify('pairingFailed') }
+  }
   const create = () => {
-    const id = z.uuid().safeParse(targetId)
-    setInvalid(!id.success)
-    if (!id.success) return
     void run(async () => {
-      const invitation = await props.pairingCreate({ environmentId: brandString<PairingTarget['environmentId']>(id.data), url }, grants)
-      setOutgoing(JSON.stringify(invitation))
+      const invitation = await props.pairingCreate(grants)
+      generatedId.current = invitation.id
+      const bytes = new TextEncoder().encode(JSON.stringify(invitation))
+      setOutgoing(`dsh-pair:${btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join('')).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')}`)
+      setExpiresAt(invitation.expiresAt); setNow(Date.now()); setCopied(false)
     })
   }
   return <section className={css.pairing}>
     <h3>{t('pairingTitle')}</h3><p>{t('pairingHelp')}</p>
+    {!props.configuration.config.publicUrl && <p role="status">{t('pairingNeedsUrl')}</p>}
+    <div className={css.actions}>
+      <Button disabled={busy} aria-pressed={mode === 'generate'} onClick={() => { setMode('generate') }}>{t('pairingGenerateMode')}</Button>
+      <Button disabled={busy} aria-pressed={mode === 'enter'} onClick={() => { setMode('enter') }}>{t('pairingEnterMode')}</Button>
+    </div>
+    <p>{t(mode === 'generate' ? 'pairingGenerateHelp' : 'pairingEnterHelp')}</p>
     <fieldset disabled={busy || !props.configuration.config.publicUrl} className={css.fields}>
-      <label className={css.field}>{t('pairingTargetId')}<Input value={targetId} onChange={(event) => { setTargetId(event.target.value); setInvalid(false) }} /></label>
-      <label className={css.field}>{t('pairingTargetUrl')}<Input value={url} onChange={(event) => { setUrl(event.target.value) }} /></label>
-      {invalid && <p role="alert">{t('pairingInvalidId')}</p>}
       <h3>{t('pairingPermissions')}</h3><span>{t('pairingWorkspaces')}</span>
       {Object.keys(props.configuration.config.workspaces).length === 0 && <p>{t('pairingNoWorkspaces')}</p>}
       {Object.keys(props.configuration.config.workspaces).map(alias => <label key={alias}>
@@ -83,11 +108,20 @@ export function Pairing(props: PairingActions & PropsLocale<'environmentTeams'> 
         const checked = event.target.checked
         setGrants({ ...grants, [key]: checked, ...(key === 'teamOperate' && checked ? { teamAccess: true } : {}), ...(key === 'teamAccess' && !checked ? { teamOperate: false } : {}) })
       }} />{t(label)}</label>)}
-      <div><Button disabled={!targetId || !url} onClick={create}>{t('pairingCreate')}</Button></div>
-      {outgoing && <><label className={css.field}>{t('pairingOutput')}<textarea className={css.transfer} readOnly value={outgoing} /></label><div><Button onClick={() => { setOutgoing('') }}>{t('pairingHide')}</Button></div></>}
-      <label className={css.field}>{t('pairingInput')}<textarea className={css.transfer} value={incoming} onChange={(event) => { setIncoming(event.target.value) }} /></label>
-      <p>{t('pairingRetryHelp')}</p>
-      <div><Button disabled={!incoming} onClick={() => { void run(async () => { await props.pairingAccept(incoming, grants); setIncoming(''); props.changed() }) }}>{t('pairingAccept')}</Button></div>
+      {mode === 'generate' ? <>
+        <p>{t('pairingLifetime')}: {props.configuration.config.invitationLifetimeMs / 60000} {t('pairingMinutes')}</p>
+        <div><Button onClick={create}>{t('pairingCreate')}</Button></div>
+        {outgoing && <>
+          <label className={css.field}>{t('pairingOutput')}<textarea className={css.transfer} readOnly value={outgoing} /></label>
+          {expiresAt !== undefined && now >= expiresAt && <p role="status">{t('pairingExpired')}</p>}
+          <p>{t('pairingExpiresAt')}: {expiresAt === undefined ? '' : new Date(expiresAt).toLocaleString()}</p>
+          <div className={css.actions}><Button disabled={expiresAt !== undefined && now >= expiresAt} onClick={() => { void copy() }}>{t(copied ? 'copiedRemote' : 'pairingCopy')}</Button><Button onClick={() => { setOutgoing(''); setExpiresAt(undefined) }}>{t('pairingHide')}</Button></div>
+        </>}
+      </> : <>
+        <label className={css.field}>{t('pairingInput')}<textarea className={css.transfer} value={incoming} onChange={(event) => { setIncoming(event.target.value) }} /></label>
+        <p>{t('pairingRetryHelp')}</p>
+        <div><Button disabled={!incoming.trim()} onClick={() => { void run(async () => { await props.pairingAccept(incoming.trim(), grants); setIncoming(''); props.changed() }) }}>{t('pairingAccept')}</Button></div>
+      </>}
     </fieldset>
     {readFailed && <p role="alert">{t('pairingLoadingFailed')}</p>}
     {!items && !readFailed && <div className={css.loading}><IconLoadingOutlineRegular /></div>}
@@ -98,7 +132,7 @@ export function Pairing(props: PairingActions & PropsLocale<'environmentTeams'> 
       {!props.configuration.config.peers.some(peer => peer.environmentId === attempt.issuer.environmentId) && <div><Button disabled={busy} onClick={() => { void run(async () => { await props.pairingForget(attempt.id) }) }}>{t('pairingForget')}</Button></div>}
     </div>)}
     {items?.map(item => <div className={css.peer} key={item.id}>
-      <code>{item.target.environmentId}</code><span>{item.target.url}</span><span>{t(statuses[item.status])}</span>
+      {item.target ? <><code>{item.target.environmentId}</code><span>{item.target.url}</span></> : <span>{t('pairingUnclaimed')}</span>}<span>{t(statuses[item.status])}</span>
       {(item.status === 'pending' || item.status === 'redeeming') && <div><Button disabled={busy} onClick={() => { void run(async () => { await props.pairingRevoke(item.id) }) }}>{t('pairingRevoke')}</Button></div>}
     </div>)}
     <Button disabled={busy} onClick={() => { setGeneration(value => value + 1) }}>{t('pairingRefresh')}</Button>

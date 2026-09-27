@@ -147,8 +147,8 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
         if (!result.ok) throw result.error
         return result.value
       },
-      pairingCreate: async (target, grants) => {
-        const result = await child.remote.environmentTeamSettings.pairingCreate(target, grants)
+      pairingCreate: async (grants) => {
+        const result = await child.remote.environmentTeamSettings.pairingCreate(grants)
         if (!result.ok) throw result.error
         return result.value
       },

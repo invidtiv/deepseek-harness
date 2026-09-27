@@ -17,7 +17,7 @@ export const pairingGrantsSchema = z.object({
 }).strict().refine(value => !value.teamOperate || value.teamAccess, 'Team operation requires team access')
 /** Invitation secret is read once by its creator and submitted only to its pinned issuer. */
 export const pairingInvitationSchema = z.object({
-  id: pairingIdSchema, issuer: pairingTargetSchema, target: pairingTargetSchema,
+  id: pairingIdSchema, issuer: pairingTargetSchema, target: pairingTargetSchema.optional(),
   expiresAt: z.number().int().positive(), token: z.string().regex(/^[A-Za-z0-9_-]{43}$/u),
 }).strict()
 /** Redeemer supplies the shared credential so the issuer never returns a recoverable secret. */

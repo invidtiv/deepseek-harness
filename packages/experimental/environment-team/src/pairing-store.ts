@@ -11,7 +11,7 @@ export const pairingDomain = defineDomain({
   global: { schema: z.object({ environmentId: environmentIdSchema.nullable() }), initial: { environmentId: null } },
   tables: {
     invitations: { valueSchema: z.object({
-      id: pairingIdSchema, target: pairingTargetSchema, grants: pairingGrantsSchema,
+      id: pairingIdSchema, target: pairingTargetSchema.optional(), grants: pairingGrantsSchema,
       createdAt: z.number().int(), expiresAt: z.number().int(), tokenHash: digest,
       status: z.enum(['pending', 'redeeming', 'committing', 'consumed', 'revoked']),
       redemption: z.object({ fingerprint: digest, credentialRef: z.string().min(1) }).strict().optional(),

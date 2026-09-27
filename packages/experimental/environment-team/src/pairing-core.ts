@@ -4,7 +4,7 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { Domain } from '@deepseek-ai/dsh-storage-domain'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { pairingDomain } from './pairing-store.ts'
-import { pairingGrantsSchema, pairingTargetSchema, pairingIdSchema, pairingInvitationSchema, pairingRedemptionSchema, pairingReceiptSchema } from './pairing-protocol.ts'
+import { pairingGrantsSchema, pairingIdSchema, pairingInvitationSchema, pairingRedemptionSchema, pairingReceiptSchema } from './pairing-protocol.ts'
 import { readEnvironmentConfiguration, saveEnvironmentConfiguration } from './pairing-configuration.ts'
 import { PeerTransport } from './transport.ts'
 import type { EnvironmentId } from './protocol.ts'
@@ -29,28 +29,24 @@ export class EnvironmentPairing {
     private readonly ctx: Context, readonly environmentId: EnvironmentId, private readonly domain: Domain<typeof pairingDomain>,
   ) {}
 
-  /** Issue a secret once for one intended peer and one explicit grant.
-   * @param target - intended peer identity and route.
+  /** Issue a one-time code that binds to its first redeeming client.
    * @param grants - local permissions delegated by this invitation.
    * @returns private invitation envelope; subsequent reads expose metadata only.
    */
-  create(target: PairingTarget, grants: PairingGrants): Promise<PairingInvitation> {
+  create(grants: PairingGrants): Promise<PairingInvitation> {
     return this.serial(async () => {
       const current = await this.configuration()
       const issuer = this.origin(current)
-      const parsed = pairingTargetSchema.parse(target)
       const grant = this.grants(current.config, grants)
-      this.available(current, parsed)
       await this.prune(current.config.maxInvitations)
-      await this.describe(current, parsed)
       const id = pairingIdSchema.parse(randomUUID())
       const token = randomBytes(32).toString('base64url')
       const createdAt = Date.now()
       const expiresAt = createdAt + current.config.invitationLifetimeMs
-      const record = { id, target: parsed, grants: grant, createdAt, expiresAt, tokenHash: hash(token), status: 'pending' as const }
+      const record = { id, grants: grant, createdAt, expiresAt, tokenHash: hash(token), status: 'pending' as const }
       if (Buffer.byteLength(JSON.stringify(record)) > current.config.maxBytes) throw new Error('Pairing invitation byte limit reached')
       await this.domain.table('invitations').put(id, record)
-      return { id, issuer, target: parsed, expiresAt, token }
+      return { id, issuer, expiresAt, token }
     })
   }
 
@@ -59,7 +55,7 @@ export class EnvironmentPairing {
    */
   list(): Promise<PairingInvitationMetadata[]> {
     return this.serial(() => Promise.resolve([...this.domain.table('invitations').entries()].map(([, { id, target, grants, createdAt, expiresAt, status }]) => ({
-      id, target, grants, createdAt, expiresAt, status: status === 'committing' ? 'redeeming' : status === 'pending' && expiresAt <= Date.now() ? 'expired' : status,
+      id, ...(target ? { target } : {}), grants, createdAt, expiresAt, status: status === 'committing' ? 'redeeming' : status === 'pending' && expiresAt <= Date.now() ? 'expired' : status,
     }))))
   }
 
@@ -86,34 +82,35 @@ export class EnvironmentPairing {
       const current = await this.configuration()
       const item = this.domain.table('invitations').get(request.invitationId)
       if (!item || !sameHash(item.tokenHash, hash(request.token)) || item.status === 'revoked') throw new Error('Pairing invitation is unavailable')
-      if (item.target.environmentId !== request.target.environmentId || item.target.url !== request.target.url) throw new Error('Pairing destination mismatch')
+      if (item.target && (item.target.environmentId !== request.target.environmentId || item.target.url !== request.target.url)) throw new Error('Pairing destination mismatch')
+      const target = item.target ?? request.target
       const fingerprint = hash(JSON.stringify(request))
       if (item.redemption && !sameHash(item.redemption.fingerprint, fingerprint)) throw new Error('Pairing invitation was already redeemed')
       if (!item.redemption && item.expiresAt <= Date.now()) throw new Error('Pairing invitation expired')
       const staged = item.redemption?.credentialRef ?? reference()
-      this.available(current, item.target, staged)
+      this.available(current, target, staged)
       if (item.status === 'consumed' || item.status === 'committing') {
-        const peer = current.config.peers.find(candidate => candidate.environmentId === item.target.environmentId)
+        const peer = current.config.peers.find(candidate => candidate.environmentId === target.environmentId)
         const stored = (await this.ctx.credentials.resolve(credentialRef(staged)))?.value
         if (!peer || !stored || !sameHash(hash(stored), hash(request.secret))) throw new Error('Pairing has been revoked or rotated')
-        if (item.status === 'committing') await this.domain.table('invitations').put(item.id, { ...item, status: 'consumed' })
-        return { environmentId: this.environmentId, peerId: item.target.environmentId, invitationId: item.id }
+        if (item.status === 'committing') await this.domain.table('invitations').put(item.id, { ...item, target, status: 'consumed' })
+        return { environmentId: this.environmentId, peerId: target.environmentId, invitationId: item.id }
       }
       this.grants(current.config, item.grants)
-      await this.describe(current, item.target)
+      await this.describe(current, target)
       if (!item.redemption) await this.domain.table('invitations').put(item.id, {
-        ...item, status: 'redeeming', redemption: { fingerprint, credentialRef: staged },
+        ...item, target, status: 'redeeming', redemption: { fingerprint, credentialRef: staged },
       })
       await this.ctx.credentials.set(credentialRef(staged), request.secret)
-      await this.domain.table('invitations').put(item.id, { ...item, status: 'committing', redemption: { fingerprint, credentialRef: staged } })
-      await this.commit(current, item.target, item.grants, staged)
-      await this.domain.table('invitations').put(item.id, { ...item, status: 'consumed', redemption: { fingerprint, credentialRef: staged } })
-      return { environmentId: this.environmentId, peerId: item.target.environmentId, invitationId: item.id }
+      await this.domain.table('invitations').put(item.id, { ...item, target, status: 'committing', redemption: { fingerprint, credentialRef: staged } })
+      await this.commit(current, target, item.grants, staged)
+      await this.domain.table('invitations').put(item.id, { ...item, target, status: 'consumed', redemption: { fingerprint, credentialRef: staged } })
+      return { environmentId: this.environmentId, peerId: target.environmentId, invitationId: item.id }
     })
   }
 
   /** Redeem a private invitation and grant the issuer explicitly selected local access.
-   * @param invitation - pinned issuer, intended destination, and one-time token.
+   * @param invitation - pinned issuer and one-time token; older invitations may pin the client.
    * @param grants - this installation's permissions granted to the issuer.
    * @returns acknowledgment after both installation configurations are committed.
    */
@@ -122,7 +119,7 @@ export class EnvironmentPairing {
       const invite = pairingInvitationSchema.parse(invitation)
       const current = await this.configuration()
       const local = this.origin(current)
-      if (invite.target.environmentId !== local.environmentId || invite.target.url !== local.url) throw new Error('Invitation belongs to another installation or route')
+      if (invite.target && (invite.target.environmentId !== local.environmentId || invite.target.url !== local.url)) throw new Error('Invitation belongs to another installation or route')
       const grant = this.grants(current.config, grants)
       const fingerprint = hash(JSON.stringify({ invitation: invite, grants: grant }))
       let attempt = this.domain.table('attempts').get(invite.id)

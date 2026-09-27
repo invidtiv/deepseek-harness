@@ -10,7 +10,7 @@ import { teamDashboardRequestSchema, teamDashboardResultSchema } from './team-da
 import type { TeamDashboardRequest, TeamDashboardResult } from './team-types.ts'
 import type {} from './pairing.ts'
 import { environmentConfigurationEntry, readEnvironmentConfiguration, saveEnvironmentConfiguration } from './pairing-configuration.ts'
-import type { PairingTarget, PairingGrants, PairingInvitation, PairingInvitationMetadata, PairingInvitationId, PairingReceipt, PairingCredentialChange, PairingAttemptMetadata } from './pairing-types.ts'
+import type { PairingGrants, PairingInvitation, PairingInvitationMetadata, PairingInvitationId, PairingReceipt, PairingCredentialChange, PairingAttemptMetadata } from './pairing-types.ts'
 import { loadIdentity } from './identity.ts'
 import type { EnvironmentConfiguration } from './settings-types.ts'
 import type { EnvironmentTarget, WorkspaceRequest, WorkspaceResult } from './workspace-types.ts'
@@ -265,14 +265,13 @@ export default class EnvironmentTeamSettings extends TypertRemoteService {
     return this.track(() => saveEnvironmentConfiguration(this.ctx, input, changes))
   }
 
-  /** Issue an invitation for a pinned machine and explicit local permissions.
-   * @param target - intended peer identity and route.
+  /** Generate a one-time pairing code with explicit local permissions.
    * @param grants - local permissions delegated to that peer.
    * @returns one-time private invitation envelope.
    */
   @Remote
-  pairingCreate(target: PairingTarget, grants: PairingGrants): Promise<PairingInvitation> {
-    return this.track(() => this.pairing().create(target, grants))
+  pairingCreate(grants: PairingGrants): Promise<PairingInvitation> {
+    return this.track(() => this.pairing().create(grants))
   }
 
   /** Read invitation metadata without secret material.
@@ -298,13 +297,18 @@ export default class EnvironmentTeamSettings extends TypertRemoteService {
   }
 
   /** Import a privately transferred invitation envelope.
-   * @param invitation - JSON copied from the intended issuer's creation response.
+   * @param invitation - code copied from the target machine, or a legacy JSON invitation.
    * @param grants - explicitly selected local permissions for that issuer.
    * @returns acknowledgment after both peer configurations are committed.
    */
   @Remote
   pairingImport(invitation: string, grants: PairingGrants): Promise<PairingReceipt> {
-    return this.track(() => this.pairing().accept(JSON.parse(invitation), grants))
+    return this.track(async () => {
+      const code = invitation.trim()
+      if (Buffer.byteLength(code) > this.entry().config.maxBytes) throw new Error('Pairing code is too large')
+      const json = code.startsWith('dsh-pair:') ? Buffer.from(code.slice(9), 'base64url').toString('utf8') : code
+      return this.pairing().accept(JSON.parse(json), grants)
+    })
   }
 
   /** Read staged outgoing attempts without their credentials.

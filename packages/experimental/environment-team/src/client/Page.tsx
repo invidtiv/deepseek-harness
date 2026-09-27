@@ -83,6 +83,7 @@ export function Page(props: PageProps) {
   }
   return <div className={css.page}>
     <p>{t('coordinator')}</p><p>{t('identity')}: <code>{accepted.environmentId}</code></p>
+    <Pairing {...props} configuration={accepted} changed={() => { setGeneration(value => value + 1) }} />
     <fieldset disabled={busy} className={css.fields}>
       {scalarFields.map(key => <div key={key}>{field(key, draft[key], (value) => { setDraft({ ...draft, [key]: value }) })}</div>)}
       <label className={css.field}>{t('sandboxMode')}<select value={draft.sandboxMode} onChange={(event) => { setDraft({ ...draft, sandboxMode: event.target.value as EnvironmentTeamConfig['sandboxMode'] }) }}>{(['read-only', 'workspace-write', 'danger-full-access'] as const).map(mode => <option key={mode} value={mode}>{t(mode)}</option>)}</select></label>
@@ -94,21 +95,21 @@ export function Page(props: PageProps) {
         <Button onClick={() => { setWorkspaces(workspaces.filter((_, i) => i !== index)) }}>{t('remove')}</Button>
       </div>)}
       <Button onClick={() => { setWorkspaces([...workspaces, { alias: '', path: '' }]) }}>{t('addWorkspace')}</Button>
-      <h3>{t('peers')}</h3><p>{t('secretHelp')}</p>
-      {peers.map((peer, index) => <div className={css.peer} key={index}>
-        {field('environmentId', peer.environmentId, (value) => { updatePeer(index, { environmentId: value, tokenEnv: `DSH_PEER_${value.replaceAll('-', '_')}` }) })}
-        {field('url', peer.url, (value) => { updatePeer(index, { url: value }) })}
-        {field('grants', peer.workspaces.join(', '), (value) => { updatePeer(index, { workspaces: value.split(',').map(item => item.trim()) }) })}
-        {grants.map(grant => <label key={grant}><input type="checkbox" checked={peer[grant] ?? false} onChange={(event) => { updatePeer(index, { [grant]: event.target.checked }) }} />{t(grant)}</label>)}
-        {field('secret', secrets[index] ?? '', (value) => { setSecrets({ ...secrets, [index]: value }) }, 'password')}
-        <Button onClick={() => { setDraft({ ...draft, peers: peers.filter((_, i) => i !== index) })
-          setSecrets(Object.fromEntries(Object.entries(secrets).filter(([key]) => Number(key) !== index).map(([key, value]) => [Number(key) > index ? Number(key) - 1 : Number(key), value]))) }}>{t('remove')}</Button>
-      </div>)}
-      <Button onClick={() => { setDraft({ ...draft, peers: [...peers, { environmentId: '', url: '', tokenEnv: '', workspaces: [] }] }) }}>{t('addPeer')}</Button>
+      <details><summary>{t('pairingAdvanced')}</summary><h3>{t('peers')}</h3><p>{t('secretHelp')}</p>
+        {peers.map((peer, index) => <div className={css.peer} key={index}>
+          {field('environmentId', peer.environmentId, (value) => { updatePeer(index, { environmentId: value, tokenEnv: `DSH_PEER_${value.replaceAll('-', '_')}` }) })}
+          {field('url', peer.url, (value) => { updatePeer(index, { url: value }) })}
+          {field('grants', peer.workspaces.join(', '), (value) => { updatePeer(index, { workspaces: value.split(',').map(item => item.trim()) }) })}
+          {grants.map(grant => <label key={grant}><input type="checkbox" checked={peer[grant] ?? false} onChange={(event) => { updatePeer(index, { [grant]: event.target.checked }) }} />{t(grant)}</label>)}
+          {field('secret', secrets[index] ?? '', (value) => { setSecrets({ ...secrets, [index]: value }) }, 'password')}
+          <Button onClick={() => { setDraft({ ...draft, peers: peers.filter((_, i) => i !== index) })
+            setSecrets(Object.fromEntries(Object.entries(secrets).filter(([key]) => Number(key) !== index).map(([key, value]) => [Number(key) > index ? Number(key) - 1 : Number(key), value]))) }}>{t('remove')}</Button>
+        </div>)}
+        <Button onClick={() => { setDraft({ ...draft, peers: [...peers, { environmentId: '', url: '', tokenEnv: '', workspaces: [] }] }) }}>{t('addPeer')}</Button>
+      </details>
       <details><summary>{t('limits')}</summary>{limits.map(key => <div key={key}>{field(key, String(draft[key]), (value) => { setDraft({ ...draft, [key]: Number(value) }) }, 'number')}</div>)}</details>
     </fieldset>
     <p>{t('changed')}</p>{error && <p role="alert">{error}</p>}
     <div className={css.actions}><Button variant="primary" disabled={busy} onClick={() => { void save() }}>{t('save')}</Button><Button disabled={busy} onClick={() => { setGeneration(value => value + 1) }}>{t('reload')}</Button></div>
-    <Pairing {...props} configuration={accepted} changed={() => { setGeneration(value => value + 1) }} />
   </div>
 }
