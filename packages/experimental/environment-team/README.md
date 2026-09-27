@@ -52,7 +52,7 @@ Configure `agentPreset`, `sandboxMode`, and `approvalPolicy` explicitly. New mem
 | `sessionStreamHeartbeatMs` | `2000` | Peer stream heartbeat and credential recheck interval |
 | `sessionStreamIdleTimeoutMs` | `10000` | Maximum peer stream silence; must exceed its heartbeat interval |
 | `publicUrl` | empty | Reachable HTTPS origin required to create or accept invitations |
-| `invitationLifetimeMs` | `600000` | Lifetime of a new pairing invitation |
+| `invitationLifetimeMs` | `1800000` | Lifetime of a new pairing invitation |
 | `maxInvitations` | `32` | Combined retained invitation and acceptance-attempt limit |
 | `maxUploadBytes` | `1048576` | Attachment transfer limit, also constrained by `maxBytes` after encoding |
 | `terminalCols` / `terminalRows` | `80` / `24` | Initial remote terminal dimensions |
@@ -79,7 +79,7 @@ Terminals execute with the destination user's permissions and remain on that mac
 
 ### Pairing invitations
 
-Save each machine's reachable `publicUrl` in Plugins. Create an invitation with the intended machine's identity, URL, and explicit local grants, then privately transfer it to that machine's Plugins page. Acceptance chooses the reciprocal grants. Invitations are identity-pinned and one-time; inventory reads contain metadata without the invitation secret. A lost response can retry the same invitation and grants. An ambiguous configuration commit fails closed if the peer was removed; discard an unfinished acceptance before starting again. Removing a configured peer revokes its access independently of invitation expiration. Manual secret edits stage fresh credential references and commit them with the configuration revision.
+Save each machine's reachable `publicUrl` in Plugins. On the target machine, generate a pairing code with explicit local grants; no client ID or URL is needed. Privately paste the `dsh-pair` code into the client machine's Plugins page and choose its reciprocal local grants. Successful acceptance configures both peers and their credentials automatically. New codes expire after 30 minutes by default (`invitationLifetimeMs`) and bind to the first redeeming client; an invitation can establish only one pair. Earlier identity-pinned invitations retain their destination restriction. Inventory reads contain metadata without the invitation secret. A lost response can retry the same invitation and grants. An ambiguous configuration commit fails closed if the peer was removed; discard an unfinished acceptance before starting again. Removing a configured peer revokes its access independently of invitation expiration. Manual secret edits stage fresh credential references and commit them with the configuration revision.
 
 ### Team operations
 

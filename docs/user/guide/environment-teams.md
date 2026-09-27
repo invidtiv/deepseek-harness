@@ -39,9 +39,13 @@ For tailnet access, [Tailscale Serve](https://tailscale.com/docs/reference/tails
 <a id="pair"></a>
 ## Pair environments
 
-Select **Add machine**, enter the other installation's displayed environment ID and Tailscale HTTPS URL, and list the project aliases the peer may use. Enter an independently generated pairing secret of at least 32 bytes. Configure the reciprocal peer on the other machine with the same secret. Use a different secret for every pair.
+Save each machine's reachable Tailscale HTTPS origin in **Plugins → Environment teams** before pairing. The target machine generates a code; the client machine enters it. You do not need to enter a client ID, client URL, or shared secret when generating the code.
 
-Pairing secrets are written to the local credential store, never returned by configuration reads or embedded in the profile patch. Leave the secret field blank to keep the existing value. Secret writes precede the profile update and are not rolled back if that update fails. An inherited environment credential is read-only and cannot be replaced through this page. Secret changes apply to the next peer request; removing a peer and saving revokes its subsequent requests.
+1. On the target machine, choose the local directories and permissions to grant, then generate a pairing code. The code expires after 30 minutes by default; its lifetime is configurable in Plugins.
+2. Transfer the private `dsh-pair` code to the client machine. Paste it into that machine's pairing form and choose which local directories and permissions to grant back to the target.
+3. Accept the code. DSH saves both connections and their credentials automatically. Refresh the machine lists to confirm each machine sees the other; no second code or manual secret is needed.
+
+A code pairs one client only. If completion cannot be confirmed, retry the same code with the same permissions. Generate a new code if an unused one expires. To revoke an established connection, remove the peer and save; code expiration does not disconnect paired machines.
 
 Add as many peers and checkout mappings as the deployment needs. A coordinator with four workers uses four pairs. Worker-to-worker messages pass through the team's coordinator. Each side maps the shared project alias to its own local checkout; files are not synchronized.
 
@@ -56,7 +60,7 @@ Registration creates the workspace on the destination. A nested workspace needs 
 
 To use Sessions from this Web app, enable **Allow workspace session access** for the calling machine in the destination's Plugins configuration. Select **Open sessions** on the registered workspace, then **New session** or open an existing Session. Send text or stop active work from that panel. Assistant text appears while the reply is being generated, including replies started through the destination's Web app. After a connection failure, the last view remains visible; reconnect restores saved messages and any unfinished reply. If a send was not acknowledged, **Retry message** reuses its submission identity.
 
-Sessions run with the destination's credentials and ordinary Web defaults. Their logs and files remain there. Upgrade both installations for live text. Attachments, tool details, errors, approvals, and terminals require the destination's full Web app. Refresh, heartbeat, idle timeout, and message limits are configurable in Plugins. Closing the panel disconnects its view without stopping the Session. Workspace browsing permission alone does not grant Session access.
+Sessions run with the destination's credentials and ordinary Web defaults. Their logs and files remain there. Upgrade both installations for live text. The panel shows committed tool details and errors; attachments, approval responses, and terminals require their separate destination grants. Refresh, heartbeat, idle timeout, and message limits are configurable in Plugins. Closing the panel disconnects its view without stopping the Session. Workspace browsing permission alone does not grant Session access.
 
 <a id="run"></a>
 ## Run a team
