@@ -40,8 +40,8 @@ it('retains exact attachment receipts and image bytes through an uncertain promp
   controller.select(sessionId)
   const receipt = brandString<NonNullable<Extract<import('../src/session-types.ts').SessionRequest, { action: 'prompt' }>['attachments']>[number]>('receipt')
   const image = { data: 'aGVsbG8=', mediaType: 'image/png' as const, name: 'picture.png' }
-  controller.stage(sessionId, { name: 'notes.txt', receipt })
-  controller.stage(sessionId, { name: 'picture.png', image })
+  controller.stage({ ...workspace, sessionId }, { name: 'notes.txt', receipt })
+  controller.stage({ ...workspace, sessionId }, { name: 'picture.png', image })
   await controller.send()
   expect(controller.state.getSnapshot().uncertain).toBe(true)
   controller.removeAttachment(0)
@@ -58,11 +58,11 @@ it('discards uploads after selection changes and allows removing unsent attachme
   const { controller } = fixture()
   controller.select(sessionId)
   const attachment = { name: 'image.png', image: { data: 'aGVsbG8=', mediaType: 'image/png' as const } }
-  controller.stage(brandString<EnvironmentSessionSummary['sessionId']>('other'), attachment)
+  controller.stage({ ...workspace, sessionId: brandString<EnvironmentSessionSummary['sessionId']>('other') }, attachment)
   expect(controller.state.getSnapshot().attachments).toBeUndefined()
-  controller.stage(sessionId, attachment); controller.removeAttachment(0)
+  controller.stage({ ...workspace, sessionId }, attachment); controller.removeAttachment(0)
   expect(controller.state.getSnapshot().attachments).toEqual([])
-  controller.stage(sessionId, attachment)
+  controller.stage({ ...workspace, sessionId }, attachment)
   controller.select(brandString<EnvironmentSessionSummary['sessionId']>('other'))
   expect(controller.state.getSnapshot().attachments).toBeUndefined()
 })
@@ -242,4 +242,87 @@ it('keeps unrelated response kinds out of the catalog and transcript', async () 
   expect(controller.state.getSnapshot()).toMatchObject({ loading: false, offline: false })
   expect(controller.state.getSnapshot().transcript).toBeUndefined()
   expect(controller.state.getSnapshot().list).toBeUndefined()
+})
+
+
+it('restores selections and drafts by machine and workspace even when session IDs collide', async () => {
+  const { controller } = fixture()
+  const other = { ...workspace, environmentId: brandString<EnvironmentWorkspace['environmentId']>('other-machine') }
+  const another = { ...workspace, workspaceId: brandString<EnvironmentWorkspace['workspaceId']>('another-workspace') }
+  controller.select(sessionId); await controller.refresh(); controller.draft('First draft')
+  const attachment = { name: 'image.png', image: { data: 'aGVsbG8=', mediaType: 'image/png' as const } }
+  controller.stage({ ...workspace, sessionId }, attachment)
+  controller.open(other); controller.select(sessionId); controller.draft('Other machine')
+  controller.stage({ ...workspace, sessionId }, attachment)
+  expect(controller.state.getSnapshot().attachments).toBeUndefined()
+  controller.open(another); controller.select(sessionId); controller.draft('Other workspace')
+  controller.open(workspace)
+  expect(controller.state.getSnapshot()).toMatchObject({ sessionId, draft: 'First draft', attachments: [attachment], list })
+  expect(controller.state.getSnapshot().recentWorkspaces).toEqual([workspace, another, other])
+  controller.open(other)
+  expect(controller.state.getSnapshot()).toMatchObject({ sessionId, draft: 'Other machine' })
+  controller.open(another)
+  expect(controller.state.getSnapshot()).toMatchObject({ sessionId, draft: 'Other workspace' })
+  await controller.dispose()
+  controller.open(workspace)
+  expect(controller.state.getSnapshot()).toMatchObject({ draft: '' })
+  expect(controller.state.getSnapshot().sessionId).toBeUndefined()
+})
+
+it('restores an ambiguous prompt unchanged after visiting another session and machine', async () => {
+  const call = vi.fn<SessionCall>(async (_environment, request) => {
+    if (request.action === 'prompt') throw new Error('acknowledgement lost')
+    return request.action === 'list' ? list : snapshot
+  })
+  const { controller } = fixture(call)
+  const otherSession = brandString<EnvironmentSessionSummary['sessionId']>('other-session')
+  controller.select(sessionId); controller.draft('Retry exactly this'); await controller.send()
+  controller.select(otherSession); controller.draft('Independent draft')
+  controller.open({ ...workspace, environmentId: brandString<EnvironmentWorkspace['environmentId']>('other-machine') })
+  controller.select(sessionId); controller.draft('Different machine')
+  controller.open(workspace)
+  expect(controller.state.getSnapshot()).toMatchObject({ sessionId: otherSession, draft: 'Independent draft', uncertain: false })
+  controller.select(sessionId)
+  expect(controller.state.getSnapshot()).toMatchObject({ draft: 'Retry exactly this', uncertain: true })
+  const prompts = () => call.mock.calls.filter(([, request]) => request.action === 'prompt')
+  expect(prompts()).toHaveLength(1)
+  await controller.send()
+  expect(prompts()).toHaveLength(2)
+  expect(prompts()[1]?.slice(0, 2)).toEqual(prompts()[0]?.slice(0, 2))
+})
+
+it('keeps a creation retry identity with its workspace while visiting another machine', async () => {
+  const call = vi.fn<SessionCall>(async (_environment, request) => {
+    if (request.action === 'create') throw new Error('acknowledgement lost')
+    return request.action === 'list' ? list : snapshot
+  })
+  const { controller } = fixture(call)
+  await controller.create()
+  controller.open({ ...workspace, environmentId: brandString<EnvironmentWorkspace['environmentId']>('other-machine') })
+  await controller.create()
+  controller.open(workspace)
+  await controller.create()
+  const creates = call.mock.calls.filter(([, request]) => request.action === 'create')
+  expect(creates).toHaveLength(3)
+  expect(creates[0]?.slice(0, 2)).toEqual(creates[2]?.slice(0, 2))
+  expect(creates[1]?.[1]).not.toEqual(creates[0]?.[1])
+})
+
+
+it('refreshes the selected machine immediately when switching an already visible panel', async () => {
+  const call = vi.fn<SessionCall>(async (environment, request) => request.action === 'list'
+    ? { ...list, environmentId: environment } : { ...snapshot, environmentId: environment })
+  const { controller } = fixture(call)
+  controller.select(sessionId)
+  await controller.refresh()
+  const other = { ...workspace, environmentId: brandString<EnvironmentWorkspace['environmentId']>('other-machine') }
+  controller.open(other)
+  await vi.waitFor(() => { expect(controller.state.getSnapshot().list?.environmentId).toBe(other.environmentId) })
+  controller.select(sessionId)
+  await vi.waitFor(() => { expect(controller.state.getSnapshot().transcript?.environmentId).toBe(other.environmentId) })
+  controller.open(workspace)
+  await vi.waitFor(() => {
+    expect(controller.state.getSnapshot().transcript?.environmentId).toBe(workspace.environmentId)
+    expect(controller.state.getSnapshot().loading).toBe(false)
+  })
 })

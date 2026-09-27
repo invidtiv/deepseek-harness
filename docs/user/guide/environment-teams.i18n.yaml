@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/user/guide/environment-teams.md
-environment-teams.md: 8b344e93738b6368d1107869711a3d274e62f866
-environment-teams.zh.md: 1d7dc79b48ba1bc4f0099250fb92d430f77bda73
+environment-teams.md: d8cc7ff48a186ed9eb0d95b77f6f15cfb94183e6
+environment-teams.zh.md: 523ebd1c897317ef10484b58da3ff5c49b072912

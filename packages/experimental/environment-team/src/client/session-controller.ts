@@ -16,8 +16,17 @@ export interface RemoteDraftAttachment {
 
 type SessionList = Extract<SessionResult, { kind: 'sessions' }>
 type SessionId = EnvironmentSessionSummary['sessionId']
+/** Machine and workspace owning a selected conversation. */
+export interface RemoteSessionAddress {
+  environmentId: EnvironmentWorkspace['environmentId']
+  workspaceId: EnvironmentWorkspace['workspaceId']
+  sessionId: SessionId
+}
+type PromptRequest = Extract<SessionRequest, { action: 'prompt' }>
+type ConversationMemory = Pick<RemoteSessionState, 'draft' | 'attachments' | 'transcript' | 'streamFailure'> & { pendingPrompt: PromptRequest | undefined }
 /** Selected destination and last successfully synchronized session data. */
 export interface RemoteSessionState {
+  recentWorkspaces?: readonly EnvironmentWorkspace[]
   workspace?: EnvironmentWorkspace
   webUrl?: string
   list?: SessionList
@@ -40,6 +49,8 @@ export type SessionFollow = (environment: EnvironmentWorkspace['environmentId'],
 export class RemoteSessionController {
   /** Observable destination view retained while its panel is hidden or disconnected. */
   readonly state = createSnapshotStore<RemoteSessionState>({ loading: false, offline: false, busy: false, draft: '', uncertain: false })
+  private readonly workspaces = new Map<string, { state: RemoteSessionState; pendingCreate: (SessionRequest & { action: 'create' }) | undefined }>()
+  private readonly conversations = new Map<string, ConversationMemory>()
   private generation = 0
   private abort = new AbortController()
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -66,16 +77,44 @@ export class RemoteSessionController {
     private readonly follow: SessionFollow,
   ) {}
 
-  /** Replace the selected workspace and discard the previous selection's draft.
+  private workspaceKey(workspace: Pick<EnvironmentWorkspace, 'environmentId' | 'workspaceId'>): string {
+    return JSON.stringify([workspace.environmentId, workspace.workspaceId])
+  }
+  private conversationKey(workspace: Pick<EnvironmentWorkspace, 'environmentId' | 'workspaceId'>, sessionId: SessionId): string {
+    return JSON.stringify([workspace.environmentId, workspace.workspaceId, sessionId])
+  }
+  private remember(): void {
+    const state = this.state.getSnapshot()
+    if (!state.workspace) return
+    this.workspaces.set(this.workspaceKey(state.workspace), {
+      state: { ...state, busy: false, uncertain: this.pendingPrompt !== undefined }, pendingCreate: this.pendingCreate,
+    })
+    if (state.sessionId) {
+      this.conversations.set(this.conversationKey(state.workspace, state.sessionId), {
+        draft: state.draft, pendingPrompt: this.pendingPrompt,
+        ...(state.attachments === undefined ? {} : { attachments: state.attachments }),
+        ...(state.transcript === undefined ? {} : { transcript: state.transcript }),
+        ...(state.streamFailure === undefined ? {} : { streamFailure: state.streamFailure }),
+      })
+    }
+  }
+  /** Open a workspace, restoring its selected conversation and unsent content.
    * @param workspace - workspace registered on its owning installation.
    */
   open(workspace: EnvironmentWorkspace): void {
+    const recentWorkspaces = [workspace, ...(this.state.getSnapshot().recentWorkspaces ?? [])
+      .filter(item => this.workspaceKey(item) !== this.workspaceKey(workspace))]
+    this.remember()
     this.invalidate()
     this.stopFollow()
     this.catalogOffline = false; this.streamOffline = false
-    this.pendingPrompt = undefined
-    this.pendingCreate = undefined
-    this.state.set({ workspace, loading: true, offline: false, busy: false, draft: '', uncertain: false })
+    const saved = this.workspaces.get(this.workspaceKey(workspace))
+    const state = saved?.state ?? { loading: true, offline: false, busy: false, draft: '', uncertain: false }
+    const conversation = state.sessionId ? this.conversations.get(this.conversationKey(workspace, state.sessionId)) : undefined
+    this.pendingPrompt = conversation?.pendingPrompt
+    this.pendingCreate = saved?.pendingCreate
+    this.state.set({ ...state, workspace, recentWorkspaces, loading: true, busy: false, uncertain: this.pendingPrompt !== undefined })
+    if (this.active) void this.refresh()
   }
   /** Publish a Web link only for the currently selected destination.
    * @param environment - identity owning the resolved endpoint.
@@ -96,7 +135,11 @@ export class RemoteSessionController {
   /** Stop the panel and wait until every replaced stream has released its reader.
    * @returns completion after all stream consumers have stopped.
    */
-  async dispose(): Promise<void> { this.pause(); await this.followDone }
+  async dispose(): Promise<void> {
+    this.pause(); await this.followDone
+    this.workspaces.clear(); this.conversations.clear(); this.pendingPrompt = undefined; this.pendingCreate = undefined
+    this.state.set({ loading: false, offline: false, busy: false, draft: '', uncertain: false })
+  }
   /** Restart the selected stream after an explicit refresh or local reconnection. */
   reconnect(): void { this.stopFollow(); void this.refresh() }
   /** Update the draft unless a submission is pending or awaiting retry.
@@ -107,12 +150,13 @@ export class RemoteSessionController {
     this.state.update((value) => { value.draft = text })
   }
   /** Stage uploaded content on the exact Session that requested it.
-   * @param sessionId - selected Session when the upload started.
+   * @param address - owning machine, workspace and Session when the upload started.
    * @param attachment - destination receipt or inline image bytes.
    */
-  stage(sessionId: SessionId, attachment: RemoteDraftAttachment): void {
+  stage(address: RemoteSessionAddress, attachment: RemoteDraftAttachment): void {
     const state = this.state.getSnapshot()
-    if (state.sessionId !== sessionId || state.busy || this.pendingPrompt) return
+    if (state.sessionId !== address.sessionId || state.workspace?.environmentId !== address.environmentId
+      || state.workspace.workspaceId !== address.workspaceId || state.busy || this.pendingPrompt) return
     this.state.update((value) => { value.attachments = [...value.attachments ?? [], attachment] })
   }
   /** Remove one draft attachment before submission.
@@ -128,10 +172,20 @@ export class RemoteSessionController {
    * @param sessionId - session selected inside the current destination workspace.
    */
   select(sessionId: SessionId): void {
-    if (this.state.getSnapshot().busy) return
+    const current = this.state.getSnapshot()
+    if (current.busy || !current.workspace || current.sessionId === sessionId) return
+    this.remember()
     this.stopFollow()
-    this.invalidate(); this.pendingPrompt = undefined
-    this.state.update((value) => { value.sessionId = sessionId; delete value.transcript; delete value.streamFailure; delete value.attachments; value.loading = true; value.draft = ''; value.uncertain = false })
+    this.invalidate()
+    const saved = this.conversations.get(this.conversationKey(current.workspace, sessionId))
+    this.pendingPrompt = saved?.pendingPrompt
+    this.state.update((value) => {
+      value.sessionId = sessionId
+      if (saved?.transcript === undefined) delete value.transcript; else value.transcript = saved.transcript
+      if (saved?.streamFailure === undefined) delete value.streamFailure; else value.streamFailure = saved.streamFailure
+      if (saved?.attachments === undefined) delete value.attachments; else value.attachments = saved.attachments
+      value.loading = true; value.draft = saved?.draft ?? ''; value.uncertain = this.pendingPrompt !== undefined
+    })
     void this.refresh()
   }
   /** Refresh authoritative catalog and selected transcript, retaining data on failure. */
@@ -229,6 +283,7 @@ export class RemoteSessionController {
     this.pendingCreate = request
     await this.mutate(state.workspace, request, (result) => {
       if (result.kind !== 'created') throw new Error('Unexpected session creation result')
+      this.remember()
       this.pendingCreate = undefined
       this.pendingPrompt = undefined
       this.stopFollow()

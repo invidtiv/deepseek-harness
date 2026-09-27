@@ -3036,6 +3036,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     occupants: [
       'client-ui-plugin-manager PluginsPanelIcon',
       'experimental-environment-team TeamsIcon id \'environment-teams\'',
+      'experimental-environment-team SessionsIcon id \'environment-sessions\'',
       'experimental-environment-team EnvironmentsIcon id \'environments\'',
     ],
     replaceRisk: 'none',

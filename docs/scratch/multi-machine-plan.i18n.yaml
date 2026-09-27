@@ -2,5 +2,5 @@
 # side as of the last confirmed-consistent state. Both languages carry equal authority;
 # after editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/scratch/multi-machine-plan.md
-multi-machine-plan.md: 187fc47d5b2bd0b97e843ecfeec6f2bf1a5bccb6
-multi-machine-plan.zh.md: c2df8bde56bbe5efad0a60fc0cdeaa7aa303b43b
+multi-machine-plan.md: 11b4e867735e4833e776f58fd47bee1e400c2f5a
+multi-machine-plan.zh.md: 4047d063a185da347335136e6d60b47ff91973c2

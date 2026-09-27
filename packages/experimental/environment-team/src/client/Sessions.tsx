@@ -2,7 +2,8 @@
 import { useEffect } from 'react'
 import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import type { SnapshotStore } from '@deepseek-ai/dsh-client-store'
-import { Button, IconLoadingOutlineRegular, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import { Button, IconLoadingOutlineRegular, IconNewChatOutlineRegular, MarkdownText } from '@deepseek-ai/dsh-client-ui-primitives'
+import type { EnvironmentWorkspace } from '../workspace-types.ts'
 import type { RemoteSessionState } from './session-controller.ts'
 import type { InteractionState } from './interaction-controller.ts'
 import { SessionTools, type SessionToolsActions } from './SessionTools.tsx'
@@ -13,6 +14,7 @@ export interface SessionsFace extends SessionToolsActions {
   hooks: { remoteSessions: SnapshotStore<RemoteSessionState>; remoteInteractions: SnapshotStore<InteractionState> }
   resume(): void
   pause(): void
+  openWorkspace(workspace: EnvironmentWorkspace): void
   back(): void
   refresh(): void
   create(): void
@@ -34,7 +36,12 @@ export function Sessions(props: PropsLocale<'environmentTeams'> & InjectFace<Ses
   useEffect(() => { resume(); return pause }, [resume, pause])
   return <section className={css.page} aria-busy={state.loading || state.busy}>
     <header className={css.header}><div><h1>{state.workspace?.title ?? t('remoteSessions')}</h1><p>{t('sessionSyncHelp')}</p><code>{state.workspace?.environmentId}</code></div><Button disabled={state.busy} onClick={props.back}>{t('allWorkspaces')}</Button></header>
-    <div className={css.toolbar}><Button disabled={state.busy} onClick={props.refresh}>{t('refresh')}</Button><Button disabled={state.busy} onClick={props.create}>{t('newSession')}</Button>{state.webUrl && <a href={state.webUrl} target="_blank" rel="noopener noreferrer">{t('openDestination')}</a>}</div>
+    {!state.workspace && <p>{t('selectRemoteWorkspace')}</p>}
+    {!!state.recentWorkspaces?.length && <label className={css.selector}>{t('recentRemoteWorkspaces')}<select disabled={state.busy} value={state.workspace ? `${state.workspace.environmentId}:${state.workspace.workspaceId}` : ''} onChange={(event) => {
+      const workspace = state.recentWorkspaces?.find(item => `${item.environmentId}:${item.workspaceId}` === event.target.value)
+      if (workspace) props.openWorkspace(workspace)
+    }}>{state.recentWorkspaces.map(workspace => <option key={`${workspace.environmentId}:${workspace.workspaceId}`} value={`${workspace.environmentId}:${workspace.workspaceId}`}>{workspace.title} · {workspace.environmentId}</option>)}</select></label>}
+    <div className={css.toolbar}><Button disabled={state.busy} onClick={props.refresh}>{t('refresh')}</Button><Button disabled={state.busy || !state.workspace} onClick={props.create}>{t('newSession')}</Button>{state.webUrl && <a href={state.webUrl} target="_blank" rel="noopener noreferrer">{t('openDestination')}</a>}</div>
     {state.streamFailure ? <p role="alert">{t(state.streamFailure)}</p> : state.offline && <p role="alert">{t('sessionOffline')}</p>}
     {state.loading && !state.list && <div className={css.loading}><IconLoadingOutlineRegular /></div>}
     {state.list?.sessions.length === 0 && <p>{t('noRemoteSessions')}</p>}
@@ -55,3 +62,8 @@ export function Sessions(props: PropsLocale<'environmentTeams'> & InjectFace<Ses
     </>}
   </section>
 }
+
+/** Sidebar entry for destination-owned conversations.
+ * @returns the shared conversation icon.
+ */
+export function SessionsIcon() { return <IconNewChatOutlineRegular /> }

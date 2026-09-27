@@ -60,6 +60,8 @@ Registration creates the workspace on the destination. A nested workspace needs 
 
 To use Sessions from this Web app, enable **Allow workspace session access** for the calling machine in the destination's Plugins configuration. Select **Open sessions** on the registered workspace, then **New session** or open an existing Session. Send text or stop active work from that panel. Assistant text appears while the reply is being generated, including replies started through the destination's Web app. After a connection failure, the last view remains visible; reconnect restores saved messages and any unfinished reply. If a send was not acknowledged, **Retry message** reuses its submission identity.
 
+Use **Remote sessions** in the sidebar to return to remote work, then select a recent workspace. Switching workspaces or Sessions keeps each conversation's draft, uploaded attachment receipts, uncertain-message retry identity, and last view in browser memory, scoped to its machine, workspace, and Session. On return, DSH refreshes the conversation from the owning machine without automatically resending a message. Reloading the browser clears local drafts and navigation memory.
+
 Sessions run with the destination's credentials and ordinary Web defaults. Their logs and files remain there. Upgrade both installations for live text. The panel shows committed tool details and errors; attachments, approval responses, and terminals require their separate destination grants. Refresh, heartbeat, idle timeout, and message limits are configurable in Plugins. Closing the panel disconnects its view without stopping the Session. Workspace browsing permission alone does not grant Session access.
 
 <a id="run"></a>
