@@ -15,7 +15,7 @@ const tools = {
   useRemoteInteractions: <T,>(select: (state: import('../src/client/interaction-controller.ts').InteractionState) => T): T => select({ loading: false, busy: false, offline: false, terminalOffline: false, terminalRevision: 0 }),
   interaction: vi.fn(),
   upload: vi.fn(), download: vi.fn(), terminalConnect: vi.fn(), terminalCreate: vi.fn(), terminalWrite: vi.fn(), terminalRendered: vi.fn(),
-  removeAttachment: vi.fn(),
+  removeAttachment: vi.fn(), openWorkspace: vi.fn(),
 }
 const environmentId = brandString<NonNullable<RemoteSessionState['workspace']>['environmentId']>('11111111-1111-4111-8111-111111111111')
 const workspaceId = brandString<NonNullable<RemoteSessionState['workspace']>['workspaceId']>('workspace')
@@ -86,6 +86,7 @@ it('shows first-load, empty-session and destination-app states as snapshots arri
 
 it('renders a live prefix and then replaces it with one saved assistant message', async () => {
   const state: RemoteSessionState = {
+    workspace: { environmentId, workspaceId, alias: 'project', relativePath: '', path: '/project', title: en.remoteSessions },
     sessionId, loading: false, busy: false, offline: false, draft: '', uncertain: false,
     transcript: { environmentId, workspaceId, kind: 'snapshot', sessionId, cursor: 0, running: true, messages: [], truncated: false, live: { attemptId, text: 'Working on the remote machine' } },
   }
@@ -105,4 +106,20 @@ it('renders a live prefix and then replaces it with one saved assistant message'
   state.streamFailure = 'sessionDenied'
   result.rerender(<Sessions {...props} />)
   expect(screen.getByRole('alert').textContent).toBe(en.sessionDenied)
+})
+
+it('switches recent workspaces by owning environment even when workspace IDs match', () => {
+  const first = { environmentId, workspaceId, alias: 'project', relativePath: '', path: '/first', title: 'Project' }
+  const second = { ...first, environmentId: brandString<typeof environmentId>('22222222-2222-4222-8222-222222222222'), path: '/second' }
+  const state: RemoteSessionState = { workspace: first, recentWorkspaces: [first, second], loading: false, busy: false, offline: false, draft: 'Retained draft', uncertain: false }
+  const openWorkspace = vi.fn()
+  render(<Sessions {...tools} t={key => dictionary[key]} useRemoteSessions={selector => selector(state)}
+    resume={vi.fn()} pause={vi.fn()} back={vi.fn()} refresh={vi.fn()} create={vi.fn()}
+    select={vi.fn()} draft={vi.fn()} send={vi.fn()} cancel={vi.fn()} openWorkspace={openWorkspace} />)
+  const selector = screen.getByRole('combobox', { name: en.recentRemoteWorkspaces })
+  expect(Array.from(selector.querySelectorAll('option')).map(option => option.textContent)).toEqual([
+    `Project · ${environmentId}`, `Project · ${second.environmentId}`,
+  ])
+  fireEvent.change(selector, { target: { value: `${second.environmentId}:${workspaceId}` } })
+  expect(openWorkspace).toHaveBeenCalledExactlyOnceWith(second)
 })

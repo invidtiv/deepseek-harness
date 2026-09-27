@@ -22,17 +22,17 @@ This work targets five independent DSH Web installations: one Linux host and fou
 6. Package the runtime with a Plugins configuration page. Save arbitrary peer identities and URLs, checkout mappings, worker defaults, and limits through the profile editor; store secrets through the credential service. Keep the coordinator selection per team, determined by the lead Session. Verify saved edits across reload and restart, concurrent-edit rejection, secret rotation, and page lifecycle.
 7. Document configuration and the tested deployment path, update bilingual package references, run focused behavior/type/documentation checks, and record remaining platform deployment evidence explicitly.
 
-## Remaining implementation sequence
+## Implementation and rollout status
 
-1. Workspace management is deployed on the paired Windows and Linux hosts: the Environments panel browses destination directories, creates folders, and registers workspaces under explicit peer grants and canonical path checks.
-2. Destination-owned Session creation, listing, saved-text chat, cancellation, and reconnect refresh are deployed on the paired hosts. Authenticated live text streaming is implemented on this branch but is not yet deployed: bounded snapshots include unfinished assistant text, reconnect replaces the view from the destination, catalog polling remains independent, and outages retain the last received text. Next, add attachments, approval responses, terminals, and ordinary conversation navigation through environment-owned client services.
-3. Distributed team dashboard: project coordinator-owned rosters, revisioned tasks, delivery status, and interruptions into the GUI. Keep remote members distinct from local Agent handles and surface coordinator disconnection explicitly.
-4. Pairing lifecycle: add one-time invitations and individually revocable grants while retaining direct Tailscale configuration in Plugins. Verify replay rejection, expiration, permission narrowing, and credential rotation.
-5. Physical rollout: upgrade the paired Windows and Linux hosts, verify a real cross-machine team and restart recovery, then configure the other three Windows hosts. Record each host's actual reachability and execution evidence; loopback fixtures are insufficient.
+1. Workspace management browses destination directories, creates folders, and registers workspaces under explicit peer grants and canonical path checks.
+2. Destination-owned Sessions support creation, listing, live text, cancellation, reconnect refresh, attachments, approval responses, tool details, and terminals. The Remote sessions shortcut and recent-workspace selector preserve scoped drafts, attachment receipts, uncertain submission identities, and the last view in browser memory while switching; returning refreshes from the destination without automatic resubmission. Browser reload clears local drafts.
+3. The distributed team dashboard exposes coordinator-owned rosters, revisioned tasks, delivery status, and authorized interruption controls. Remote members remain distinct from local Agent handles.
+4. Target machines generate one-time pairing codes with a configurable 30-minute default lifetime. Clients paste the code and choose reciprocal grants; successful acceptance configures both peers automatically. Plugins retains manual configuration and peer removal.
+5. The user owns installation on the five physical hosts from the development branch. Real cross-machine team execution, restart recovery, and each host's reachability still require recorded rollout evidence; automated loopback fixtures do not establish physical deployment.
 
 ## Initial protocol limits
 
-One environment owns each team; coordinator failover and automatic task reassignment are excluded. Remote agents start with fresh context. Files are never synchronized implicitly: hosts map project aliases to independent checkouts and exchange commits or patches. Browser aggregation into one multi-environment sidebar is a separate client feature; this iteration keeps DSH Web available on every host.
+One environment owns each team; coordinator failover and automatic task reassignment are excluded. Remote agents start with fresh context. Files are never synchronized implicitly: hosts map project aliases to independent checkouts and exchange commits or patches. Each host runs DSH Web; remote workspace and Session navigation uses explicit environment ownership.
 
 ## Acceptance
 

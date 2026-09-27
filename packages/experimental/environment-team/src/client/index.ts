@@ -10,13 +10,14 @@ import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
 import { createSnapshotStore } from '@deepseek-ai/dsh-client-store'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
+import type { EnvironmentWorkspace } from '../workspace-types.ts'
 import type { EnvironmentTerminalFollowRequest } from '../interaction-types.ts'
 import { RemoteSessionController } from './session-controller.ts'
 import { RemoteInteractionController } from './interaction-controller.ts'
 import { encodeBrowserFile, downloadBrowserFile } from './browser-files.ts'
 import { TeamController } from './team-controller.ts'
 import { Teams, TeamsIcon, type TeamsFace } from './Teams.tsx'
-import { Sessions, type SessionsFace } from './Sessions.tsx'
+import { Sessions, SessionsIcon, type SessionsFace } from './Sessions.tsx'
 import { Notice, type NoticeState } from './Notice.tsx'
 import { Page, type PageActions } from './Page.tsx'
 import { en, zh, type EnvironmentSettingsKey } from './locales.ts'
@@ -90,7 +91,18 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
     child.on('connection/reset', () => { sessions.reconnect(); void interactions.refresh();  teams.refresh() })
     let releaseDownload: (() => void) | undefined
     child.effect(() => () => { releaseDownload?.() })
+    const openWorkspace = (workspace: EnvironmentWorkspace) => {
+      sessions.open(workspace); child.layout.selectPanel(brandString<MainPanelId>('environment-sessions'))
+      void child.remote.environmentTeamSettings.read().then((result) => {
+        if (!result.ok) return
+        const url = workspace.environmentId === result.value.environmentId
+          ? location.origin
+          : result.value.config.peers.find(peer => peer.environmentId === workspace.environmentId)?.url
+        if (url !== undefined) sessions.destination(workspace.environmentId, url)
+      }).catch((_error: unknown) => { /* Endpoint metadata is retried with the next explicit workspace selection. */ })
+    }
     const sessionActions: SessionsFace = {
+      openWorkspace,
       hooks: { remoteSessions: sessions.state, remoteInteractions: interactions.state },
       resume: () => { sessions.resume(); interactions.resume() }, pause: () => { sessions.pause(); interactions.pause() },
       back: () => { child.layout.selectPanel(brandString<MainPanelId>('environments')) },
@@ -118,10 +130,10 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
             || current.workspaceId !== address.workspaceId) return
           const mediaType = file.type
           if (mediaType === 'image/png' || mediaType === 'image/jpeg' || mediaType === 'image/webp' || mediaType === 'image/gif') {
-            sessions.stage(address.sessionId, { name: file.name, image: { data, mediaType, name: file.name } }); notify(true)
+            sessions.stage(address, { name: file.name, image: { data, mediaType, name: file.name } }); notify(true)
           } else {
             const result = await interactions.run({ action: 'upload', data, name: file.name })
-            if (result?.kind === 'uploaded') sessions.stage(address.sessionId, { name: file.name, receipt: result.upload.receiptId })
+            if (result?.kind === 'uploaded') sessions.stage(address, { name: file.name, receipt: result.upload.receiptId })
           }
         }).catch((_error: unknown) => { notify(false) })
       },
@@ -134,6 +146,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       },
     }
     child.slots.inject('main', () => child.slots.register({ name: 'main', key: 'environment-sessions', locale: 'environmentTeams', inject: () => sessionActions }, Sessions))
+    child.slots.inject('sidebar.panellist', () => child.slots.register({ name: 'sidebar.panellist', id: 'environment-sessions', order: 3, label: () => child.locale.bind('environmentTeams')('remoteSessions'), locale: 'environmentTeams' }, SessionsIcon))
     child.slots.inject('shell.overlay', () => child.slots.register({ name: 'shell.overlay', id: 'environment-team-notice', locale: 'environmentTeams', inject: () => ({ hooks: { environmentNotice: notice }, dismiss: () => { notice.update((value) => { value.kind = null }) } }) }, Notice))
     const actions: PageActions = {
       notify: (kind) => { notice.update((value) => { value.kind = kind; value.sequence++ }) },
@@ -181,16 +194,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       locale: 'environmentTeams', inject: () => actions,
     }, Page))
     const browser: EnvironmentsActions = {
-      openSessions: (workspace) => {
-        sessions.open(workspace); child.layout.selectPanel(brandString<MainPanelId>('environment-sessions'))
-        void child.remote.environmentTeamSettings.read().then((result) => {
-          if (!result.ok) return
-          const url = workspace.environmentId === result.value.environmentId
-            ? location.origin
-            : result.value.config.peers.find(peer => peer.environmentId === workspace.environmentId)?.url
-          if (url !== undefined) sessions.destination(workspace.environmentId, url)
-        }).catch((_error: unknown) => { /* Endpoint metadata is retried with the next explicit workspace selection. */ })
-      },
+      openSessions: openWorkspace,
       environments: async () => {
         const result = await child.remote.environmentTeamSettings.environments()
         if (!result.ok) throw result.error
