@@ -225,6 +225,17 @@ export class TypertGatewayService extends Service implements TypertGateway {
    */
   constructor(ctx: Context, config: Config) {
     super(ctx, 'typertGateway')
+    ctx.effect(() => ctx.provide('remoteEventAccess', {
+      pending: (agentId, events) => [...this.pendingRemoteEvents.values()]
+        .filter(pending => pending.frame.agentId === agentId && events.includes(pending.frame.event))
+        .map(pending => structuredClone(pending.frame)),
+      respond: (agentId, eventId, event, value) => {
+        const pending = this.pendingRemoteEvents.get(eventId)
+        if (pending === undefined || pending.frame.agentId !== agentId || pending.frame.event !== event) return false
+        this.settleRemoteEvent(pending, { kind: 'result', value })
+        return true
+      },
+    }), 'api-gateway: scoped interaction access')
     const resolved = config as ResolvedConfig
     ctx.on('internal/service', () => {
       this.srcClaims = undefined

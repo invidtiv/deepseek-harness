@@ -1,4 +1,5 @@
 /** Bounded HTTPS peer calls with pinned identity and explicit deployment grants. */
+import type { EnvironmentTerminalFollowRequest, EnvironmentTerminalFrame } from './interaction-types.ts'
 import { createHash, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { z } from 'zod'
@@ -6,7 +7,7 @@ import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credent
 import type { ResolvedConfig } from './config.ts'
 import { descriptorSchema, requestSchema, type EnvironmentId, type PeerRequest } from './protocol.ts'
 import type { EnvironmentDescriptor } from './protocol.ts'
-import { followPeerSession } from './peer-stream.ts'
+import { followPeerSession, followPeerTerminal } from './peer-stream.ts'
 import type { EnvironmentSessionFollowRequest, EnvironmentSessionFrame } from './session-types.ts'
 import type { EnvironmentTeams } from './runtime.ts'
 
@@ -19,6 +20,18 @@ const responseSchema = z.object({ environmentId: z.string(), result: z.string() 
 /** Resolves current secrets without copying them into persisted records or model output. */
 export class PeerTransport {
   constructor(private readonly id: EnvironmentId, private readonly config: ResolvedConfig, private readonly credentials: Pick<CredentialProvider, 'resolve'>) {}
+
+  /** Open one ordered destination terminal stream.
+   * @param environment - pinned destination identity.
+   * @param request - destination terminal and exclusive input attachment.
+   * @param signal - viewer lifetime.
+   * @returns ordered terminal frames; the caller controls reconnection.
+   */
+  terminalFollow(
+    environment: EnvironmentId, request: EnvironmentTerminalFollowRequest, signal: AbortSignal,
+  ): AsyncIterable<EnvironmentTerminalFrame> {
+    return followPeerTerminal(this, this.config, environment, request, signal)
+  }
 
   /** Follow sanitized replacement frames on an identity-pinned authenticated peer.
    * @param environment - configured destination identity.
@@ -78,6 +91,8 @@ export class PeerTransport {
     const descriptor = await this.describe(environment, bounded)
     if (request.kind === 'workspace' && !descriptor.capabilities.workspaceBrowser) throw new Error('peer does not support workspace management')
     if (request.kind === 'session' && !descriptor.capabilities.workspaceSessions) throw new Error('peer does not support workspace sessions')
+    if (request.kind === 'session-interaction' && !descriptor.capabilities.workspaceSessionInteractions) throw new Error('peer does not support session interactions')
+    if (request.kind === 'team-dashboard' && !descriptor.capabilities.teamDashboard) throw new Error('peer does not support team dashboard')
     const body = JSON.stringify(request)
     if (Buffer.byteLength(body) > this.config.maxBytes) throw new Error('peer request byte limit reached')
     const response = await fetch(`${peer.url}${PEER_PATH}`, {

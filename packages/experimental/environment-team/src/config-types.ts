@@ -31,7 +31,23 @@ export interface EnvironmentTeamConfig {
     workspaceManagement?: boolean
     /** Allow this peer to read and operate Sessions in its granted workspaces. */
     sessionAccess?: boolean
+    /** Allow uploading and downloading attachments referenced by granted Sessions. */
+    attachmentAccess?: boolean
+    /** Allow answering pending approvals and questions for granted Sessions. */
+    approvalAccess?: boolean
+    /** Allow user-shell terminals in granted Sessions; shells run with the destination user's privileges. */
+    terminalAccess?: boolean
+    /** Read teams whose coordinator lead belongs to a granted workspace alias. */
+    teamAccess?: boolean
+    /** Interrupt non-lead members of readable coordinator-owned teams. */
+    teamOperate?: boolean
   }[]
+  /** Reachable origin advertised in pairing invitations; empty disables invitation creation. */
+  publicUrl?: string
+  /** Milliseconds a newly issued pairing invitation remains valid. */
+  invitationLifetimeMs?: number
+  /** Maximum retained incoming invitations and outgoing pairing attempts per installation. */
+  maxInvitations?: number
   /** Milliseconds allowed for discovery plus one operation. */
   requestTimeoutMs?: number
   /** Milliseconds between durable outbox retry passes. */
@@ -50,6 +66,12 @@ export interface EnvironmentTeamConfig {
   workspacePageSize?: number
   /** Maximum Session summaries or committed messages returned in one view. */
   sessionPageSize?: number
+  /** Initial remote terminal width in character cells. */
+  terminalCols?: number
+  /** Initial remote terminal height in character cells. */
+  terminalRows?: number
+  /** Maximum decoded file upload bytes, also constrained by complete peer request limits. */
+  maxUploadBytes?: number
   /** Milliseconds between Session catalog refreshes and disconnected follow retries. */
   sessionSyncIntervalMs?: number
   /** Milliseconds between authenticated peer stream heartbeats and credential rechecks. */

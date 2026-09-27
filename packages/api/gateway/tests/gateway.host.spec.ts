@@ -22,7 +22,7 @@ import {
   type TypertLookupProvider,
 } from '@deepseek-ai/dsh-typert-protocol'
 import TypertRegistry, { type TypertContribution } from '@deepseek-ai/dsh-typert-registry'
-import TypertGatewayService, { TypertGatewayError } from '@deepseek-ai/dsh-api-gateway'
+import TypertGatewayService, { TypertGatewayError, type TypertRemoteEventInvocation, type TypertRemoteEventOutcome } from '@deepseek-ai/dsh-api-gateway'
 import { provideBrowserCredentials } from './browser-credentials.ts'
 
 interface FixtureAgent {
@@ -1597,3 +1597,66 @@ async function expectCode(
   }
   throw new Error(`expected TypertGatewayError ${code}`)
 }
+
+it('scopes Host interaction access and shares first-answer settlement with ordinary Remote clients', async () => {
+  const ctx = new Context()
+  await ctx.plugin(TypertRegistry)
+  await ctx.plugin(FakeConnectionService)
+  const gateway = await ctx.plugin(TypertGatewayService)
+  const subject = { id: 'scoped-agent' }
+  const cancellation = new AbortController()
+  const first = Promise.withResolvers<TypertRemoteEventOutcome>()
+  const second = Promise.withResolvers<TypertRemoteEventOutcome>()
+  const third = Promise.withResolvers<TypertRemoteEventOutcome>()
+  const cancelled = third.promise.catch((error: unknown) => error)
+  const invocation = (event: string, result: typeof first): TypertRemoteEventInvocation => ({
+    event, request: { agent: subject, reason: 'requires operator', signal: cancellation.signal },
+    context: { value: ctx, subject, agentId: subject.id }, resolve: result.resolve, reject: result.reject,
+  })
+  const remove = ctx.typertGateway.registerRemoteEvents(signal => (async function* () {
+    yield invocation('approval/request', first)
+    yield invocation('user-questions/request', second)
+    yield invocation('approval/request', third)
+    if (!signal.aborted) await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+  })(), { home: '/fixture' })
+  const carrier = new AbortController()
+  const events = rawGatewayEventHarness(ctx).openRemoteEvents({ args: {} }, carrier.signal)
+  try {
+    const opening = await events.next()
+    const { clientId } = z.object({ clientId: z.string() }).parse(opening.value)
+    await expect.poll(() => ctx.remoteEventAccess.pending(subject.id, ['approval/request']).length).toBe(2)
+    expect(ctx.remoteEventAccess.pending('other-agent', ['approval/request'])).toEqual([])
+    expect(ctx.remoteEventAccess.pending(subject.id, ['unrelated/event'])).toEqual([])
+    const approvals = ctx.remoteEventAccess.pending(subject.id, ['approval/request'])
+    const approval = approvals[0]!
+    Reflect.set(approval.request, 'reason', 'detached change')
+    expect(ctx.remoteEventAccess.pending(subject.id, ['approval/request'])[0]!.request.reason).toBe('requires operator')
+    expect(ctx.remoteEventAccess.respond('other-agent', approval.eventId, approval.event, true)).toBe(false)
+    expect(ctx.remoteEventAccess.respond(subject.id, approval.eventId, 'user-questions/request', true)).toBe(false)
+    expect(ctx.remoteEventAccess.pending(subject.id, ['approval/request'])).toHaveLength(2)
+    expect(ctx.remoteEventAccess.respond(subject.id, approval.eventId, approval.event, 'host-answer')).toBe(true)
+    await expect(first.promise).resolves.toEqual({ kind: 'result', value: 'host-answer' })
+    const handler = rawConnection(ctx).handler
+    if (!handler) throw new Error('missing RPC handler')
+    await expect(handler('$events/result', { args: { clientId, eventId: approval.eventId,
+      outcome: { kind: 'result', value: 'late-browser-answer' } } }, carrier.signal)).resolves.toMatchObject({ ok: true })
+    expect(ctx.remoteEventAccess.respond(subject.id, approval.eventId, approval.event, false)).toBe(false)
+    const question = ctx.remoteEventAccess.pending(subject.id, ['user-questions/request'])[0]!
+    await handler('$events/result', { args: { clientId, eventId: question.eventId,
+      outcome: { kind: 'result', value: 'browser-first' } } }, carrier.signal)
+    await expect(second.promise).resolves.toEqual({ kind: 'result', value: 'browser-first' })
+    expect(ctx.remoteEventAccess.respond(subject.id, question.eventId, question.event, 'late-host')).toBe(false)
+    const pending = ctx.remoteEventAccess.pending(subject.id, ['approval/request'])[0]!
+    cancellation.abort(new Error('question cancelled'))
+    expect(await cancelled).toBeInstanceOf(Error)
+    expect(ctx.remoteEventAccess.respond(subject.id, pending.eventId, pending.event, true)).toBe(false)
+    expect(ctx.remoteEventAccess.pending(subject.id, ['approval/request'])).toEqual([])
+    await gateway.dispose()
+    expect(ctx.get('remoteEventAccess')).toBeUndefined()
+  } finally {
+    carrier.abort()
+    await events.return(undefined)
+    await remove()
+    await ctx.fiber.dispose()
+  }
+})

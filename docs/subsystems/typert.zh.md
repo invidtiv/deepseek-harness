@@ -6,6 +6,8 @@
 
 ## Lookup 与上下文声明
 
+Gateway 的仅 Host 可用服务 `remoteEventAccess` 读取并答复已明确授权 Agent 的待处理人工交互。`RemoteEventId` 标识一次待处理调用。`RemoteEventInvocationFrame` 包含该标识、事件名称、Agent 身份和投影后的请求字段。读取返回独立副本，不占用投递权；答复与普通浏览器的答复竞争，过期或不匹配的标识会返回 false。调用方必须先授权该 Agent，并验证对应事件的答复内容。
+
 业务对象包通过声明合并扩展两个空 map。lookup 将一种 Host 对象类型与其 wire identity 关联；上下文声明将一种作用域上下文类别与其 wire identity 关联。生成的 descriptor 引用这些 key，运行时提供方则提供活对象解析行为。
 
 ```ts type-equiv
@@ -374,6 +376,34 @@ interface TypertClientRemote extends TypertRemoteNamespaceMap {
 ## Cordis API
 
 Generated from source by `scripts/gen-cordis-catalog.ts` (verified fresh by `pnpm run verify-cordis-catalog` in doc-sync; regenerate with `pnpm run gen-cordis-catalog`) — the language sides differ only in locale-specific paired document paths. Signature blocks use a `ts cordis-catalog` fence and keep the original source JSDoc; dispatch modes are defined in the [primer](../cordis-primer.zh.md#dispatch-modes), and the framework-inherited `ctx` API lives in [cordis-api/inherited.md](../cordis-api/inherited.md).
+
+<a id="ctxremoteeventaccess--remoteeventaccess"></a>
+
+### `ctx.remoteEventAccess` — `RemoteEventAccess`
+
+Host-only access to pending interactions after the caller authorizes the owning Agent.
+
+```ts cordis-catalog
+/**
+ * Read pending waterfalls for one authorized Agent and explicit event names without claiming delivery.
+ * @param agentId - authorized owning Agent identity.
+ * @param events - event names understood by the caller's request and answer validators.
+ * @returns detached pending invocation frames; an empty list includes already settled requests.
+ */
+pending(agentId: string, events: readonly string[]): readonly RemoteEventInvocationFrame[]
+
+/**
+ * Resolve a still-pending waterfall; normal Client settlement races use the same broker.
+ * @param agentId - authorized owning Agent identity.
+ * @param eventId - pending identity previously returned by the broker.
+ * @param event - expected event name validated by the consumer.
+ * @param value - event-specific answer validated by the consumer.
+ * @returns false if another client settled or cancelled the request first.
+ */
+respond(agentId: string, eventId: RemoteEventId, event: string, value: unknown): boolean
+```
+
+Source: [`packages/api/gateway/src/types.ts`](../../packages/api/gateway/src/types.ts)
 
 <a id="ctxtypert--typertregistry"></a>
 

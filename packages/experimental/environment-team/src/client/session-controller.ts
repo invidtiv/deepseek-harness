@@ -5,6 +5,14 @@ import { randomUUID } from '@deepseek-ai/dsh-util-crypto'
 import { remoteErrorOf } from '@deepseek-ai/dsh-typert-protocol'
 import type { EnvironmentWorkspace } from '../workspace-types.ts'
 import type { EnvironmentSessionSummary, EnvironmentSessionFrame, EnvironmentSessionFollowRequest, SessionRequest, SessionResult } from '../session-types.ts'
+import type { EnvironmentFileReceipt } from '../interaction-types.ts'
+
+/** Uploaded files and inline images waiting for destination prompt acceptance. */
+export interface RemoteDraftAttachment {
+  readonly name: string
+  readonly receipt?: EnvironmentFileReceipt
+  readonly image?: NonNullable<Extract<SessionRequest, { action: 'prompt' }>['images']>[number]
+}
 
 type SessionList = Extract<SessionResult, { kind: 'sessions' }>
 type SessionId = EnvironmentSessionSummary['sessionId']
@@ -20,6 +28,7 @@ export interface RemoteSessionState {
   busy: boolean
   draft: string
   uncertain: boolean
+  attachments?: readonly RemoteDraftAttachment[]
   streamFailure?: 'sessionDenied' | 'sessionUnsupported' | 'sessionProtocol'
 }
 /** Typed destination operation carrier. */
@@ -97,6 +106,24 @@ export class RemoteSessionController {
     if (this.state.getSnapshot().busy || this.pendingPrompt) return
     this.state.update((value) => { value.draft = text })
   }
+  /** Stage uploaded content on the exact Session that requested it.
+   * @param sessionId - selected Session when the upload started.
+   * @param attachment - destination receipt or inline image bytes.
+   */
+  stage(sessionId: SessionId, attachment: RemoteDraftAttachment): void {
+    const state = this.state.getSnapshot()
+    if (state.sessionId !== sessionId || state.busy || this.pendingPrompt) return
+    this.state.update((value) => { value.attachments = [...value.attachments ?? [], attachment] })
+  }
+  /** Remove one draft attachment before submission.
+   * @param index - selected staged attachment position.
+   */
+  removeAttachment(index: number): void {
+    if (this.state.getSnapshot().busy || this.pendingPrompt) return
+    this.state.update((value) => {
+      if (value.attachments) value.attachments = value.attachments.filter((_, position) => position !== index)
+    })
+  }
   /** Select a Session and refresh its destination-owned saved messages.
    * @param sessionId - session selected inside the current destination workspace.
    */
@@ -104,7 +131,7 @@ export class RemoteSessionController {
     if (this.state.getSnapshot().busy) return
     this.stopFollow()
     this.invalidate(); this.pendingPrompt = undefined
-    this.state.update((value) => { value.sessionId = sessionId; delete value.transcript; delete value.streamFailure; value.loading = true; value.draft = ''; value.uncertain = false })
+    this.state.update((value) => { value.sessionId = sessionId; delete value.transcript; delete value.streamFailure; delete value.attachments; value.loading = true; value.draft = ''; value.uncertain = false })
     void this.refresh()
   }
   /** Refresh authoritative catalog and selected transcript, retaining data on failure. */
@@ -205,18 +232,20 @@ export class RemoteSessionController {
       this.pendingCreate = undefined
       this.pendingPrompt = undefined
       this.stopFollow()
-      this.state.update((value) => { value.sessionId = result.sessionId; delete value.transcript; value.draft = ''; value.uncertain = false })
+      this.state.update((value) => { value.sessionId = result.sessionId; delete value.transcript; delete value.attachments; value.draft = ''; value.uncertain = false })
     })
   }
   /** Submit the draft, retaining the operation identity after an ambiguous failure. */
   async send(): Promise<void> {
     const state = this.state.getSnapshot()
-    if (!state.workspace || !state.sessionId || state.busy || !state.draft.trim()) return
-    const request: Extract<SessionRequest, { action: 'prompt' }> = this.pendingPrompt ?? { action: 'prompt', workspaceId: state.workspace.workspaceId, sessionId: state.sessionId, requestId: brandString<Extract<SessionRequest, { action: 'prompt' }>['requestId']>(randomUUID()), text: state.draft }
+    if (!state.workspace || !state.sessionId || state.busy || (!state.draft.trim() && !state.attachments?.length)) return
+    const attachments = state.attachments?.flatMap(item => item.receipt ? [item.receipt] : [])
+    const images = state.attachments?.flatMap(item => item.image ? [item.image] : [])
+    const request: Extract<SessionRequest, { action: 'prompt' }> = this.pendingPrompt ?? { action: 'prompt', workspaceId: state.workspace.workspaceId, sessionId: state.sessionId, requestId: brandString<Extract<SessionRequest, { action: 'prompt' }>['requestId']>(randomUUID()), text: state.draft, ...(attachments?.length ? { attachments } : {}), ...(images?.length ? { images } : {}) }
     this.pendingPrompt = request
     await this.mutate(state.workspace, request, () => {
       this.pendingPrompt = undefined
-      this.state.update((value) => { value.draft = ''; value.uncertain = false })
+      this.state.update((value) => { value.draft = ''; value.uncertain = false; delete value.attachments })
     })
   }
   /** Request cancellation on the selected destination session. */

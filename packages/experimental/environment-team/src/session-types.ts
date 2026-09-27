@@ -3,6 +3,8 @@ import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/t
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { LlmAttemptId } from '@deepseek-ai/dsh-llm/brand'
+import type { ImageMediaType } from '@deepseek-ai/dsh-attachment/types'
+import type { FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import type {} from '@deepseek-ai/dsh-typert-protocol'
 
 declare module '@deepseek-ai/dsh-typert-protocol' {
@@ -23,7 +25,7 @@ export type SessionRequest =
   | { readonly action: 'create'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }
   | { readonly action: 'read'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }
   | { readonly action: 'cancel'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }
-  | { readonly action: 'prompt'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId; readonly requestId: SessionRequestId; readonly text: string }
+  | { readonly action: 'prompt'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId; readonly requestId: SessionRequestId; readonly text: string; readonly attachments?: readonly FileUploadReceiptId[] | undefined; readonly images?: readonly { readonly data: string; readonly mediaType: ImageMediaType; readonly name?: string | undefined }[] | undefined }
 
 /** Ordinary Session addressed within its destination workspace. */
 export interface EnvironmentSessionFollowRequest {

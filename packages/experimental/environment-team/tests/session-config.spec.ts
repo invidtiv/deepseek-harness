@@ -12,7 +12,8 @@ const input = {
 
 it('does not grant Session access when directory management is enabled', () => {
   expect(resolveConfig(input).peers[0]?.sessionAccess).toBe(false)
-  expect(resolveConfig({ ...input, peers: [{ ...input.peers[0], sessionAccess: true }] }).peers[0]?.sessionAccess).toBe(true)
+  expect(resolveConfig({ ...input,
+    peers: [{ ...input.peers[0], sessionAccess: true, teamAccess: false, teamOperate: false }] }).peers[0]?.sessionAccess).toBe(true)
 })
 
 it.each([0, -1, 1.5, Number.POSITIVE_INFINITY, 2147483648])('rejects an unusable refresh interval %s', (sessionSyncIntervalMs) => {

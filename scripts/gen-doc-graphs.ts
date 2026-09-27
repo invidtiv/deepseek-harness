@@ -338,6 +338,14 @@ const SERVICE_ROLES: ServiceRole[] = [
     note: 'Associates generated Remote descriptors with live Cordis services, resolves registered identities, and exposes unary calls through the shared Connection RPC carrier.',
   },
   {
+    key: 'remoteEventAccess',
+    pkg: 'api-gateway',
+    title: 'Host access to pending human interactions',
+    mode: 'core',
+    consumers: ['experimental-environment-team'],
+    note: 'Authorized Host consumers read and settle Agent-scoped requests through the same broker as ordinary browser clients.',
+  },
+  {
     key: 'sessionPersistence',
     pkg: 'session-persistence',
     title: 'Durable session persistence seam',

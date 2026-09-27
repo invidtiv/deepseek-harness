@@ -1,5 +1,8 @@
 /** Localized Plugins page for machine routes, local checkouts, and worker defaults. */
 import { useEffect, useState } from 'react'
+import { brandString } from '@deepseek-ai/dsh-brand'
+import { Pairing, type PairingActions } from './Pairing.tsx'
+import type { PairingCredentialChange } from '../pairing-types.ts'
 import { Button, Input, IconLoadingOutlineRegular } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-ui-plugin-manager/client'
@@ -9,21 +12,20 @@ import type { EnvironmentSettingsKey } from './locales.ts'
 import css from './Page.module.css'
 
 /** Authenticated operations supplied by the browser plugin owner. */
-export interface PageActions {
+export interface PageActions extends PairingActions {
   /** Publish completed save feedback outside the page. */
-  notify(kind: 'saved' | 'saveFailed'): void
+  notify(kind: 'saved' | 'saveFailed' | 'pairingChanged' | 'pairingFailed'): void
   /** Read this installation's deployment values. */
   read: () => Promise<EnvironmentConfiguration>
   /** Persist all deployment values and reload the runtime. */
-  save(value: EnvironmentConfiguration): Promise<EnvironmentConfiguration>
-  /** Store a write-only pairing credential. */
-  credential(reference: string, value: string): Promise<void>
+  save(value: EnvironmentConfiguration, changes: PairingCredentialChange[]): Promise<EnvironmentConfiguration>
 }
 /** Props supplied by the Plugins slot and locale owner. */
 export type PageProps = Pick<PropsRuntime<'plugins.bundle.config'>, 'view'> & PropsLocale<'environmentTeams'> & PageActions
 
-const scalarFields = ['label', 'provider', 'model', 'agentPreset'] as const
-const limits = ['requestTimeoutMs', 'retryIntervalMs', 'maxBytes', 'maxTeams', 'maxMembers', 'maxTasks', 'maxOperations', 'workspacePageSize', 'sessionPageSize', 'sessionSyncIntervalMs', 'sessionStreamHeartbeatMs', 'sessionStreamIdleTimeoutMs'] as const
+const scalarFields = ['publicUrl', 'label', 'provider', 'model', 'agentPreset'] as const
+const limits = ['invitationLifetimeMs', 'maxInvitations', 'requestTimeoutMs', 'retryIntervalMs', 'maxBytes', 'maxTeams', 'maxMembers', 'maxTasks', 'maxOperations', 'workspacePageSize', 'sessionPageSize', 'sessionSyncIntervalMs', 'sessionStreamHeartbeatMs', 'sessionStreamIdleTimeoutMs', 'terminalCols', 'terminalRows', 'maxUploadBytes'] as const
+const grants = ['workspaceManagement', 'sessionAccess', 'attachmentAccess', 'approvalAccess', 'terminalAccess', 'teamAccess', 'teamOperate'] as const
 
 /** Render editable deployment values without embedding credentials in saved configuration.
  * @param props - localized copy and authenticated profile operations.
@@ -70,12 +72,12 @@ export function Page(props: PageProps) {
     }
     setBusy(true); setError('')
     try {
-      for (const [index, peer] of peers.entries()) {
+      const changes = peers.flatMap((peer, index): PairingCredentialChange[] => {
         const secret = secrets[index]
-        if (secret) await props.credential(peer.tokenEnv, secret)
-      }
+        return secret ? [{ environmentId: brandString<PairingCredentialChange['environmentId']>(peer.environmentId), secret }] : []
+      })
       const config = { ...draft, workspaces: Object.fromEntries(workspaces.map(item => [item.alias, item.path])) }
-      const result = await props.save({ ...accepted, config })
+      const result = await props.save({ ...accepted, config }, changes)
       setAccepted(result); setDraft(result.config); setSecrets({}); props.notify('saved')
     } catch { props.notify('saveFailed') } finally { setBusy(false) }
   }
@@ -97,8 +99,7 @@ export function Page(props: PageProps) {
         {field('environmentId', peer.environmentId, (value) => { updatePeer(index, { environmentId: value, tokenEnv: `DSH_PEER_${value.replaceAll('-', '_')}` }) })}
         {field('url', peer.url, (value) => { updatePeer(index, { url: value }) })}
         {field('grants', peer.workspaces.join(', '), (value) => { updatePeer(index, { workspaces: value.split(',').map(item => item.trim()) }) })}
-        <label><input type="checkbox" checked={peer.workspaceManagement ?? false} onChange={(event) => { updatePeer(index, { workspaceManagement: event.target.checked }) }} />{t('workspaceManagement')}</label>
-        <label><input type="checkbox" checked={peer.sessionAccess ?? false} onChange={(event) => { updatePeer(index, { sessionAccess: event.target.checked }) }} />{t('sessionAccess')}</label>
+        {grants.map(grant => <label key={grant}><input type="checkbox" checked={peer[grant] ?? false} onChange={(event) => { updatePeer(index, { [grant]: event.target.checked }) }} />{t(grant)}</label>)}
         {field('secret', secrets[index] ?? '', (value) => { setSecrets({ ...secrets, [index]: value }) }, 'password')}
         <Button onClick={() => { setDraft({ ...draft, peers: peers.filter((_, i) => i !== index) })
           setSecrets(Object.fromEntries(Object.entries(secrets).filter(([key]) => Number(key) !== index).map(([key, value]) => [Number(key) > index ? Number(key) - 1 : Number(key), value]))) }}>{t('remove')}</Button>
@@ -108,5 +109,6 @@ export function Page(props: PageProps) {
     </fieldset>
     <p>{t('changed')}</p>{error && <p role="alert">{error}</p>}
     <div className={css.actions}><Button variant="primary" disabled={busy} onClick={() => { void save() }}>{t('save')}</Button><Button disabled={busy} onClick={() => { setGeneration(value => value + 1) }}>{t('reload')}</Button></div>
+    <Pairing {...props} configuration={accepted} changed={() => { setGeneration(value => value + 1) }} />
   </div>
 }

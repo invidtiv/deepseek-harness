@@ -1,9 +1,25 @@
 /** English and Chinese copy for environment deployment configuration. */
+import { teamEn, teamZh } from './team-locales.ts'
+import { pairingEn, pairingZh } from './pairing-locales.ts'
+/** English environment configuration and conversation copy. */
 export const en = {
+  ...teamEn,
+  ...pairingEn,
+  attachmentAccess: 'Allow session attachments', approvalAccess: 'Allow answering session approvals and questions', terminalAccess: 'Allow session terminals', teamAccess: 'Allow team dashboard access', teamOperate: 'Allow interrupting team members',
+  terminalCols: 'Initial terminal columns', terminalRows: 'Initial terminal rows', maxUploadBytes: 'Maximum attachment upload (bytes)',
+  remoteApproval: 'Approval requested', allowOnce: 'Allow once', rejectRequest: 'Reject', customAnswer: 'Your answer', submitAnswer: 'Submit answers',
+  copyRemote: 'Copy', copiedRemote: 'Copied', remoteFootnotes: 'Footnotes',
+  interactionOffline: 'Could not refresh session controls. The last received data remains visible.',
+  attachFile: 'Attach a file or image', attachmentsDisabled: 'Attachment access is disabled for this connection in Plugins.', remoteBytes: 'bytes', downloadFile: 'Download',
+  toolDetails: 'Tool activity and errors', remoteOperationError: 'This operation failed on the destination.', detailsTruncated: 'Only recent tool details are shown. Increase the session page size in Plugins for more.',
+  remoteTerminals: 'Terminals on this machine', openTerminal: 'Connect', closeTerminal: 'Close terminal', newTerminal: 'New terminal', resizeTerminal: 'Resize terminal', terminalColumns: 'Columns', terminalRowsLabel: 'Rows', terminalInput: 'Remote terminal input',
+  terminalOffline: 'Terminal connection was interrupted. Connect again to resume. Unconfirmed input will not be sent again.',
+  attachmentTooLarge: 'This attachment exceeds the configured upload limit.',
+  terminalExited: 'Exited', terminalFailed: 'Failed', terminalReadOnly: 'Another connection controls this terminal. Connect again to take control.',
   sessionStreaming: 'Generating', sessionDenied: 'Session access was refused. Check access on the destination, then refresh.', sessionUnsupported: 'Update the destination to enable live sessions, then refresh.', sessionProtocol: 'The session stream could not be verified. Check both installations, then refresh.',
   sessionStreamHeartbeatMs: 'Session stream heartbeat interval (ms)', sessionStreamIdleTimeoutMs: 'Session stream idle timeout (ms)',
   sessionAccess: 'Allow workspace session access', sessionPageSize: 'Session list and message limit', sessionSyncIntervalMs: 'Session refresh interval (ms)',
-  openDestination: 'Open destination Web app', openSessions: 'Open sessions', remoteSessions: 'Remote sessions', sessionSyncHelp: 'Sessions run on the selected machine. Messages and live assistant text synchronize automatically; attachments, tool details, approval prompts and errors remain in its full Web app.',
+  openDestination: 'Open destination Web app', openSessions: 'Open sessions', remoteSessions: 'Remote sessions', sessionSyncHelp: 'Sessions run on the selected machine. Messages, tool details and pending requests synchronize automatically. Access to attachments, approvals and terminals is configured in Plugins.',
   newSession: 'New session', noRemoteSessions: 'No sessions in this workspace.', openSession: 'Open session', sessionRunning: 'Running', sessionIdle: 'Idle',
   sessionOffline: 'Could not synchronize. The last received messages remain visible. Reconnecting automatically; check session access in Plugins if this continues.',
   sessionsTruncated: 'The session list limit was reached. Increase it in Plugins to see more sessions.',
@@ -39,10 +55,23 @@ export const en = {
 export type EnvironmentSettingsKey = keyof typeof en
 /** Chinese translation of the configuration page. */
 export const zh: Record<EnvironmentSettingsKey, string> = {
+  ...teamZh,
+  ...pairingZh,
+  attachmentAccess: '允许会话附件', approvalAccess: '允许回答会话审批和问题', terminalAccess: '允许会话终端', teamAccess: '允许查看团队面板', teamOperate: '允许中断团队成员',
+  terminalCols: '终端初始列数', terminalRows: '终端初始行数', maxUploadBytes: '附件上传大小上限（字节）',
+  remoteApproval: '请求审批', allowOnce: '允许一次', rejectRequest: '拒绝', customAnswer: '你的回答', submitAnswer: '提交回答',
+  copyRemote: '复制', copiedRemote: '已复制', remoteFootnotes: '脚注',
+  interactionOffline: '无法刷新会话控制项，仍显示上次收到的数据',
+  attachFile: '添加文件或图片', attachmentsDisabled: '此连接的附件访问权限已在插件中禁用', remoteBytes: '字节', downloadFile: '下载',
+  toolDetails: '工具活动和错误', remoteOperationError: '此操作在目标机器上失败', detailsTruncated: '仅显示最近的工具详情。可在插件中提高会话列表上限以查看更多内容',
+  remoteTerminals: '此机器上的终端', openTerminal: '连接', closeTerminal: '关闭终端', newTerminal: '新建终端', resizeTerminal: '调整终端大小', terminalColumns: '列数', terminalRowsLabel: '行数', terminalInput: '远程终端输入',
+  terminalOffline: '终端连接已中断。重新连接即可继续，未确认的输入不会再次发送',
+  attachmentTooLarge: '此附件超过配置的上传大小上限',
+  terminalExited: '已退出', terminalFailed: '失败', terminalReadOnly: '此终端由另一连接控制。重新连接可取得控制权',
   sessionStreaming: '生成中', sessionDenied: '会话访问被拒绝。请检查目标机器上的权限，然后刷新', sessionUnsupported: '请更新目标机器以启用实时会话，然后刷新', sessionProtocol: '无法验证会话流。请检查两端安装，然后刷新',
   sessionStreamHeartbeatMs: '会话流心跳间隔（毫秒）', sessionStreamIdleTimeoutMs: '会话流空闲超时（毫秒）',
   sessionAccess: '允许访问工作区会话', sessionPageSize: '会话列表和消息上限', sessionSyncIntervalMs: '会话刷新间隔（毫秒）',
-  openDestination: '打开目标机器的 Web 应用', openSessions: '打开会话', remoteSessions: '远程会话', sessionSyncHelp: '会话在所选机器上运行。消息和助手的实时文本会自动同步；附件、工具详情、审批提示和错误请使用该机器的完整 Web 应用。',
+  openDestination: '打开目标机器的 Web 应用', openSessions: '打开会话', remoteSessions: '远程会话', sessionSyncHelp: '会话在所选机器上运行。消息、工具详情和待处理请求会自动同步。附件、审批和终端的访问权限可在插件中配置。',
   newSession: '新建会话', noRemoteSessions: '此工作区没有会话', openSession: '打开会话', sessionRunning: '运行中', sessionIdle: '空闲',
   sessionOffline: '无法同步，仍显示上次收到的消息。正在自动重连；若持续失败，请检查插件中的会话访问权限',
   sessionsTruncated: '已达到会话列表上限。可在插件中提高上限以显示更多会话',

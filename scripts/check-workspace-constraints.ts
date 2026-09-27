@@ -191,7 +191,9 @@ const packageFileExtras: Readonly<Record<string, readonly string[]>> = {
   '@deepseek-ai/dsh-experimental-ptc-runtime-python': ['py/**/*.py'],
   '@deepseek-ai/dsh-experimental-speech-to-text-sensevoice': ['runtime/assets.json'],
   // Runtime and operator settings share the environment identity implementation.
-  '@deepseek-ai/dsh-experimental-environment-team': ['lib/management.js', 'lib/transport-*.js'],
+  '@deepseek-ai/dsh-experimental-environment-team': [
+    'lib/management.js', 'lib/pairing.js', 'lib/transport-*.js', 'lib/session-stream-*.js', 'lib/pairing-configuration-*.js', 'lib/client.*.js',
+  ],
   // The isolated Node bootstrap is a separately launched bundle.
   '@deepseek-ai/dsh-ptc-runtime-node': ['lib/process.js'],
   // The Host entry starts its sibling Worker by URL rather than a package export.

@@ -3,7 +3,9 @@ import { z } from 'zod'
 import { brandString, type Branded } from '@deepseek-ai/dsh-brand'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { workspaceRequestSchema } from './workspace-protocol.ts'
+import { teamDashboardRequestSchema } from './team-dashboard-protocol.ts'
 import { sessionRequestSchema } from './session-protocol.ts'
+import { interactionRequestSchema } from './interaction-protocol.ts'
 
 /** Durable identity of one independently owned Harness installation. */
 export type EnvironmentId = Branded<'EnvironmentId'>
@@ -48,8 +50,9 @@ export const descriptorSchema = z.object({
   platform: z.string(),
   protocol: z.literal(1),
   capabilities: z.object({
-    distributedTeams: z.literal(true), workspaceBrowser: z.literal(true).optional(),
+    distributedTeams: z.literal(true), teamDashboard: z.literal(true).optional(), workspaceBrowser: z.literal(true).optional(),
     workspaceSessions: z.literal(true).optional(), workspaceSessionFollow: z.literal(true).optional(),
+    workspaceSessionInteractions: z.literal(true).optional(),
   }),
 }).strict()
 /** Public environment identity and compatible protocol capabilities. */
@@ -105,6 +108,8 @@ export type Assignment = z.infer<typeof assignmentSchema>
 
 /** Authenticated peer request. The receiver checks target identity before dispatch. */
 export const requestSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('session-interaction'), environmentId: environmentIdSchema, request: interactionRequestSchema }).strict(),
+  z.object({ kind: z.literal('team-dashboard'), environmentId: environmentIdSchema, request: teamDashboardRequestSchema }).strict(),
   z.object({ kind: z.literal('session'), environmentId: environmentIdSchema, request: sessionRequestSchema }).strict(),
   z.object({ kind: z.literal('workspace'), environmentId: environmentIdSchema, request: workspaceRequestSchema }).strict(),
   z.object({ kind: z.literal('command'), environmentId: environmentIdSchema, teamId, actor: sessionId, operationId, command: commandSchema }).strict(),

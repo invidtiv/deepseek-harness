@@ -11,9 +11,10 @@ import type {} from '@deepseek-ai/dsh-session-projection'
 import { Config, resolveConfig } from './config.ts'
 import { installTools } from './tools.ts'
 import { loadIdentity } from './identity.ts'
+import { EnvironmentTeamsProvider } from './team-dashboard.ts'
 import { EnvironmentTeams } from './runtime.ts'
 import { DESCRIPTOR_PATH, PEER_PATH, PeerTransport } from './transport.ts'
-import { handlePeerSession, SESSION_FOLLOW_PATH } from './peer-stream.ts'
+import { handlePeerSession, handlePeerTerminal, SESSION_FOLLOW_PATH, TERMINAL_FOLLOW_PATH } from './peer-stream.ts'
 
 export { Config } from './config.ts'
 /** Cordis plugin identity. */
@@ -54,6 +55,7 @@ export async function apply(ctx: Context, input: Config): Promise<void> {
     }
   }, 'environmentTeam.runtime')
   const runtime = await opening
+  new EnvironmentTeamsProvider(ctx, runtime)
   ctx.effect(() => ctx.webServer.register({
     kind: 'exact', path: DESCRIPTOR_PATH,
     handler(request, response) {
@@ -78,6 +80,16 @@ export async function apply(ctx: Context, input: Config): Promise<void> {
       await Promise.allSettled([...active])
     }
   }, 'environmentTeam.sessionFollow')
+  ctx.effect(() => {
+    const abort = new AbortController()
+    const active = new Set<Promise<void>>()
+    const unregister = ctx.webServer.register({ kind: 'exact', path: TERMINAL_FOLLOW_PATH, handler(request, response) {
+      const pending = handlePeerTerminal(transport, runtime, identity, config, request, response, abort.signal)
+      active.add(pending)
+      return pending.finally(() => active.delete(pending))
+    } })
+    return async () => { abort.abort(); unregister(); await Promise.allSettled([...active]) }
+  }, 'environmentTeam.terminalFollow')
   installTools(ctx, runtime, config)
   ctx.effect(() => {
     const timer = setInterval(() => {

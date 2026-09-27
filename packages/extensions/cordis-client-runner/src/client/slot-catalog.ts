@@ -1751,13 +1751,14 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
       'useSessionRetainInfo: UseSessionRetainInfo',
       'useWorkspaces: SnapshotSelectorHook<WorkspaceSnapshot>',
     ],
-    keyDomain: 'open: any string the owner dispatches (no compile-time key set), already taken: conversation, environment-sessions, environments',
+    keyDomain: 'open: any string the owner dispatches (no compile-time key set), already taken: conversation, environment-sessions, environment-teams, environments',
     hookContext: '',
     slotInject: '',
     declaredBy: 'an entry in \'root\' (client-ui-layout), so it exists while that entry is mounted',
     occupants: [
       'client-ui-conversation ConversationPanel key \'conversation\'',
       'client-ui-plugin-manager PluginManagerPage',
+      'experimental-environment-team Teams key \'environment-teams\'',
       'experimental-environment-team Sessions key \'environment-sessions\'',
       'experimental-environment-team Environments key \'environments\'',
     ],
@@ -3034,6 +3035,7 @@ export const CLIENT_SLOT_API: readonly ClientSlotEntry[] = [
     declaredBy: 'an entry in \'sidebar\' (client-ui-sidebar), so it exists while that entry is mounted',
     occupants: [
       'client-ui-plugin-manager PluginsPanelIcon',
+      'experimental-environment-team TeamsIcon id \'environment-teams\'',
       'experimental-environment-team EnvironmentsIcon id \'environments\'',
     ],
     replaceRisk: 'none',

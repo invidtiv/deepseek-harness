@@ -263,3 +263,24 @@ it('refuses editing while the runtime is absent or disabled', async () => {
     await expect(controller.read()).rejects.toThrow('not enabled')
   } finally { entry.fiber = fiber; spy.mockRestore() }
 })
+
+it('routes dashboard requests only to the selected coordinator and rejects mismatched identities', async () => {
+  const { start } = await fixture()
+  const { controller } = await start()
+  const current = await controller.read()
+  const target = brandString<EnvironmentConfiguration['environmentId']>(randomUUID())
+  const signal = new AbortController().signal
+  const descriptor = descriptorSchema.parse({ environmentId: target, label: 'peer', platform: 'linux', protocol: 1,
+    capabilities: { distributedTeams: true, teamDashboard: true } })
+  const describe = vi.spyOn(PeerTransport.prototype, 'describe').mockResolvedValue(descriptor)
+  const result = { kind: 'catalog', environmentId: target, teams: [] }
+  const call = vi.spyOn(PeerTransport.prototype, 'call').mockResolvedValue(JSON.stringify(result))
+  expect(await controller.teamDashboard(target, { action: 'catalog' }, signal)).toEqual(result)
+  expect(call).toHaveBeenCalledWith(target, { kind: 'team-dashboard', environmentId: target,
+    request: { action: 'catalog' } }, expect.any(AbortSignal))
+  call.mockResolvedValueOnce(JSON.stringify({ ...result, environmentId: current.environmentId }))
+  await expect(controller.teamDashboard(target, { action: 'catalog' }, signal)).rejects.toThrow('mismatch')
+  describe.mockResolvedValueOnce({ ...descriptor, capabilities: { distributedTeams: true } })
+  await expect(controller.teamDashboard(target, { action: 'catalog' }, signal)).rejects.toThrow('unsupported')
+  await expect(controller.teamDashboard(current.environmentId, { action: 'catalog' }, signal)).rejects.toThrow('unavailable')
+})

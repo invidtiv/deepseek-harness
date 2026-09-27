@@ -21,7 +21,7 @@ vi.mock('@deepseek-ai/dsh-experimental-environment-team/remote', () => ({ defaul
 const roots: Context[] = []
 function assertActions(value: Record<string, unknown>): asserts value is Record<string, unknown> & PageActions {
   assert(typeof value.read === 'function' && typeof value.save === 'function')
-  assert(typeof value.notify === 'function' && typeof value.credential === 'function')
+  assert(typeof value.notify === 'function' && typeof value.pairingCreate === 'function')
 }
 function assertNotice(value: Record<string, unknown>): asserts value is Record<string, unknown> & NoticeFace {
   assert(typeof value.dismiss === 'function')
@@ -56,7 +56,7 @@ async function fixture() {
     if (signal.aborted) return
     await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
   })
-  ctx.provide('remote.environmentTeamSettings', { read, save, environments, workspace, session, sessionFollow })
+  ctx.provide('remote.environmentTeamSettings', { read, saveWithCredentials: save, environments, workspace, session, sessionFollow, sessionInteraction: vi.fn().mockResolvedValue({ ok: true, value: { kind: 'snapshot', pending: [], attachments: [], details: [], terminals: [], capabilities: { attachments: true, approvals: true, terminals: true }, maxUploadBytes: 1000, terminalCols: 80, terminalRows: 24, truncated: false } }), terminalFollow: vi.fn(async function* () {}), pairingCreate: set, pairingList: set, pairingRevoke: set, pairingAccept: set })
   ctx.provide('remote.credentials', { set })
   ctx.provide('locale', new LocaleRuntime(ctx))
   ctx.provide('layout', { selectPanel: vi.fn() })
@@ -78,8 +78,8 @@ it('withdraws its configuration page and feedback when the Client plugin is disp
   const notice = b.ctx.slots.entries('shell.overlay')[0]!.inject!()
   assertNotice(notice)
   const value = await actions.read()
-  expect(await actions.save(value)).toEqual({})
-  await actions.credential('DSH_PAIR', 'secret')
+  expect(await actions.save(value, [])).toEqual({})
+  await actions.pairingList()
   actions.notify('saved')
   expect(notice.hooks.environmentNotice.getSnapshot().kind).toBe('saved')
   notice.dismiss()
@@ -99,9 +99,9 @@ it('withdraws its configuration page and feedback when the Client plugin is disp
   b.read.mockResolvedValueOnce(failure)
   await expect(actions.read()).rejects.toThrow('unavailable')
   b.save.mockResolvedValueOnce(failure)
-  await expect(actions.save(value)).rejects.toThrow('unavailable')
+  await expect(actions.save(value, [])).rejects.toThrow('unavailable')
   b.set.mockResolvedValueOnce(failure)
-  await expect(actions.credential('DSH_PAIR', 'secret')).rejects.toThrow('unavailable')
+  await expect(actions.pairingList()).rejects.toThrow('unavailable')
   await dispose()
   expect(b.ctx.slots.entries('plugins.bundle.config')).toHaveLength(0)
   expect(b.ctx.slots.entries('shell.overlay')).toHaveLength(0)

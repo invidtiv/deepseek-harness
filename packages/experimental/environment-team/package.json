@@ -41,7 +41,11 @@
       "default": "./lib/typert.remote-client.js"
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
-    "./locale/*.json": "./locale/*.json"
+    "./locale/*.json": "./locale/*.json",
+    "./pairing": {
+      "types": "./lib/types/pairing.d.ts",
+      "default": "./lib/pairing.js"
+    }
   },
   "files": [
     "locale/*.json",
@@ -49,7 +53,11 @@
     "lib/client.js",
     "cordis.patch.yml",
     "lib/management.js",
+    "lib/pairing.js",
     "lib/transport-*.js",
+    "lib/session-stream-*.js",
+    "lib/pairing-configuration-*.js",
+    "lib/client.*.js",
     "lib/types/**/*.d.ts",
     "lib/typert.host.js",
     "lib/typert.host.d.ts",
@@ -81,7 +89,12 @@
     "@deepseek-ai/dsh-credentials": "workspace:*",
     "@deepseek-ai/dsh-config-editor": "workspace:*",
     "@deepseek-ai/dsh-typert-protocol": "workspace:*",
-    "@deepseek-ai/dsh-api-session-controller": "workspace:*"
+    "@deepseek-ai/dsh-api-session-controller": "workspace:*",
+    "@deepseek-ai/dsh-api-gateway": "workspace:*",
+    "@deepseek-ai/dsh-api-terminal-controller": "workspace:*",
+    "@deepseek-ai/dsh-client-file-upload": "workspace:*",
+    "@deepseek-ai/dsh-user-questions": "workspace:*",
+    "@deepseek-ai/dsh-attachment": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-util-crypto": "workspace:*",
@@ -125,7 +138,17 @@
     "@testing-library/react": "^16.1.0",
     "react-dom": "^18.2.0",
     "@deepseek-ai/dsh-client-ui-sidebar": "workspace:*",
-    "@deepseek-ai/dsh-api-session-controller": "workspace:*"
+    "@deepseek-ai/dsh-api-session-controller": "workspace:*",
+    "@deepseek-ai/dsh-api-gateway": "workspace:*",
+    "@deepseek-ai/dsh-api-terminal-controller": "workspace:*",
+    "@deepseek-ai/dsh-client-file-upload": "workspace:*",
+    "@deepseek-ai/dsh-user-questions": "workspace:*",
+    "@deepseek-ai/dsh-attachment": "workspace:*",
+    "@xterm/xterm": "^6.0.0",
+    "@deepseek-ai/dsh-attachment-local": "workspace:*",
+    "@deepseek-ai/dsh-commands": "workspace:*",
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
+    "@deepseek-ai/dsh-typert-registry": "workspace:*"
   },
   "dsh": {
     "bundle": {

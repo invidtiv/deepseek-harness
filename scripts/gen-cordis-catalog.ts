@@ -133,6 +133,7 @@ export const SERVICE_PAGE: Record<string, string> = {
   tools: 'tools.md',
   typert: 'typert.md',
   typertGateway: 'typert.md',
+  remoteEventAccess: 'typert.md',
   userQuestions: 'user-questions.md',
   web: 'web.md',
   workflowEngine: 'workflow.md',
@@ -164,6 +165,8 @@ export const SERVICE_PAGE: Record<string, string> = {
  * to a model as `cordis_runtime_inspect what:"client"`).
  */
 export const SERVICE_WALK_EXEMPTIONS: Record<string, string> = {
+  environmentPairing: 'package-internal invitation owner shared by its HTTP and operator adapters — packages/experimental/environment-team/README.md owns the lifecycle',
+  environmentTeams: 'package-internal access to the already-open coordinator runtime — packages/experimental/environment-team/README.md owns the lifecycle',
   invocation: 'not a service: per-call accessor (RemoteInvocation | undefined) the Gateway derives for each Remote call — packages/api/gateway/README.md owns the contract',
   webTerminals: 'client-side terminal view models — packages/api/terminal-controller/README.md owns the API',
   appReady: 'not a service: launcher-provided successful-startup signal — packages/boot/cmdline/README.md owns the launcher contract',
@@ -767,6 +770,8 @@ export const LINK_MAP: Readonly<Record<string, string>> = {
   TypertContribution: 'invariants.md',
   TypertRemoteEventSource: 'typert.md',
   RemoteEventHostInfo: 'typert.md',
+  RemoteEventInvocationFrame: 'typert.md',
+  RemoteEventId: 'typert.md',
   TypertFace: 'invariants.md',
   TypertPackageFilter: 'invariants.md',
   TypertPackageRecord: 'invariants.md',

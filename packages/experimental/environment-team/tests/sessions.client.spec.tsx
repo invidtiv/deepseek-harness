@@ -11,6 +11,12 @@ import { en as common } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 
 afterEach(cleanup)
 const dictionary = { ...common, ...en }
+const tools = {
+  useRemoteInteractions: <T,>(select: (state: import('../src/client/interaction-controller.ts').InteractionState) => T): T => select({ loading: false, busy: false, offline: false, terminalOffline: false, terminalRevision: 0 }),
+  interaction: vi.fn(),
+  upload: vi.fn(), download: vi.fn(), terminalConnect: vi.fn(), terminalCreate: vi.fn(), terminalWrite: vi.fn(), terminalRendered: vi.fn(),
+  removeAttachment: vi.fn(),
+}
 const environmentId = brandString<NonNullable<RemoteSessionState['workspace']>['environmentId']>('11111111-1111-4111-8111-111111111111')
 const workspaceId = brandString<NonNullable<RemoteSessionState['workspace']>['workspaceId']>('workspace')
 const sessionId = brandString<NonNullable<RemoteSessionState['sessionId']>>('session')
@@ -27,7 +33,7 @@ it('renders destination text, keeps failure data and routes every action through
     resume: vi.fn(), pause: vi.fn(), back: vi.fn(), refresh: vi.fn(), create: vi.fn(),
     select: vi.fn(), draft: vi.fn(), send: vi.fn(), cancel: vi.fn(),
   }
-  const props: PropsLocale<'environmentTeams'> & InjectFace<SessionsFace> = { ...actions, t: key => dictionary[key], useRemoteSessions: selector => selector(state) }
+  const props: PropsLocale<'environmentTeams'> & InjectFace<SessionsFace> = { ...tools, ...actions, ...tools, t: key => dictionary[key], useRemoteSessions: selector => selector(state) }
   const result = render(<Sessions {...props} />)
   expect(actions.resume).toHaveBeenCalledOnce()
   expect(screen.getByText('<script>plain text</script>')).toBeTruthy()
@@ -49,7 +55,7 @@ it('keeps an unconfirmed message immutable and offers an explicit retry', () => 
     sessionId, loading: false, busy: false, offline: false, draft: 'Unconfirmed', uncertain: true,
   }
   const send = vi.fn()
-  render(<Sessions t={key => dictionary[key]} useRemoteSessions={selector => selector(state)}
+  render(<Sessions {...tools} t={key => dictionary[key]} useRemoteSessions={selector => selector(state)}
     resume={vi.fn()} pause={vi.fn()} back={vi.fn()} refresh={vi.fn()} create={vi.fn()}
     select={vi.fn()} draft={vi.fn()} send={send} cancel={vi.fn()} />)
   expect(screen.getByRole('textbox').hasAttribute('disabled')).toBe(true)
@@ -59,7 +65,7 @@ it('keeps an unconfirmed message immutable and offers an explicit retry', () => 
 it('shows first-load, empty-session and destination-app states as snapshots arrive', () => {
   const state: RemoteSessionState = { loading: true, busy: false, offline: false, draft: '', uncertain: false }
   const props: PropsLocale<'environmentTeams'> & InjectFace<SessionsFace> = {
-    t: key => dictionary[key], useRemoteSessions: selector => selector(state),
+    ...tools, t: key => dictionary[key], useRemoteSessions: selector => selector(state),
     resume: vi.fn(), pause: vi.fn(), back: vi.fn(), refresh: vi.fn(), create: vi.fn(),
     select: vi.fn(), draft: vi.fn(), send: vi.fn(), cancel: vi.fn(),
   }
@@ -84,7 +90,7 @@ it('renders a live prefix and then replaces it with one saved assistant message'
     transcript: { environmentId, workspaceId, kind: 'snapshot', sessionId, cursor: 0, running: true, messages: [], truncated: false, live: { attemptId, text: 'Working on the remote machine' } },
   }
   const props: PropsLocale<'environmentTeams'> & InjectFace<SessionsFace> = {
-    t: key => dictionary[key], useRemoteSessions: selector => selector(state),
+    ...tools, t: key => dictionary[key], useRemoteSessions: selector => selector(state),
     resume: vi.fn(), pause: vi.fn(), back: vi.fn(), refresh: vi.fn(), create: vi.fn(),
     select: vi.fn(), draft: vi.fn(), send: vi.fn(), cancel: vi.fn(),
   }

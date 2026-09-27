@@ -1749,6 +1749,25 @@ export const SERVICE_API: readonly ServiceApiEntry[] = [
     ],
   },
   {
+    key: 'remoteEventAccess',
+    summary: 'Host-only access to pending interactions after the caller authorizes the owning Agent.',
+    description: 'Host-only access to pending interactions after the caller authorizes the owning Agent.',
+    methods: [
+      {
+        signature: 'pending(agentId: string, events: readonly string[]): readonly RemoteEventInvocationFrame[]',
+        description: 'Read pending waterfalls for one authorized Agent and explicit event names without claiming delivery.',
+        parameters: [{ name: 'agentId', description: 'authorized owning Agent identity.' }, { name: 'events', description: 'event names understood by the caller\'s request and answer validators.' }],
+        returns: 'detached pending invocation frames; an empty list includes already settled requests.',
+      },
+      {
+        signature: 'respond(agentId: string, eventId: RemoteEventId, event: string, value: unknown): boolean',
+        description: 'Resolve a still-pending waterfall; normal Client settlement races use the same broker.',
+        parameters: [{ name: 'agentId', description: 'authorized owning Agent identity.' }, { name: 'eventId', description: 'pending identity previously returned by the broker.' }, { name: 'event', description: 'expected event name validated by the consumer.' }, { name: 'value', description: 'event-specific answer validated by the consumer.' }],
+        returns: 'false if another client settled or cancelled the request first.',
+      },
+    ],
+  },
+  {
     key: 'sandbox',
     summary: 'Abstract process-sandbox service.',
     description: 'Abstract process-sandbox service. confine must return enforcing argv or fail closed at wrap or runner-execution time; silent unconfined passthrough is forbidden. Functional probes arbitrate multi-runner chains and may be skipped for a sole candidate, whose own refusal remains the fail-closed end.',
@@ -5898,8 +5917,20 @@ export const TYPE_API: readonly TypeApiEntry[] = [
     declaration: 'export interface RemoteErrorDetailsMap {\n    \'gateway/bad-request\': {\n        readonly issues?: readonly object[];\n    };\n    \'gateway/cancelled\': {};\n    \'gateway/internal\': {};\n}',
   },
   {
+    name: 'RemoteEventAgentId',
+    declaration: 'export type RemoteEventAgentId = Branded<\'RemoteEventAgentId\'>;',
+  },
+  {
     name: 'RemoteEventHostInfo',
     declaration: 'export interface RemoteEventHostInfo {\n    readonly home: string;\n}',
+  },
+  {
+    name: 'RemoteEventId',
+    declaration: 'export type RemoteEventId = Branded<\'RemoteEventId\'>;',
+  },
+  {
+    name: 'RemoteEventInvocationFrame',
+    declaration: 'export interface RemoteEventInvocationFrame {\n    readonly type: \'waterfall\';\n    readonly event: string;\n    readonly eventId: RemoteEventId;\n    readonly agentId: RemoteEventAgentId;\n    readonly request: Readonly<Record<string, unknown>>;\n}',
   },
   {
     name: 'RenderedDocumentBytes',

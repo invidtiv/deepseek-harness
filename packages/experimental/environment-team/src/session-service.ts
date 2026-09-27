@@ -3,6 +3,7 @@ import { realpath } from 'node:fs/promises'
 import { isAbsolute, relative, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
 import type { SessionController } from '@deepseek-ai/dsh-api-session-controller'
+import type { PromptContentPart } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session'
@@ -13,6 +14,7 @@ import type { EnvironmentId } from './protocol.ts'
 import type { EnvironmentSessionFollowRequest, EnvironmentSessionFrame, EnvironmentSessionMessage, SessionRequest, SessionResult } from './session-types.ts'
 import { sessionFollowRequestSchema, sessionRequestSchema } from './session-protocol.ts'
 import { EnvironmentSessionFollowProjection } from './session-follow.ts'
+import { pinAttachmentPrompt } from './prompt-receipt.ts'
 
 // The environment ownership lock excludes concurrent writers; Context-specific service proxies do not share identity.
 const admissions = new Map<EnvironmentId, Map<string, Promise<SessionResult>>>()
@@ -85,13 +87,18 @@ export class EnvironmentSessions {
         const snapshot = await controller.inspect(request.sessionId, signal)
         if (snapshot.meta.origin === 'subagent' || snapshot.meta.parentSession !== undefined || snapshot.meta.cwd === undefined || await realpath(snapshot.meta.cwd) !== await realpath(workspace.path)) throw new Error('session does not belong to the workspace')
         if (request.action === 'prompt') {
+          const attached = (request.attachments?.length ?? 0) > 0 || (request.images?.length ?? 0) > 0
+          if (attached && peer !== this.id && !this.config.peers.find(item => item.environmentId === peer)?.attachmentAccess) throw new Error('attachment access is not granted')
+          if (Buffer.byteLength(JSON.stringify(request)) > this.config.maxBytes) throw new Error('prompt request byte limit reached')
+          if (request.images?.some(image => Buffer.byteLength(image.data, 'base64') > this.config.maxUploadBytes)) throw new Error('Image exceeds the configured byte limit')
           const agent = this.ctx.agents.get(request.sessionId)
           const previous: UserMessage[] = snapshot.events.flatMap(event => event.type === 'user/message' ? [event.data] : [])
           if (agent) previous.push(...agent.inbox.nextTurn, ...agent.inbox.nextStep)
-          for (const message of previous) {
-            if (message.source.kind !== 'user' || !('rpcId' in message.source) || message.source.rpcId !== request.requestId) continue
+          const matching = previous.filter(message => message.source.kind === 'user' && 'rpcId' in message.source && message.source.rpcId === request.requestId)
+          if (!attached) for (const message of matching) {
             if (message.content.length !== 1 || message.content[0]?.type !== 'text' || message.content[0].text !== request.text) throw new Error('prompt retry identity has different content')
           }
+          await pinAttachmentPrompt(this.config.stateDirectory, this.id, request, attached && matching.length > 0)
         }
       }
       signal.throwIfAborted()
@@ -111,7 +118,13 @@ export class EnvironmentSessions {
     }
   }
 
-  private async authorize(peer: EnvironmentId, request: SessionRequest): Promise<Workspace> {
+  /**
+   * Validate the caller's grant and registered workspace membership before any Session access.
+   * @param peer - authenticated environment or local operator identity.
+   * @param request - validated workspace operation.
+   * @returns the authorized destination workspace.
+   */
+  async authorize(peer: EnvironmentId, request: SessionRequest): Promise<Workspace> {
     const grant = this.config.peers.find(item => item.environmentId === peer)
     if (peer !== this.id && !grant?.sessionAccess) throw new Error('session access is not granted')
     const workspace = this.ctx.workspaceRegistry.get(request.workspaceId)
@@ -155,7 +168,10 @@ export class EnvironmentSessions {
         return { ...scope, kind: 'snapshot', sessionId: request.sessionId, cursor: snapshot.events.at(-1)?.seq ?? -1, running: this.ctx.agents.get(request.sessionId)?.status === 'running', messages: messages.slice(-this.config.sessionPageSize), truncated: messages.length > this.config.sessionPageSize }
       }
       case 'prompt': {
-        await controller.prompt({ sessionId: request.sessionId, requestId: request.requestId, mode: 'queue', content: [{ type: 'text', text: request.text }] }, signal)
+        const content: PromptContentPart[] = [{ type: 'text', text: request.text }]
+        for (const receiptId of request.attachments ?? []) content.push({ type: 'file', receiptId })
+        for (const image of request.images ?? []) content.push({ type: 'image', data: image.data, mediaType: image.mediaType, ...(image.name === undefined ? {} : { name: image.name }) })
+        await controller.prompt({ sessionId: request.sessionId, requestId: request.requestId, mode: 'queue', content }, signal)
         return { ...scope, kind: 'accepted', sessionId: request.sessionId }
       }
       case 'cancel': {
