@@ -925,12 +925,16 @@ export interface EnvironmentTeamConfig {
   workspacePageSize?: number
   /** Maximum Session summaries or committed messages returned in one view. */
   sessionPageSize?: number
-  /** Milliseconds between refreshes of an open destination Session view. */
+  /** Milliseconds between Session catalog refreshes and disconnected follow retries. */
   sessionSyncIntervalMs?: number
+  /** Milliseconds between authenticated peer stream heartbeats and credential rechecks. */
+  sessionStreamHeartbeatMs?: number
+  /** Milliseconds without a complete peer frame or heartbeat before reconnecting. */
+  sessionStreamIdleTimeoutMs?: number
 }
 ```
 
-源码： [`packages/experimental/environment-team/src/config.ts:46`](../packages/experimental/environment-team/src/config.ts)
+源码： [`packages/experimental/environment-team/src/config.ts:48`](../packages/experimental/environment-team/src/config.ts)
 
 <a id="deepseek-aidsh-experimental-inspector"></a>
 

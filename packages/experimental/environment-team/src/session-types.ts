@@ -2,6 +2,17 @@
 import type { SessionRequestId } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionId } from '@deepseek-ai/dsh-session/types'
 import type { Branded } from '@deepseek-ai/dsh-brand'
+import type { LlmAttemptId } from '@deepseek-ai/dsh-llm/brand'
+import type {} from '@deepseek-ai/dsh-typert-protocol'
+
+declare module '@deepseek-ai/dsh-typert-protocol' {
+  interface RemoteErrorDetailsMap {
+    'environment/session-denied': Record<string, never>
+    'environment/session-unsupported': Record<string, never>
+    'environment/session-protocol': Record<string, never>
+    'environment/session-unavailable': Record<string, never>
+  }
+}
 
 type WorkspaceId = Branded<'WorkspaceId'>
 type EnvironmentId = Branded<'EnvironmentId'>
@@ -13,6 +24,17 @@ export type SessionRequest =
   | { readonly action: 'read'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }
   | { readonly action: 'cancel'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }
   | { readonly action: 'prompt'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId; readonly requestId: SessionRequestId; readonly text: string }
+
+/** Ordinary Session addressed within its destination workspace. */
+export interface EnvironmentSessionFollowRequest {
+  readonly workspaceId: WorkspaceId
+  readonly sessionId: SessionId
+}
+
+/** Full replacement view; live assistant text is process-local and never becomes a copied Session log. */
+export type EnvironmentSessionFrame = Extract<SessionResult, { kind: 'snapshot' }> & {
+  readonly live?: { readonly attemptId: LlmAttemptId; readonly text: string } | undefined
+}
 
 /** One completed, committed text message; tool and attachment details remain on the owning Web app. */
 export interface EnvironmentSessionMessage {

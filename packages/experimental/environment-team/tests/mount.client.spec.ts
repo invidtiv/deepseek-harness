@@ -49,7 +49,14 @@ async function fixture() {
   const environments = vi.fn().mockResolvedValue({ ok: true, value: [] })
   const workspace = vi.fn().mockResolvedValue({ ok: true, value: { kind: 'catalog', roots: [], workspaces: [], truncated: false } })
   const session = vi.fn()
-  ctx.provide('remote.environmentTeamSettings', { read, save, environments, workspace, session })
+  const sessionFollow = vi.fn(async function* (
+    environment: string, request: { sessionId: string; workspaceId: string }, signal: AbortSignal,
+  ) {
+    yield { environmentId: environment, workspaceId: request.workspaceId, kind: 'snapshot', sessionId: request.sessionId, cursor: 0, running: false, messages: [], truncated: false }
+    if (signal.aborted) return
+    await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+  })
+  ctx.provide('remote.environmentTeamSettings', { read, save, environments, workspace, session, sessionFollow })
   ctx.provide('remote.credentials', { set })
   ctx.provide('locale', new LocaleRuntime(ctx))
   ctx.provide('layout', { selectPanel: vi.fn() })

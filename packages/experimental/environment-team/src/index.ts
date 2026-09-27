@@ -13,6 +13,7 @@ import { installTools } from './tools.ts'
 import { loadIdentity } from './identity.ts'
 import { EnvironmentTeams } from './runtime.ts'
 import { DESCRIPTOR_PATH, PEER_PATH, PeerTransport } from './transport.ts'
+import { handlePeerSession, SESSION_FOLLOW_PATH } from './peer-stream.ts'
 
 export { Config } from './config.ts'
 /** Cordis plugin identity. */
@@ -63,6 +64,20 @@ export async function apply(ctx: Context, input: Config): Promise<void> {
     },
   }), 'environmentTeam.descriptor')
   ctx.effect(() => ctx.webServer.register({ kind: 'exact', path: PEER_PATH, handler: (request, response) => transport.handle(runtime, request, response) }), 'environmentTeam.peer')
+  ctx.effect(() => {
+    const abort = new AbortController()
+    const active = new Set<Promise<void>>()
+    const unregister = ctx.webServer.register({ kind: 'exact', path: SESSION_FOLLOW_PATH, handler(request, response) {
+      const pending = handlePeerSession(transport, runtime, identity, config, request, response, abort.signal)
+      active.add(pending)
+      return pending.finally(() => active.delete(pending))
+    } })
+    return async () => {
+      abort.abort()
+      unregister()
+      await Promise.allSettled([...active])
+    }
+  }, 'environmentTeam.sessionFollow')
   installTools(ctx, runtime, config)
   ctx.effect(() => {
     const timer = setInterval(() => {

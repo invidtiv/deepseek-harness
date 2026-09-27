@@ -1,7 +1,7 @@
 /** Destination selection, reconnect and ambiguous mutation ownership. */
 import { afterEach, expect, it, vi } from 'vitest'
 import { brandString } from '@deepseek-ai/dsh-brand'
-import { RemoteSessionController, type SessionCall } from '../src/client/session-controller.ts'
+import { RemoteSessionController, type SessionCall, type SessionFollow } from '../src/client/session-controller.ts'
 import type { EnvironmentWorkspace } from '../src/workspace-types.ts'
 import type { SessionResult, EnvironmentSessionSummary } from '../src/session-types.ts'
 
@@ -11,10 +11,18 @@ const base = { environmentId: workspace.environmentId, workspaceId: workspace.wo
 const list: SessionResult = { ...base, kind: 'sessions', sessions: [{ sessionId, title: 'Remote session', running: false, updatedAt: 1 }], truncated: false }
 const snapshot: SessionResult = { ...base, kind: 'snapshot', sessionId, cursor: 1, running: false, messages: [{ seq: 1, role: 'assistant', text: 'Saved remotely' }], truncated: false }
 const roots: RemoteSessionController[] = []
-afterEach(() => { roots.splice(0).forEach((root) =>{  root.pause() }); vi.useRealTimers() })
+afterEach(async () => { await Promise.all(roots.splice(0).map(root => root.dispose())); vi.useRealTimers() })
+function followSnapshot(call: SessionCall): SessionFollow {
+  return async function* (environment, request, signal) {
+    const frame = await call(environment, { action: 'read', ...request }, signal)
+    if (frame.kind === 'snapshot') yield frame
+    if (signal.aborted) return
+    await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+  }
+}
 function fixture(call: SessionCall = async (_environment, request) => request.action === 'list' ? list : snapshot, interval = vi.fn(async () => 1000)) {
   const notify = vi.fn()
-  const controller = new RemoteSessionController(call, interval, notify)
+  const controller = new RemoteSessionController(call, interval, notify, followSnapshot(call))
   roots.push(controller); controller.open(workspace); controller.resume()
   return { controller, notify, interval }
 }
@@ -135,7 +143,7 @@ it('clears an older ambiguous prompt when a new session is created', async () =>
 
 it('ignores actions without a target and stale destination endpoint metadata', async () => {
   const call = vi.fn<SessionCall>().mockResolvedValue(list)
-  const controller = new RemoteSessionController(call, async () => 1000, vi.fn())
+  const controller = new RemoteSessionController(call, async () => 1000, vi.fn(), followSnapshot(call))
   roots.push(controller)
   controller.resume(); await controller.create(); await controller.send(); await controller.cancel()
   controller.destination(workspace.environmentId, 'https://stale.example.ts.net')

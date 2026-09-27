@@ -23,7 +23,7 @@ export interface PageActions {
 export type PageProps = Pick<PropsRuntime<'plugins.bundle.config'>, 'view'> & PropsLocale<'environmentTeams'> & PageActions
 
 const scalarFields = ['label', 'provider', 'model', 'agentPreset'] as const
-const limits = ['requestTimeoutMs', 'retryIntervalMs', 'maxBytes', 'maxTeams', 'maxMembers', 'maxTasks', 'maxOperations', 'workspacePageSize', 'sessionPageSize', 'sessionSyncIntervalMs'] as const
+const limits = ['requestTimeoutMs', 'retryIntervalMs', 'maxBytes', 'maxTeams', 'maxMembers', 'maxTasks', 'maxOperations', 'workspacePageSize', 'sessionPageSize', 'sessionSyncIntervalMs', 'sessionStreamHeartbeatMs', 'sessionStreamIdleTimeoutMs'] as const
 
 /** Render editable deployment values without embedding credentials in saved configuration.
  * @param props - localized copy and authenticated profile operations.

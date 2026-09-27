@@ -16,6 +16,84 @@ import { descriptorSchema } from '../src/protocol.ts'
 import type { EnvironmentConfiguration } from '../src/settings-types.ts'
 import { sessionRequestSchema, sessionResultSchema } from '../src/session-protocol.ts'
 import { EnvironmentSessions } from '../src/session-service.ts'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import type { EnvironmentSessionFrame, EnvironmentSessionFollowRequest } from '../src/session-types.ts'
+
+it('follows only the addressed environment and releases a suspended stream on disposal', async () => {
+  const { start } = await fixture()
+  const { controller, ctx } = await start()
+  const current = await controller.read()
+  const target = brandString<EnvironmentConfiguration['environmentId']>(randomUUID())
+  const request: EnvironmentSessionFollowRequest = { workspaceId: brandString<EnvironmentSessionFollowRequest['workspaceId']>('remote-workspace'), sessionId: brandString<EnvironmentSessionFollowRequest['sessionId']>('remote-session') }
+  const snapshot: EnvironmentSessionFrame = { kind: 'snapshot', environmentId: target, ...request, cursor: -1, running: false, messages: [], truncated: false }
+  let finish!: () => void
+  const finished = new Promise<void>((resolve) => { finish = resolve })
+  const remote = vi.spyOn(PeerTransport.prototype, 'follow').mockImplementation(async function* (_target, _request, signal) {
+    try {
+      yield snapshot
+      if (!signal.aborted) await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+    } finally { finish() }
+  })
+  const local = vi.spyOn(EnvironmentSessions.prototype, 'follow')
+  const iterator = controller.sessionFollow(target, request, new AbortController().signal)[Symbol.asyncIterator]()
+  expect(await iterator.next()).toEqual({ done: false, value: snapshot })
+  expect(remote).toHaveBeenCalledWith(target, request, expect.any(AbortSignal))
+  expect(local).not.toHaveBeenCalled()
+  // A browser can stop requesting frames while the plugin is unloading.
+  await ctx.fiber.dispose()
+  await finished
+  expect((await iterator.next()).done).toBe(true)
+  expect(current.environmentId).not.toBe(target)
+})
+
+it('follows the local owner without contacting a peer and skips already cancelled subscriptions', async () => {
+  const { start } = await fixture()
+  const { controller } = await start()
+  const current = await controller.read()
+  const request: EnvironmentSessionFollowRequest = { workspaceId: brandString<EnvironmentSessionFollowRequest['workspaceId']>('local-workspace'), sessionId: brandString<EnvironmentSessionFollowRequest['sessionId']>('local-session') }
+  const snapshot: EnvironmentSessionFrame = { kind: 'snapshot', environmentId: current.environmentId, ...request, cursor: -1, running: false, messages: [], truncated: false }
+  const local = vi.spyOn(EnvironmentSessions.prototype, 'follow').mockImplementation(async function* () { yield snapshot })
+  const remote = vi.spyOn(PeerTransport.prototype, 'follow')
+  const abort = new AbortController()
+  abort.abort(new Error('panel closed'))
+  expect((await controller.sessionFollow(current.environmentId, request, abort.signal)[Symbol.asyncIterator]().next()).done).toBe(true)
+  expect(local).not.toHaveBeenCalled()
+  const iterator = controller.sessionFollow(current.environmentId, request, new AbortController().signal)[Symbol.asyncIterator]()
+  expect((await iterator.next()).value).toEqual(snapshot)
+  await iterator.return?.()
+  expect(remote).not.toHaveBeenCalled()
+})
+
+it('closes an operator follow when its runtime configuration is replaced', async () => {
+  const { start } = await fixture()
+  const { controller } = await start()
+  const current = await controller.read()
+  const request: EnvironmentSessionFollowRequest = { workspaceId: brandString<EnvironmentSessionFollowRequest['workspaceId']>('workspace'), sessionId: brandString<EnvironmentSessionFollowRequest['sessionId']>('session') }
+  const snapshot: EnvironmentSessionFrame = { kind: 'snapshot', environmentId: current.environmentId, ...request, cursor: -1, running: false, messages: [], truncated: false }
+  let stopped = false
+  vi.spyOn(EnvironmentSessions.prototype, 'follow').mockImplementation(async function* (_peer, _request, signal) {
+    try {
+      yield snapshot
+      if (!signal.aborted) await new Promise<void>((resolve) => { signal.addEventListener('abort', () => { resolve() }, { once: true }) })
+    } finally { stopped = true }
+  })
+  const iterator = controller.sessionFollow(current.environmentId, request, new AbortController().signal)[Symbol.asyncIterator]()
+  expect((await iterator.next()).value).toEqual(snapshot)
+  await controller.save({ ...current, config: { ...current.config, label: 'updated runtime' } })
+  expect(stopped).toBe(true)
+  expect((await iterator.next()).done).toBe(true)
+})
+
+it('preserves a terminal peer rejection when the producer finishes', async () => {
+  const { start } = await fixture()
+  const { controller } = await start()
+  const target = brandString<EnvironmentConfiguration['environmentId']>(randomUUID())
+  const request: EnvironmentSessionFollowRequest = { workspaceId: brandString<EnvironmentSessionFollowRequest['workspaceId']>('workspace'), sessionId: brandString<EnvironmentSessionFollowRequest['sessionId']>('session') }
+  vi.spyOn(PeerTransport.prototype, 'follow').mockImplementation(() => ({
+    [Symbol.asyncIterator]() { return { next: () => Promise.reject(new RemoteError('environment/session-denied', 'Session access was revoked', {})) } },
+  }))
+  await expect(controller.sessionFollow(target, request, new AbortController().signal)[Symbol.asyncIterator]().next()).rejects.toMatchObject({ code: 'environment/session-denied' })
+})
 
 const contexts: Awaited<ReturnType<typeof boot>>[] = []
 const roots: string[] = []

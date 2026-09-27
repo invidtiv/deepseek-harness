@@ -38,6 +38,8 @@ const schema = z.object({
   workspacePageSize: z.number().int().positive().default(100),
   sessionPageSize: z.number().int().positive().default(100),
   sessionSyncIntervalMs: z.number().int().positive().max(2147483647).default(2000),
+  sessionStreamHeartbeatMs: z.number().int().positive().max(2147483647).default(2000),
+  sessionStreamIdleTimeoutMs: z.number().int().positive().max(2147483647).default(10000),
 })
 /** Resolved deployment configuration. */
 export type ResolvedConfig = z.infer<typeof schema>
@@ -64,6 +66,8 @@ export const Config: s<Config> = s.object({
   workspacePageSize: s.number().default(100),
   sessionPageSize: s.number().default(100),
   sessionSyncIntervalMs: s.number().default(2000),
+  sessionStreamHeartbeatMs: s.number().default(2000),
+  sessionStreamIdleTimeoutMs: s.number().default(10000),
 })
 /**
  * Resolve and validate all deployment values before activation.
@@ -72,6 +76,7 @@ export const Config: s<Config> = s.object({
  */
 export function resolveConfig(input: unknown): ResolvedConfig {
   const config = schema.parse(input)
+  if (config.sessionStreamIdleTimeoutMs <= config.sessionStreamHeartbeatMs) throw new Error('session stream idle timeout must exceed its heartbeat interval')
   if (new Set(config.peers.map(item => item.environmentId)).size !== config.peers.length) throw new Error('duplicate peer environment identity')
   return config
 }

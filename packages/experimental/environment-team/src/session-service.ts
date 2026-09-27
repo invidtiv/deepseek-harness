@@ -7,10 +7,12 @@ import type { Workspace } from '@deepseek-ai/dsh-workspace'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { isAppendSurfaceEvent } from '@deepseek-ai/dsh-session'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { ResolvedConfig } from './config.ts'
 import type { EnvironmentId } from './protocol.ts'
-import type { EnvironmentSessionMessage, SessionRequest, SessionResult } from './session-types.ts'
-import { sessionRequestSchema } from './session-protocol.ts'
+import type { EnvironmentSessionFollowRequest, EnvironmentSessionFrame, EnvironmentSessionMessage, SessionRequest, SessionResult } from './session-types.ts'
+import { sessionFollowRequestSchema, sessionRequestSchema } from './session-protocol.ts'
+import { EnvironmentSessionFollowProjection } from './session-follow.ts'
 
 // The environment ownership lock excludes concurrent writers; Context-specific service proxies do not share identity.
 const admissions = new Map<EnvironmentId, Map<string, Promise<SessionResult>>>()
@@ -23,6 +25,46 @@ function within(root: string, path: string): boolean {
 /** Operates on ordinary Sessions without copying their persistence to the caller. */
 export class EnvironmentSessions {
   constructor(private readonly ctx: Context, private readonly id: EnvironmentId, private readonly config: ResolvedConfig) {}
+
+  /**
+   * Follow the owning Session without copying its log or cancelling its Agent on disconnect.
+   * @param peer - authenticated caller environment, or this environment's operator.
+   * @param input - destination workspace and ordinary Session identities.
+   * @param signal - subscription lifetime; abort before awaiting iterator teardown.
+   * @returns bounded replacement views with saved messages and optional process-local assistant text.
+   */
+  async *follow(
+    peer: EnvironmentId, input: EnvironmentSessionFollowRequest, signal: AbortSignal,
+  ): AsyncIterable<EnvironmentSessionFrame> {
+    const request = sessionFollowRequestSchema.parse(input)
+    const controller = this.ctx.get('sessionController')
+    if (!controller) throw new RemoteError('environment/session-unsupported', 'ordinary session follow is unavailable', {})
+    signal.throwIfAborted()
+    let workspace: Workspace
+    try { workspace = await this.authorize(peer, { action: 'read', ...request }) } catch (error) {
+      throw new RemoteError('environment/session-denied', 'session access is not granted', {}, { cause: error })
+    }
+    const projection = new EnvironmentSessionFollowProjection(this.config.sessionPageSize)
+    for await (const frame of controller.follow({ address: { kind: 'session', sessionId: request.sessionId }, assistantStream: true, maxMessages: this.config.sessionPageSize }, signal)) {
+      signal.throwIfAborted()
+      if (frame.type === 'snapshot') {
+        if (frame.header.id !== request.sessionId || frame.header.origin === 'subagent' || frame.header.parentSession !== undefined || frame.header.cwd === undefined || await realpath(frame.header.cwd) !== await realpath(workspace.path)) {
+          throw new RemoteError('environment/session-denied', 'session does not belong to the workspace', {})
+        }
+      }
+      let view: ReturnType<EnvironmentSessionFollowProjection['accept']>
+      try { view = projection.accept(frame, this.ctx.agents.get(request.sessionId)?.status === 'running') } catch (error) {
+        if (error instanceof RemoteError) throw error
+        throw new RemoteError('environment/session-protocol', 'session follow continuity failed', {}, { cause: error })
+      }
+      const result: EnvironmentSessionFrame = {
+        kind: 'snapshot', environmentId: this.id, workspaceId: workspace.id, sessionId: request.sessionId,
+        ...view,
+      }
+      if (Buffer.byteLength(JSON.stringify(result)) > this.config.maxBytes) throw new RemoteError('environment/session-protocol', 'session frame byte limit reached', {})
+      yield result
+    }
+  }
 
   /**
    * Authorize one operation against destination workspace membership before accessing a Session.

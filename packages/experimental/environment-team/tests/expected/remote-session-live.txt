@@ -1,0 +1,3 @@
+Remote sessionsSessions run on the selected machine. Messages and live assistant text synchronize automatically; attachments, tool details, approval prompts and errors remain in its full Web app.All workspacesRefreshNew sessionMessagesNo saved messages yet.Assistant · GeneratingWorking on the remote machineMessageSend messageStop
+
+Remote sessionsSessions run on the selected machine. Messages and live assistant text synchronize automatically; attachments, tool details, approval prompts and errors remain in its full Web app.All workspacesRefreshNew sessionMessagesAssistantWorking on the remote machine completedMessageSend messageStop

@@ -43,13 +43,14 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       const result = await child.remote.environmentTeamSettings.read()
       if (!result.ok) throw result.error
       return result.value.config.sessionSyncIntervalMs
-    }, (success) => { notice.update((value) => { value.kind = success ? 'sessionChanged' : 'sessionChangeFailed'; value.sequence++ }) })
-    child.effect(() => () => { sessions.pause() })
-    child.on('connection/reset', () => { void sessions.refresh() })
+    }, (success) => { notice.update((value) => { value.kind = success ? 'sessionChanged' : 'sessionChangeFailed'; value.sequence++ }) },
+    (environment, request, signal) => child.remote.environmentTeamSettings.sessionFollow(environment, request, signal))
+    child.effect(() => () => sessions.dispose())
+    child.on('connection/reset', () => { sessions.reconnect() })
     const sessionActions: SessionsFace = {
       hooks: { remoteSessions: sessions.state }, resume: () => { sessions.resume() }, pause: () => { sessions.pause() },
       back: () => { child.layout.selectPanel(brandString<MainPanelId>('environments')) },
-      refresh: () => { void sessions.refresh() }, create: () => { void sessions.create() },
+      refresh: () => { sessions.reconnect() }, create: () => { void sessions.create() },
       select: (id) => { sessions.select(id) }, draft: (text) => { sessions.draft(text) },
       send: () => { void sessions.send() }, cancel: () => { void sessions.cancel() },
     }

@@ -1,0 +1,12 @@
+- id: environment-team
+  config:
+    stateDirectory: !!js dshHomePath('environment-team')
+    label: Recorded destination
+    provider: deepseek-official
+    model: deepseek-v4-flash
+    agentPreset: standard
+    sandboxMode: workspace-write
+    approvalPolicy: ask
+    workspaces:
+      project: !!js process.cwd()
+    peers: []
