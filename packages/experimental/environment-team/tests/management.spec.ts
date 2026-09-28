@@ -296,3 +296,18 @@ it('rejects a history page containing messages outside its exclusive requested r
   call.mockResolvedValue(JSON.stringify({ ...response, messages: [{ seq: 9, role: 'user', text: 'earlier message' }] }))
   await expect(controller.session(environmentId, request, new AbortController().signal)).resolves.toMatchObject({ messages: [{ seq: 9 }] })
 })
+
+it('rejects catalog rows outside the exclusive timestamp and identity cursor', async () => {
+  const { start } = await fixture()
+  const { controller } = await start()
+  const environmentId = brandString<EnvironmentConfiguration['environmentId']>(randomUUID())
+  const request = sessionRequestSchema.parse({ action: 'list', workspaceId: 'workspace', before: { updatedAt: 10, sessionId: 'b' } })
+  const response = { environmentId, workspaceId: request.workspaceId, kind: 'sessions', truncated: false }
+  const call = vi.spyOn(PeerTransport.prototype, 'call')
+  for (const row of [{ updatedAt: 11, sessionId: 'a' }, { updatedAt: 10, sessionId: 'b' }]) {
+    call.mockResolvedValueOnce(JSON.stringify({ ...response, sessions: [{ ...row, title: 'Invalid row', running: false }] }))
+    await expect(controller.session(environmentId, request, new AbortController().signal)).rejects.toThrow('exceeds requested range')
+  }
+  call.mockResolvedValueOnce(JSON.stringify({ ...response, sessions: [{ updatedAt: 10, sessionId: 'a', title: 'Earlier', running: false }] }))
+  await expect(controller.session(environmentId, request, new AbortController().signal)).resolves.toMatchObject({ sessions: [{ sessionId: 'a' }] })
+})

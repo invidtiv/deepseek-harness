@@ -15,6 +15,7 @@ const tools = {
   useRemoteInteractions: <T,>(select: (state: import('../src/client/interaction-controller.ts').InteractionState) => T): T => select({ loading: false, busy: false, offline: false, terminalOffline: false, terminalRevision: 0 }),
   interaction: vi.fn(),
   upload: vi.fn(), download: vi.fn(), terminalConnect: vi.fn(), terminalCreate: vi.fn(), terminalWrite: vi.fn(), terminalRendered: vi.fn(),
+  olderSessions: vi.fn(), backToLatestSessions: vi.fn(),
   removeAttachment: vi.fn(), openWorkspace: vi.fn(), earlier: vi.fn(), backToLive: vi.fn(),
 }
 const environmentId = brandString<NonNullable<RemoteSessionState['workspace']>['environmentId']>('11111111-1111-4111-8111-111111111111')
@@ -148,4 +149,44 @@ it('keeps an earlier page separate from incoming live text and offers return to 
   view.rerender(<Sessions {...props} />)
   expect(screen.queryByText('Earlier question')).toBeNull()
   expect(screen.getByText('New live text')).toBeTruthy()
+})
+
+it('browses older session rows while keeping the selected conversation live', () => {
+  const olderId = brandString<typeof sessionId>('older')
+  const current = { sessionId, title: 'Current session', running: true, updatedAt: 20 }
+  const older = { sessionId: olderId, title: 'Older session', running: false, updatedAt: 1 }
+  const list = { environmentId, workspaceId, kind: 'sessions' as const, sessions: [current], truncated: true }
+  const state: RemoteSessionState = {
+    sessionId, loading: false, busy: false, offline: false, draft: 'Retained draft', uncertain: false, list,
+    catalogHistory: { ...list, sessions: [older], truncated: false },
+    transcript: { environmentId, workspaceId, kind: 'snapshot', sessionId, cursor: 20, running: true,
+      messages: [], truncated: false, live: { attemptId, text: 'Still streaming' } },
+  }
+  const backToLatestSessions = vi.fn()
+  const select = vi.fn()
+  const props: PropsLocale<'environmentTeams'> & InjectFace<SessionsFace> = {
+    ...tools, t: key => dictionary[key], useRemoteSessions: selector => selector(state),
+    resume: vi.fn(), pause: vi.fn(), back: vi.fn(), refresh: vi.fn(), create: vi.fn(),
+    select, draft: vi.fn(), send: vi.fn(), cancel: vi.fn(), backToLatestSessions,
+  }
+  const view = render(<Sessions {...props} />)
+  expect(screen.getByText('Older session')).toBeTruthy()
+  expect(screen.queryByText('Current session')).toBeNull()
+  expect(screen.getByText('Still streaming')).toBeTruthy()
+  expect(screen.getByRole('textbox')).toHaveProperty('value', 'Retained draft')
+  expect(screen.getByRole('status').textContent).toMatchInlineSnapshot(
+    '"Browsing older sessions. The selected conversation stays live."',
+  )
+  fireEvent.click(screen.getByRole('button', { name: en.openSession }))
+  expect(select).toHaveBeenCalledExactlyOnceWith(olderId)
+  fireEvent.click(screen.getByRole('button', { name: en.recentSessions }))
+  expect(backToLatestSessions).toHaveBeenCalledOnce()
+  delete state.catalogHistory
+  view.rerender(<Sessions {...props} />)
+  expect(screen.getByText('Current session')).toBeTruthy()
+  expect(screen.queryByText('Older session')).toBeNull()
+  state.catalogUnsupported = true
+  view.rerender(<Sessions {...props} />)
+  expect(screen.getByRole('alert').textContent).toBe(en.catalogUnsupported)
+  expect(screen.getByRole('button', { name: en.olderSessions })).toHaveProperty('disabled', true)
 })

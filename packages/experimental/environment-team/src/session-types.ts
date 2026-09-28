@@ -21,7 +21,7 @@ type EnvironmentId = Branded<'EnvironmentId'>
 
 /** Requests never accept a caller filesystem path or model credential. */
 export type SessionRequest =
-  | { readonly action: 'list'; readonly workspaceId: WorkspaceId }
+  | { readonly action: 'list'; readonly workspaceId: WorkspaceId; /** Exclusive activity-time and Session-ID cursor in descending order; omitted reads the newest page. */ readonly before?: { readonly updatedAt: number; readonly sessionId: SessionId } | undefined }
   | { readonly action: 'create'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }
   | { readonly action: 'read'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId; /** Exclusive committed-message sequence ceiling; omitted reads the latest page. */ readonly beforeSeq?: number | undefined }
   | { readonly action: 'cancel'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }
