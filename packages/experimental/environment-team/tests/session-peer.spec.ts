@@ -7,6 +7,7 @@ import { sessionRequestSchema, sessionResultSchema } from '../src/session-protoc
 import { EnvironmentSessions } from '../src/session-service.ts'
 import type { SessionRequest } from '../src/session-types.ts'
 import { SessionController } from '@deepseek-ai/dsh-api-session-controller'
+import { SessionId } from '@deepseek-ai/dsh-session'
 
 const closes: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const close of closes.splice(0).reverse()) await close() })
@@ -81,4 +82,25 @@ it('pages through a capable peer and refuses older peers before sending a histor
   expect(fetches).not.toHaveBeenCalled()
   const latest = { ...request, request: { ...request.request, beforeSeq: undefined } }
   expect(sessionResultSchema.parse(JSON.parse(await transport.call(destination.id, latest, signal)))).toMatchObject({ kind: 'snapshot' })
+})
+
+it('requires catalog paging capability only when a list cursor is supplied', async () => {
+  const { caller, destination } = await pairedSessionHosts((close) => { closes.push(close) })
+  const signal = new AbortController().signal
+  const transport = new PeerTransport(caller.id, caller.config, caller.ctx.credentials)
+  const request = { kind: 'session', environmentId: destination.id, request: {
+    action: 'list', workspaceId: destination.workspace.id, before: { updatedAt: 0, sessionId: SessionId('catalog-cursor') },
+  } } as const
+  const descriptor = await transport.describe(destination.id, signal)
+  expect(descriptor.capabilities.workspaceSessionCatalogPaging).toBe(true)
+  expect(sessionResultSchema.parse(JSON.parse(await transport.call(destination.id, request, signal))))
+    .toMatchObject({ kind: 'sessions', sessions: [], truncated: false })
+  const { workspaceSessionCatalogPaging: _paging, ...legacyCapabilities } = descriptor.capabilities
+  vi.spyOn(transport, 'describe').mockResolvedValue({ ...descriptor, capabilities: legacyCapabilities })
+  const fetches = vi.spyOn(globalThis, 'fetch')
+  await expect(transport.call(destination.id, request, signal)).rejects.toMatchObject({ code: 'environment/session-unsupported' })
+  expect(fetches).not.toHaveBeenCalled()
+  expect(sessionResultSchema.parse(JSON.parse(await transport.call(destination.id, {
+    ...request, request: { ...request.request, before: undefined },
+  }, signal)))).toMatchObject({ kind: 'sessions' })
 })

@@ -144,6 +144,11 @@ export default class EnvironmentTeamSettings extends TypertRemoteService {
       if (result.kind !== expected) throw new Error('session response action mismatch')
       if (result.environmentId !== target || result.workspaceId !== operation.workspaceId) throw new Error('session response destination mismatch')
       if ('sessionId' in operation && 'sessionId' in result && result.sessionId !== operation.sessionId) throw new Error('session response identity mismatch')
+      const before = operation.action === 'list' ? operation.before : undefined
+      if (before !== undefined && result.kind === 'sessions' && result.sessions.some(session =>
+        session.updatedAt > before.updatedAt || (session.updatedAt === before.updatedAt && session.sessionId >= before.sessionId))) {
+        throw new Error('session catalog response exceeds requested range')
+      }
       const beforeSeq = operation.action === 'read' ? operation.beforeSeq : undefined
       if (beforeSeq !== undefined && result.kind === 'snapshot' && result.messages.some(message => message.seq >= beforeSeq)) throw new Error('session history response exceeds requested range')
       return result

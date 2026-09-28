@@ -15,6 +15,8 @@ export interface SessionsFace extends SessionToolsActions {
   resume(): void
   pause(): void
   openWorkspace(workspace: EnvironmentWorkspace): void
+  olderSessions(): void
+  backToLatestSessions(): void
   earlier(): void
   backToLive(): void
   back(): void
@@ -34,6 +36,7 @@ export function Sessions(props: PropsLocale<'environmentTeams'> & InjectFace<Ses
   const { t, resume, pause } = props
   const state = props.useRemoteSessions(value => value)
   const interactions = props.useRemoteInteractions(value => value)
+  const catalog = state.catalogHistory ?? state.list
   const displayed = state.history ?? state.transcript
   const markdownLabels = { code: { copyLabel: t('copyRemote'), copiedLabel: t('copiedRemote') }, footnotes: t('remoteFootnotes') }
   useEffect(() => { resume(); return pause }, [resume, pause])
@@ -47,9 +50,15 @@ export function Sessions(props: PropsLocale<'environmentTeams'> & InjectFace<Ses
     <div className={css.toolbar}><Button disabled={state.busy} onClick={props.refresh}>{t('refresh')}</Button><Button disabled={state.busy || !state.workspace} onClick={props.create}>{t('newSession')}</Button>{state.webUrl && <a href={state.webUrl} target="_blank" rel="noopener noreferrer">{t('openDestination')}</a>}</div>
     {state.streamFailure ? <p role="alert">{t(state.streamFailure)}</p> : state.offline && <p role="alert">{t('sessionOffline')}</p>}
     {state.loading && !state.list && <div className={css.loading}><IconLoadingOutlineRegular /></div>}
-    {state.list?.sessions.length === 0 && <p>{t('noRemoteSessions')}</p>}
-    {state.list?.sessions.map(session => <div className={css.row} key={session.sessionId}><div><strong>{session.title}</strong><span>{t(session.running ? 'sessionRunning' : 'sessionIdle')}</span></div><Button disabled={state.busy} aria-pressed={session.sessionId === state.sessionId} onClick={() =>{  props.select(session.sessionId) }}>{t('openSession')}</Button></div>)}
-    {state.list?.truncated && <p>{t('sessionsTruncated')}</p>}
+    {catalog?.sessions.length === 0 && <p>{t(state.catalogHistory ? 'noOlderSessions' : 'noRemoteSessions')}</p>}
+    {catalog?.sessions.map(session => <div className={css.row} key={session.sessionId}><div><strong>{session.title}</strong><span>{t(session.running ? 'sessionRunning' : 'sessionIdle')}</span></div><Button disabled={state.busy} aria-pressed={session.sessionId === state.sessionId} onClick={() =>{  props.select(session.sessionId) }}>{t('openSession')}</Button></div>)}
+    {state.catalogHistory && <p role="status">{t('viewingOlderSessions')}</p>}
+    {state.catalogUnsupported && <p role="alert">{t('catalogUnsupported')}</p>}
+    {(catalog?.truncated || state.catalogHistory || state.catalogLoading) && <div className={css.toolbar}>
+      {catalog?.truncated && <Button disabled={state.busy || state.catalogLoading || state.catalogUnsupported} onClick={props.olderSessions}>{t('olderSessions')}</Button>}
+      {(state.catalogHistory || state.catalogLoading) && <Button onClick={props.backToLatestSessions}>{t('recentSessions')}</Button>}
+    </div>}
+    {state.catalogLoading && <div className={css.loading}><IconLoadingOutlineRegular /></div>}
     {state.sessionId && <>
       <h2>{t('sessionMessages')}</h2>
       {state.loading && !state.transcript && <div className={css.loading}><IconLoadingOutlineRegular /></div>}

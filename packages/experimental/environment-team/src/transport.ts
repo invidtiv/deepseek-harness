@@ -93,6 +93,7 @@ export class PeerTransport {
     if (request.kind === 'workspace' && !descriptor.capabilities.workspaceBrowser) throw new Error('peer does not support workspace management')
     if (request.kind === 'session' && !descriptor.capabilities.workspaceSessions) throw new Error('peer does not support workspace sessions')
     if (request.kind === 'session' && request.request.action === 'read' && request.request.beforeSeq !== undefined && !descriptor.capabilities.workspaceSessionHistory) throw new RemoteError('environment/session-unsupported', 'Peer does not support Session history paging', {})
+    if (request.kind === 'session' && request.request.action === 'list' && request.request.before !== undefined && !descriptor.capabilities.workspaceSessionCatalogPaging) throw new RemoteError('environment/session-unsupported', 'Peer does not support Session catalog paging', {})
     if (request.kind === 'session-interaction' && !descriptor.capabilities.workspaceSessionInteractions) throw new Error('peer does not support session interactions')
     if (request.kind === 'team-dashboard' && !descriptor.capabilities.teamDashboard) throw new Error('peer does not support team dashboard')
     const body = JSON.stringify(request)

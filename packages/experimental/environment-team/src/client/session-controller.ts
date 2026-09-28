@@ -30,6 +30,9 @@ export interface RemoteSessionState {
   workspace?: EnvironmentWorkspace
   webUrl?: string
   list?: SessionList
+  catalogHistory?: SessionList
+  catalogLoading?: boolean
+  catalogUnsupported?: boolean
   sessionId?: SessionId
   history?: Extract<SessionResult, { kind: 'snapshot' }>
   historyLoading?: boolean
@@ -54,6 +57,8 @@ export class RemoteSessionController {
   readonly state = createSnapshotStore<RemoteSessionState>({ loading: false, offline: false, busy: false, draft: '', uncertain: false })
   private readonly workspaces = new Map<string, { state: RemoteSessionState; pendingCreate: (SessionRequest & { action: 'create' }) | undefined }>()
   private readonly conversations = new Map<string, ConversationMemory>()
+  private catalogGeneration = 0
+  private catalogAbort: AbortController | undefined
   private historyGeneration = 0
   private historyAbort: AbortController | undefined
   private generation = 0
@@ -92,6 +97,7 @@ export class RemoteSessionController {
     const state = this.state.getSnapshot()
     if (!state.workspace) return
     const remembered = { ...state, busy: false, uncertain: this.pendingPrompt !== undefined }
+    delete remembered.catalogHistory; delete remembered.catalogLoading; delete remembered.catalogUnsupported
     delete remembered.history; delete remembered.historyLoading; delete remembered.historyUnsupported
     this.workspaces.set(this.workspaceKey(state.workspace), { state: remembered, pendingCreate: this.pendingCreate })
     if (state.sessionId) {
@@ -110,6 +116,7 @@ export class RemoteSessionController {
     const recentWorkspaces = [workspace, ...(this.state.getSnapshot().recentWorkspaces ?? [])
       .filter(item => this.workspaceKey(item) !== this.workspaceKey(workspace))]
     this.remember()
+    this.stopCatalog()
     this.stopHistory()
     this.invalidate()
     this.stopFollow()
@@ -120,6 +127,7 @@ export class RemoteSessionController {
     this.pendingPrompt = conversation?.pendingPrompt
     this.pendingCreate = saved?.pendingCreate
     const restored = { ...state, workspace, recentWorkspaces, loading: true, busy: false, uncertain: this.pendingPrompt !== undefined }
+    delete restored.catalogHistory; delete restored.catalogLoading; delete restored.catalogUnsupported
     delete restored.history; delete restored.historyLoading; delete restored.historyUnsupported
     this.state.set(restored)
     if (this.active) void this.refresh()
@@ -136,7 +144,7 @@ export class RemoteSessionController {
   resume(): void { this.active = true; void this.refresh() }
   /** Stop in-flight reads and timers while preserving the last received transcript. */
   pause(): void {
-    this.active = false; this.invalidate(); this.stopHistory()
+    this.active = false; this.invalidate(); this.stopHistory(); this.stopCatalog()
     this.stopFollow()
     this.state.update((value) => { value.busy = false; value.uncertain = this.pendingPrompt !== undefined })
   }
@@ -149,7 +157,7 @@ export class RemoteSessionController {
     this.state.set({ loading: false, offline: false, busy: false, draft: '', uncertain: false })
   }
   /** Restart the selected stream after an explicit refresh or local reconnection. */
-  reconnect(): void { this.stopHistory(); this.stopFollow(); void this.refresh() }
+  reconnect(): void { this.stopCatalog(); this.stopHistory(); this.stopFollow(); void this.refresh() }
   /** Update the draft unless a submission is pending or awaiting retry.
    * @param text - draft retained until the destination acknowledges submission.
    */
@@ -197,6 +205,51 @@ export class RemoteSessionController {
       value.loading = true; value.draft = saved?.draft ?? ''; value.uncertain = this.pendingPrompt !== undefined
     })
     void this.refresh()
+  }
+  private stopCatalog(): void {
+    this.catalogGeneration++
+    this.catalogAbort?.abort(); this.catalogAbort = undefined
+    this.state.update((value) => { delete value.catalogLoading })
+  }
+  /** Read older workspace Sessions while keeping the selected conversation live.
+   * @returns completion after the requested catalog page is accepted or rejected.
+   */
+  async olderSessions(): Promise<void> {
+    const state = this.state.getSnapshot()
+    const page = state.catalogHistory ?? state.list
+    const last = page?.sessions.at(-1)
+    if (!state.workspace || state.catalogLoading || !page?.truncated || !last) return
+    this.stopCatalog()
+    const version = this.catalogGeneration
+    const abort = new AbortController()
+    this.catalogAbort = abort
+    const { workspace } = state
+    this.state.update((value) => { value.catalogLoading = true; delete value.catalogUnsupported })
+    try {
+      const result = await this.call(workspace.environmentId, {
+        action: 'list', workspaceId: workspace.workspaceId,
+        before: { updatedAt: last.updatedAt, sessionId: last.sessionId },
+      }, abort.signal)
+      if (version !== this.catalogGeneration || abort.signal.aborted) return
+      if (result.kind !== 'sessions') throw new Error('Unexpected session catalog result')
+      this.state.update((value) => { value.catalogHistory = result })
+    } catch (error: unknown) {
+      if (version === this.catalogGeneration && !abort.signal.aborted) {
+        if (remoteErrorOf(error)?.code === 'environment/session-unsupported') {
+          this.state.update((value) => { value.catalogUnsupported = true })
+        } else this.notify(false)
+      }
+    } finally {
+      if (version === this.catalogGeneration) {
+        this.catalogAbort = undefined
+        this.state.update((value) => { delete value.catalogLoading })
+      }
+    }
+  }
+  /** Show the latest polled Session catalog and cancel any pending older-page request. */
+  backToLatestSessions(): void {
+    this.stopCatalog()
+    this.state.update((value) => { delete value.catalogHistory; delete value.catalogUnsupported })
   }
   private stopHistory(): void {
     this.historyGeneration++
@@ -338,6 +391,7 @@ export class RemoteSessionController {
     await this.mutate(state.workspace, request, (result) => {
       if (result.kind !== 'created') throw new Error('Unexpected session creation result')
       this.remember()
+      this.backToLatestSessions()
       this.stopHistory()
       this.state.update((value) => { delete value.history; delete value.historyLoading; delete value.historyUnsupported })
       this.pendingCreate = undefined

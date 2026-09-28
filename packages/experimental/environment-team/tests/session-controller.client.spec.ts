@@ -398,3 +398,93 @@ it('reports unsupported history while preserving live content and clears it on r
   controller.backToLive()
   expect(controller.state.getSnapshot().historyUnsupported).toBeUndefined()
 })
+
+
+it('pages older catalogs without replacing the selected live conversation or its draft', async () => {
+  let fail = false
+  const call = vi.fn<SessionCall>(async (_environment, request) => {
+    if (request.action === 'list' && request.before) {
+      if (fail) throw new Error('offline')
+      return { ...list, sessions: [{ sessionId, title: 'Older', updatedAt: request.before.updatedAt - 1, running: false }], truncated: true }
+    }
+    return request.action === 'list' ? { ...list, truncated: true } : snapshot
+  })
+  const { controller, notify } = fixture(call)
+  controller.select(sessionId); controller.draft('Unsent')
+  await vi.waitFor(() => { expect(controller.state.getSnapshot().transcript).toBeDefined() })
+  const reads = () => call.mock.calls.filter(([, request]) => request.action === 'read').length
+  const liveReads = reads()
+  await controller.olderSessions()
+  expect(controller.state.getSnapshot().catalogHistory?.sessions[0]?.updatedAt).toBe(0)
+  await controller.refresh()
+  expect(controller.state.getSnapshot().catalogHistory?.sessions[0]?.title).toBe('Older')
+  expect(controller.state.getSnapshot().list?.sessions[0]?.title).toBe('Remote session')
+  await controller.olderSessions()
+  expect(controller.state.getSnapshot().catalogHistory?.sessions[0]?.updatedAt).toBe(-1)
+  expect(reads()).toBe(liveReads)
+  expect(controller.state.getSnapshot()).toMatchObject({ sessionId, draft: 'Unsent', transcript: snapshot })
+  fail = true; await controller.olderSessions()
+  expect(controller.state.getSnapshot().catalogHistory?.sessions[0]?.updatedAt).toBe(-1)
+  expect(notify).toHaveBeenCalledWith(false)
+  controller.select(brandString<EnvironmentSessionSummary['sessionId']>('other-session'))
+  expect(controller.state.getSnapshot().catalogHistory?.sessions[0]?.title).toBe('Older')
+  controller.backToLatestSessions()
+  expect(controller.state.getSnapshot().catalogHistory).toBeUndefined()
+})
+
+it.each(['switch', 'reconnect', 'latest', 'pause'] as const)('ignores a late older catalog after %s', async (action) => {
+  let finish!: (value: SessionResult) => void
+  let signal: AbortSignal | undefined
+  const call = vi.fn<SessionCall>(async (_environment, request, abort) => {
+    if (request.action === 'list' && request.before) {
+      signal = abort
+      return new Promise((resolve) => { finish = resolve })
+    }
+    return request.action === 'list' ? { ...list, truncated: true } : snapshot
+  })
+  const { controller } = fixture(call)
+  await controller.refresh()
+  const pending = controller.olderSessions()
+  await controller.refresh()
+  expect(signal?.aborted).toBe(false)
+  if (action === 'switch') controller.open({ ...workspace, workspaceId: brandString<EnvironmentWorkspace['workspaceId']>('other') })
+  else if (action === 'reconnect') controller.reconnect()
+  else if (action === 'latest') controller.backToLatestSessions()
+  else controller.pause()
+  expect(signal?.aborted).toBe(true)
+  finish(list); await pending
+  expect(controller.state.getSnapshot().catalogHistory).toBeUndefined()
+  expect(controller.state.getSnapshot().catalogLoading).toBeUndefined()
+})
+
+it('marks unsupported catalog paging without discarding the latest list', async () => {
+  const call = vi.fn<SessionCall>(async (_environment, request) => {
+    if (request.action === 'list' && request.before) throw new RemoteError('environment/session-unsupported', 'Paging unavailable', {})
+    return request.action === 'list' ? { ...list, truncated: true } : snapshot
+  })
+  const { controller, notify } = fixture(call)
+  await controller.refresh(); await controller.olderSessions()
+  expect(controller.state.getSnapshot().catalogUnsupported).toBe(true)
+  expect(controller.state.getSnapshot().list?.sessions).toEqual(list.sessions)
+  expect(notify).not.toHaveBeenCalled()
+  controller.backToLatestSessions()
+  expect(controller.state.getSnapshot().catalogUnsupported).toBeUndefined()
+})
+
+
+it('returns to recent catalogs after workspace switches and successful session creation', async () => {
+  const call = vi.fn<SessionCall>(async (_environment, request) => {
+    if (request.action === 'create') return { ...base, kind: 'created', sessionId: request.sessionId }
+    return request.action === 'list' ? { ...list, truncated: !request.before } : snapshot
+  })
+  const { controller } = fixture(call)
+  await controller.refresh(); await controller.olderSessions()
+  expect(controller.state.getSnapshot().catalogHistory).toBeDefined()
+  controller.open({ ...workspace, workspaceId: brandString<EnvironmentWorkspace['workspaceId']>('other') })
+  controller.open(workspace)
+  expect(controller.state.getSnapshot().catalogHistory).toBeUndefined()
+  await controller.refresh(); await controller.olderSessions()
+  expect(controller.state.getSnapshot().catalogHistory).toBeDefined()
+  await controller.create()
+  expect(controller.state.getSnapshot().catalogHistory).toBeUndefined()
+})

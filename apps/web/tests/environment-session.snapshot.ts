@@ -75,6 +75,14 @@ it.skipIf(webSnapshotMode() === 'record')('streams remote-session text before se
   if (catchup.done) throw new Error('The destination omitted its reconnect snapshot')
   expect(catchup.value.messages).toEqual(final.messages)
   expect(catchup.value.live).toBeUndefined()
+  const catalog = await management.session(environmentId, { action: 'list', workspaceId }, abort.signal)
+  if (catalog.kind !== 'sessions') throw new Error('The destination omitted its Session catalog')
+  const row = catalog.sessions.find(item => item.sessionId === sessionId)
+  if (!row) throw new Error('The selected Session is absent from its workspace catalog')
+  const older = await management.session(environmentId, {
+    action: 'list', workspaceId, before: { updatedAt: row.updatedAt, sessionId: row.sessionId },
+  }, abort.signal)
+  expect(older).toMatchObject({ kind: 'sessions', sessions: [], truncated: false })
   const controls = await management.sessionInteraction(environmentId, { action: 'snapshot', workspaceId, sessionId }, abort.signal)
   if (controls.kind !== 'snapshot') throw new Error('The destination omitted conversation controls')
   expect(controls).toMatchObject({ environmentId, workspaceId, sessionId, pending: [], attachments: [] })

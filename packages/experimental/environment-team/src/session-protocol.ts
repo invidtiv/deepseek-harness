@@ -10,7 +10,7 @@ const environmentId = z.uuid().transform(value => brandString<SessionResult['env
 
 /** Accepted peer commands, with retry identities required before mutation admission. */
 export const sessionRequestSchema: z.ZodType<SessionRequest> = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('list'), workspaceId }).strict(),
+  z.object({ action: z.literal('list'), workspaceId, before: z.object({ updatedAt: z.number(), sessionId }).strict().optional() }).strict(),
   z.object({ action: z.literal('create'), workspaceId, sessionId }).strict(),
   z.object({ action: z.literal('read'), workspaceId, sessionId, beforeSeq: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional() }).strict(),
   z.object({ action: z.literal('cancel'), workspaceId, sessionId }).strict(),

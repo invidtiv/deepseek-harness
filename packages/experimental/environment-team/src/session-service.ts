@@ -146,6 +146,10 @@ export class EnvironmentSessions {
       case 'list': {
         const { items } = await controller.list({}, signal)
         const visible = items.filter(item => workspace.sessionIds.includes(item.sessionId) && item.origin !== 'subagent' && item.parentSessionId === undefined)
+          .filter(item => request.before === undefined || item.updatedAt < request.before.updatedAt ||
+            (item.updatedAt === request.before.updatedAt && item.sessionId < request.before.sessionId))
+          .sort((left, right) => right.updatedAt - left.updatedAt ||
+            (left.sessionId < right.sessionId ? 1 : left.sessionId > right.sessionId ? -1 : 0))
         return { ...scope, kind: 'sessions', sessions: visible.slice(0, this.config.sessionPageSize).map(item => ({ sessionId: item.sessionId, title: typeof item.projections?.values.title === 'string' ? item.projections.values.title : item.sessionId, running: item.running, updatedAt: item.updatedAt })), truncated: visible.length > this.config.sessionPageSize }
       }
       case 'create': {

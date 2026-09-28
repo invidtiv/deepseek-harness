@@ -156,6 +156,56 @@ it('accepts only nonnegative safe integer history ceilings on read requests', ()
   expect(sessionRequestSchema.safeParse({ ...request, action: 'cancel', beforeSeq: 1 }).success).toBe(false)
 })
 
+it('pages the workspace catalog across timestamp ties without including other or child Sessions', async () => {
+  const host = await fixture()
+  const ids = ['a', 'b', 'c', 'd', 'e'].map(value => SessionId(`catalog-${value}`))
+  for (const id of ids) {
+    host.ctx.sessions.create(id, { meta: { cwd: host.cwd } })
+    await host.workspace.attachSession(id)
+  }
+  const outside = SessionId('catalog-outside')
+  host.ctx.sessions.create(outside, { meta: { cwd: host.cwd } })
+  const child = SessionId('catalog-child')
+  host.ctx.sessions.create(child, { meta: { cwd: host.cwd, origin: 'subagent' } })
+  await host.workspace.attachSession(child)
+  const listed = await host.controller.list({}, signal)
+  vi.spyOn(host.controller, 'list').mockResolvedValue({ items: listed.items.map(item => ({ ...item, updatedAt: item.sessionId === outside ? 2 : item.sessionId === ids[4] ? 1 : 0 })) })
+  host.config.sessionPageSize = 2
+  const request = { action: 'list', workspaceId: host.workspace.id } as const
+  const first = await host.executor.run(host.peer, request, signal)
+  if (first.kind !== 'sessions') throw new Error('Expected catalog')
+  expect(first.sessions.map(item => item.sessionId)).toEqual([ids[4], ids[3]])
+  expect(first.truncated).toBe(true)
+  const cursor = first.sessions.at(-1)
+  if (!cursor) throw new Error('Missing catalog cursor')
+  const second = await host.executor.run(host.peer, {
+    ...request, before: { updatedAt: cursor.updatedAt, sessionId: cursor.sessionId },
+  }, signal)
+  if (second.kind !== 'sessions') throw new Error('Expected catalog')
+  expect(second.sessions.map(item => item.sessionId)).toEqual([ids[2], ids[1]])
+  expect(second.truncated).toBe(true)
+  const next = second.sessions.at(-1)
+  if (!next) throw new Error('Missing catalog cursor')
+  const third = await host.executor.run(host.peer, { ...request, before: { updatedAt: next.updatedAt, sessionId: next.sessionId } }, signal)
+  expect(third).toMatchObject({ sessions: [{ sessionId: ids[0] }], truncated: false })
+  expect(await host.executor.run(host.peer, { ...request, before: { updatedAt: 0, sessionId: SessionId('catalog-a') } }, signal))
+    .toMatchObject({ sessions: [], truncated: false })
+  const grant = host.config.peers[0]
+  if (!grant) throw new Error('Missing peer grant')
+  grant.workspaces = []
+  await expect(host.executor.run(host.peer, { ...request, before: { updatedAt: 0, sessionId: cursor.sessionId } }, signal)).rejects.toThrow('outside')
+})
+
+it('validates finite catalog timestamps and strict nonempty Session cursor identities', () => {
+  const request = { action: 'list', workspaceId: 'workspace' }
+  for (const before of [null, {}, { updatedAt: Infinity, sessionId: 's' }, { updatedAt: NaN, sessionId: 's' },
+    { updatedAt: '0', sessionId: 's' }, { updatedAt: 0, sessionId: '' }, { updatedAt: 0, sessionId: 's', extra: true }]) {
+    expect(sessionRequestSchema.safeParse({ ...request, before }).success).toBe(false)
+  }
+  expect(sessionRequestSchema.safeParse({ ...request, before: { updatedAt: 0, sessionId: 's' } }).success).toBe(true)
+  expect(sessionRequestSchema.safeParse({ ...request, before: undefined }).success).toBe(true)
+})
+
 it('lets an authorized queued retry proceed after an earlier operation rejects', async () => {
   const host = await fixture()
   const sessionId = SessionId(randomUUID())

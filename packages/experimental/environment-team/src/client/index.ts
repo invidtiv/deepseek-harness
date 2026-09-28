@@ -102,6 +102,7 @@ export async function apply(ctx: Context): Promise<() => Promise<void>> {
       }).catch((_error: unknown) => { /* Endpoint metadata is retried with the next explicit workspace selection. */ })
     }
     const sessionActions: SessionsFace = {
+      olderSessions: () => { void sessions.olderSessions() }, backToLatestSessions: () => { sessions.backToLatestSessions() },
       openWorkspace, earlier: () => { void sessions.earlier() }, backToLive: () => { sessions.backToLive() },
       hooks: { remoteSessions: sessions.state, remoteInteractions: interactions.state },
       resume: () => { sessions.resume(); interactions.resume() }, pause: () => { sessions.pause(); interactions.pause() },
