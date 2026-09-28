@@ -3,6 +3,7 @@ import type { EnvironmentTerminalFollowRequest, EnvironmentTerminalFrame } from 
 import { createHash, timingSafeEqual } from 'node:crypto'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { z } from 'zod'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { credentialRef, type CredentialProvider } from '@deepseek-ai/dsh-credentials'
 import type { ResolvedConfig } from './config.ts'
 import { descriptorSchema, requestSchema, type EnvironmentId, type PeerRequest } from './protocol.ts'
@@ -91,6 +92,7 @@ export class PeerTransport {
     const descriptor = await this.describe(environment, bounded)
     if (request.kind === 'workspace' && !descriptor.capabilities.workspaceBrowser) throw new Error('peer does not support workspace management')
     if (request.kind === 'session' && !descriptor.capabilities.workspaceSessions) throw new Error('peer does not support workspace sessions')
+    if (request.kind === 'session' && request.request.action === 'read' && request.request.beforeSeq !== undefined && !descriptor.capabilities.workspaceSessionHistory) throw new RemoteError('environment/session-unsupported', 'Peer does not support Session history paging', {})
     if (request.kind === 'session-interaction' && !descriptor.capabilities.workspaceSessionInteractions) throw new Error('peer does not support session interactions')
     if (request.kind === 'team-dashboard' && !descriptor.capabilities.teamDashboard) throw new Error('peer does not support team dashboard')
     const body = JSON.stringify(request)

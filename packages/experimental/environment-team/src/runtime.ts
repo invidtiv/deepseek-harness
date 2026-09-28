@@ -95,7 +95,7 @@ export class EnvironmentTeams {
   descriptor(): EnvironmentDescriptor {
     return {
       environmentId: this.environmentId, label: this.config.label, platform: platform(),
-      protocol: 1, capabilities: { distributedTeams: true, teamDashboard: true, workspaceBrowser: true, ...(this.ctx.get('sessionController') ? { workspaceSessions: true as const, workspaceSessionFollow: true as const, workspaceSessionInteractions: true as const } : {}) },
+      protocol: 1, capabilities: { distributedTeams: true, teamDashboard: true, workspaceBrowser: true, ...(this.ctx.get('sessionController') ? { workspaceSessions: true as const, workspaceSessionFollow: true as const, workspaceSessionInteractions: true as const, workspaceSessionHistory: true as const } : {}) },
     }
   }
 

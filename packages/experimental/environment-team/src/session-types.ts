@@ -23,7 +23,7 @@ type EnvironmentId = Branded<'EnvironmentId'>
 export type SessionRequest =
   | { readonly action: 'list'; readonly workspaceId: WorkspaceId }
   | { readonly action: 'create'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }
-  | { readonly action: 'read'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }
+  | { readonly action: 'read'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId; /** Exclusive committed-message sequence ceiling; omitted reads the latest page. */ readonly beforeSeq?: number | undefined }
   | { readonly action: 'cancel'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId }
   | { readonly action: 'prompt'; readonly workspaceId: WorkspaceId; readonly sessionId: SessionId; readonly requestId: SessionRequestId; readonly text: string; readonly attachments?: readonly FileUploadReceiptId[] | undefined; readonly images?: readonly { readonly data: string; readonly mediaType: ImageMediaType; readonly name?: string | undefined }[] | undefined }
 

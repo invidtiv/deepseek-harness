@@ -15,7 +15,7 @@ const tools = {
   useRemoteInteractions: <T,>(select: (state: import('../src/client/interaction-controller.ts').InteractionState) => T): T => select({ loading: false, busy: false, offline: false, terminalOffline: false, terminalRevision: 0 }),
   interaction: vi.fn(),
   upload: vi.fn(), download: vi.fn(), terminalConnect: vi.fn(), terminalCreate: vi.fn(), terminalWrite: vi.fn(), terminalRendered: vi.fn(),
-  removeAttachment: vi.fn(), openWorkspace: vi.fn(),
+  removeAttachment: vi.fn(), openWorkspace: vi.fn(), earlier: vi.fn(), backToLive: vi.fn(),
 }
 const environmentId = brandString<NonNullable<RemoteSessionState['workspace']>['environmentId']>('11111111-1111-4111-8111-111111111111')
 const workspaceId = brandString<NonNullable<RemoteSessionState['workspace']>['workspaceId']>('workspace')
@@ -122,4 +122,30 @@ it('switches recent workspaces by owning environment even when workspace IDs mat
   ])
   fireEvent.change(selector, { target: { value: `${second.environmentId}:${workspaceId}` } })
   expect(openWorkspace).toHaveBeenCalledExactlyOnceWith(second)
+})
+
+it('keeps an earlier page separate from incoming live text and offers return to live', () => {
+  const history = { environmentId, workspaceId, kind: 'snapshot' as const, sessionId, cursor: 30, running: true, messages: [{ seq: 1, role: 'user' as const, text: 'Earlier question' }], truncated: false }
+  const state: RemoteSessionState = { sessionId, loading: false, busy: false, offline: false, draft: 'Keep my draft', uncertain: false, history,
+    transcript: { ...history, messages: [{ seq: 20, role: 'assistant', text: 'Latest answer' }], live: { attemptId, text: 'New live text' } },
+  }
+  const backToLive = vi.fn()
+  const props: PropsLocale<'environmentTeams'> & InjectFace<SessionsFace> = {
+    ...tools, t: key => dictionary[key], useRemoteSessions: selector => selector(state),
+    resume: vi.fn(), pause: vi.fn(), back: vi.fn(), refresh: vi.fn(), create: vi.fn(), select: vi.fn(),
+    draft: vi.fn(), send: vi.fn(), cancel: vi.fn(), backToLive,
+  }
+  const view = render(<Sessions {...props} />)
+  expect(screen.getByText('Earlier question')).toBeTruthy()
+  expect(screen.queryByText('New live text')).toBeNull()
+  expect(screen.getByRole('textbox').getAttribute('disabled')).toBeNull()
+  expect(screen.getByRole('status').textContent).toMatchInlineSnapshot(
+    '"Viewing earlier messages. The live conversation continues on its owning machine."',
+  )
+  fireEvent.click(screen.getByRole('button', { name: en.returnToLive }))
+  expect(backToLive).toHaveBeenCalledOnce()
+  delete state.history
+  view.rerender(<Sessions {...props} />)
+  expect(screen.queryByText('Earlier question')).toBeNull()
+  expect(screen.getByText('New live text')).toBeTruthy()
 })

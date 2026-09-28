@@ -159,6 +159,7 @@ export class EnvironmentSessions {
         if (snapshot.meta.origin === 'subagent' || snapshot.meta.parentSession !== undefined || snapshot.meta.cwd === undefined || await realpath(snapshot.meta.cwd) !== await realpath(workspace.path)) throw new Error('session does not belong to the workspace')
         const messages: EnvironmentSessionMessage[] = []
         for (const event of snapshot.events) {
+          if (request.beforeSeq !== undefined && event.seq >= request.beforeSeq) continue
           if (!isAppendSurfaceEvent(event) || (event.type !== 'user/message' && event.type !== 'assistant/message')) continue
           const message = event.type === 'user/message' ? event.data : event.data.message
           if (event.type === 'user/message' && message.source.kind !== 'user') continue

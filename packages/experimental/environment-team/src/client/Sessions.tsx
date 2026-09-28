@@ -15,6 +15,8 @@ export interface SessionsFace extends SessionToolsActions {
   resume(): void
   pause(): void
   openWorkspace(workspace: EnvironmentWorkspace): void
+  earlier(): void
+  backToLive(): void
   back(): void
   refresh(): void
   create(): void
@@ -32,6 +34,7 @@ export function Sessions(props: PropsLocale<'environmentTeams'> & InjectFace<Ses
   const { t, resume, pause } = props
   const state = props.useRemoteSessions(value => value)
   const interactions = props.useRemoteInteractions(value => value)
+  const displayed = state.history ?? state.transcript
   const markdownLabels = { code: { copyLabel: t('copyRemote'), copiedLabel: t('copiedRemote') }, footnotes: t('remoteFootnotes') }
   useEffect(() => { resume(); return pause }, [resume, pause])
   return <section className={css.page} aria-busy={state.loading || state.busy}>
@@ -50,10 +53,17 @@ export function Sessions(props: PropsLocale<'environmentTeams'> & InjectFace<Ses
     {state.sessionId && <>
       <h2>{t('sessionMessages')}</h2>
       {state.loading && !state.transcript && <div className={css.loading}><IconLoadingOutlineRegular /></div>}
-      {state.transcript?.messages.length === 0 && <p>{t('noSessionMessages')}</p>}
-      <div className={css.messages}>{state.transcript?.messages.map(message => <article key={message.seq}><strong>{t(message.role === 'user' ? 'sessionUser' : 'sessionAssistant')}</strong><MarkdownText text={message.text} labels={markdownLabels} /></article>)}</div>
-      {state.transcript?.live && <div className={css.messages}><article><strong>{t('sessionAssistant')} · {t('sessionStreaming')}</strong><MarkdownText text={state.transcript.live.text} streaming labels={markdownLabels} /></article></div>}
-      {state.transcript?.truncated && <p>{t('messagesTruncated')}</p>}
+      {state.history && <p role="status">{t('viewingSessionHistory')}</p>}
+      {state.historyUnsupported && <p role="alert">{t('historyUnsupported')}</p>}
+      {(displayed?.truncated || state.history || state.historyLoading) && <div className={css.toolbar}>
+        {displayed?.truncated && <Button disabled={state.busy || state.historyLoading || state.historyUnsupported} onClick={props.earlier}>{t('earlierMessages')}</Button>}
+        {(state.history || state.historyLoading) && <Button onClick={props.backToLive}>{t('returnToLive')}</Button>}
+      </div>}
+      {state.historyLoading && <div className={css.loading}><IconLoadingOutlineRegular /></div>}
+      {displayed?.messages.length === 0 && <p>{t(state.history ? 'noEarlierMessages' : 'noSessionMessages')}</p>}
+      <div className={css.messages}>{displayed?.messages.map(message => <article key={message.seq}><strong>{t(message.role === 'user' ? 'sessionUser' : 'sessionAssistant')}</strong><MarkdownText text={message.text} labels={markdownLabels} /></article>)}</div>
+      {!state.history && state.transcript?.live && <div className={css.messages}><article><strong>{t('sessionAssistant')} · {t('sessionStreaming')}</strong><MarkdownText text={state.transcript.live.text} streaming labels={markdownLabels} /></article></div>}
+      {!state.history && displayed?.truncated && <p>{t('messagesTruncated')}</p>}
       <label className={css.composer}>{t('sessionMessage')}<textarea value={state.draft} disabled={state.busy || state.uncertain} onChange={(event) =>{  props.draft(event.target.value) }} rows={4} /></label>
       {state.attachments?.map((attachment, index) => <div className={css.row} key={index}><span>{attachment.name}</span><Button disabled={state.busy || state.uncertain} onClick={() => { props.removeAttachment(index) }}>{t('remove')}</Button></div>)}
       {state.uncertain && <p role="alert">{t('sessionUncertain')}</p>}
