@@ -12,7 +12,7 @@ const environmentId = z.uuid().transform(value => brandString<SessionResult['env
 export const sessionRequestSchema: z.ZodType<SessionRequest> = z.discriminatedUnion('action', [
   z.object({ action: z.literal('list'), workspaceId }).strict(),
   z.object({ action: z.literal('create'), workspaceId, sessionId }).strict(),
-  z.object({ action: z.literal('read'), workspaceId, sessionId }).strict(),
+  z.object({ action: z.literal('read'), workspaceId, sessionId, beforeSeq: z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER).optional() }).strict(),
   z.object({ action: z.literal('cancel'), workspaceId, sessionId }).strict(),
   z.object({ action: z.literal('prompt'), workspaceId, sessionId, requestId, text: z.string().refine(value => value.trim().length > 0), attachments: z.array(z.string().min(1).transform(value => brandString<NonNullable<Extract<SessionRequest, { action: 'prompt' }>['attachments']>[number]>(value))).optional(), images: z.array(z.object({ data: z.string(), mediaType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/gif']), name: z.string().optional() }).strict()).optional() }).strict(),
 ])

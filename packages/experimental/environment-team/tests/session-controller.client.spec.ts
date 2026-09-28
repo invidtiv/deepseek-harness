@@ -1,6 +1,7 @@
 /** Destination selection, reconnect and ambiguous mutation ownership. */
 import { afterEach, expect, it, vi } from 'vitest'
 import { brandString } from '@deepseek-ai/dsh-brand'
+import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import { RemoteSessionController, type SessionCall, type SessionFollow } from '../src/client/session-controller.ts'
 import type { EnvironmentWorkspace } from '../src/workspace-types.ts'
 import type { SessionResult, EnvironmentSessionSummary } from '../src/session-types.ts'
@@ -325,4 +326,75 @@ it('refreshes the selected machine immediately when switching an already visible
     expect(controller.state.getSnapshot().transcript?.environmentId).toBe(workspace.environmentId)
     expect(controller.state.getSnapshot().loading).toBe(false)
   })
+})
+
+
+it('pages backward independently of live refresh and retains the last page on failure', async () => {
+  let fail = false
+  const call = vi.fn<SessionCall>(async (_environment, request) => {
+    if (request.action === 'read' && request.beforeSeq !== undefined) {
+      if (fail) throw new Error('offline')
+      return { ...snapshot, messages: [{ seq: request.beforeSeq - 1, role: 'user', text: 'Earlier' }], truncated: true }
+    }
+    return request.action === 'list' ? list : { ...snapshot, messages: [{ seq: 10, role: 'assistant', text: 'Live' }], truncated: true }
+  })
+  const { controller, notify } = fixture(call)
+  controller.select(sessionId)
+  await vi.waitFor(() => { expect(controller.state.getSnapshot().transcript?.messages[0]?.seq).toBe(10) })
+  await controller.earlier()
+  expect(controller.state.getSnapshot().history?.messages[0]?.seq).toBe(9)
+  await controller.refresh(); await controller.earlier()
+  expect(controller.state.getSnapshot().history?.messages[0]?.seq).toBe(8)
+  expect(controller.state.getSnapshot().transcript?.messages[0]?.seq).toBe(10)
+  fail = true; await controller.earlier()
+  expect(controller.state.getSnapshot().history?.messages[0]?.seq).toBe(8)
+  expect(notify).toHaveBeenCalledWith(false)
+  controller.backToLive()
+  expect(controller.state.getSnapshot().history).toBeUndefined()
+  expect(controller.state.getSnapshot().transcript?.messages[0]?.seq).toBe(10)
+})
+
+it.each(['switch', 'reconnect', 'live', 'pause'] as const)('ignores a late history response after %s', async (action) => {
+  let finish!: (value: SessionResult) => void
+  let historySignal: AbortSignal | undefined
+  const call = vi.fn<SessionCall>(async (_environment, request, signal) => {
+    if (request.action === 'read' && request.beforeSeq !== undefined) {
+      historySignal = signal
+      return new Promise((resolve) => { finish = resolve })
+    }
+    return request.action === 'list' ? list : { ...snapshot, truncated: true }
+  })
+  const { controller } = fixture(call)
+  controller.select(sessionId)
+  await vi.waitFor(() => { expect(controller.state.getSnapshot().transcript).toBeDefined() })
+  const pending = controller.earlier()
+  await controller.refresh()
+  expect(historySignal?.aborted).toBe(false)
+  if (action === 'switch') controller.open({ ...workspace, environmentId: brandString<EnvironmentWorkspace['environmentId']>('another') })
+  else if (action === 'reconnect') controller.reconnect()
+  else if (action === 'live') controller.backToLive()
+  else controller.pause()
+  expect(historySignal?.aborted).toBe(true)
+  finish(snapshot); await pending
+  expect(controller.state.getSnapshot().history).toBeUndefined()
+  expect(controller.state.getSnapshot().historyLoading).toBeUndefined()
+})
+
+
+it('reports unsupported history while preserving live content and clears it on returning live', async () => {
+  const call = vi.fn<SessionCall>(async (_environment, request) => {
+    if (request.action === 'read' && request.beforeSeq !== undefined) {
+      throw new RemoteError('environment/session-unsupported', 'History unavailable', {})
+    }
+    return request.action === 'list' ? list : { ...snapshot, truncated: true }
+  })
+  const { controller, notify } = fixture(call)
+  controller.select(sessionId)
+  await vi.waitFor(() => { expect(controller.state.getSnapshot().transcript).toBeDefined() })
+  await controller.earlier()
+  expect(controller.state.getSnapshot().historyUnsupported).toBe(true)
+  expect(controller.state.getSnapshot().transcript?.messages).toEqual(snapshot.messages)
+  expect(notify).not.toHaveBeenCalled()
+  controller.backToLive()
+  expect(controller.state.getSnapshot().historyUnsupported).toBeUndefined()
 })

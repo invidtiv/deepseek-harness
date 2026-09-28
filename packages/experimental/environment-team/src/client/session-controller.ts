@@ -31,6 +31,9 @@ export interface RemoteSessionState {
   webUrl?: string
   list?: SessionList
   sessionId?: SessionId
+  history?: Extract<SessionResult, { kind: 'snapshot' }>
+  historyLoading?: boolean
+  historyUnsupported?: boolean
   transcript?: EnvironmentSessionFrame
   loading: boolean
   offline: boolean
@@ -51,6 +54,8 @@ export class RemoteSessionController {
   readonly state = createSnapshotStore<RemoteSessionState>({ loading: false, offline: false, busy: false, draft: '', uncertain: false })
   private readonly workspaces = new Map<string, { state: RemoteSessionState; pendingCreate: (SessionRequest & { action: 'create' }) | undefined }>()
   private readonly conversations = new Map<string, ConversationMemory>()
+  private historyGeneration = 0
+  private historyAbort: AbortController | undefined
   private generation = 0
   private abort = new AbortController()
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -86,9 +91,9 @@ export class RemoteSessionController {
   private remember(): void {
     const state = this.state.getSnapshot()
     if (!state.workspace) return
-    this.workspaces.set(this.workspaceKey(state.workspace), {
-      state: { ...state, busy: false, uncertain: this.pendingPrompt !== undefined }, pendingCreate: this.pendingCreate,
-    })
+    const remembered = { ...state, busy: false, uncertain: this.pendingPrompt !== undefined }
+    delete remembered.history; delete remembered.historyLoading; delete remembered.historyUnsupported
+    this.workspaces.set(this.workspaceKey(state.workspace), { state: remembered, pendingCreate: this.pendingCreate })
     if (state.sessionId) {
       this.conversations.set(this.conversationKey(state.workspace, state.sessionId), {
         draft: state.draft, pendingPrompt: this.pendingPrompt,
@@ -105,6 +110,7 @@ export class RemoteSessionController {
     const recentWorkspaces = [workspace, ...(this.state.getSnapshot().recentWorkspaces ?? [])
       .filter(item => this.workspaceKey(item) !== this.workspaceKey(workspace))]
     this.remember()
+    this.stopHistory()
     this.invalidate()
     this.stopFollow()
     this.catalogOffline = false; this.streamOffline = false
@@ -113,7 +119,9 @@ export class RemoteSessionController {
     const conversation = state.sessionId ? this.conversations.get(this.conversationKey(workspace, state.sessionId)) : undefined
     this.pendingPrompt = conversation?.pendingPrompt
     this.pendingCreate = saved?.pendingCreate
-    this.state.set({ ...state, workspace, recentWorkspaces, loading: true, busy: false, uncertain: this.pendingPrompt !== undefined })
+    const restored = { ...state, workspace, recentWorkspaces, loading: true, busy: false, uncertain: this.pendingPrompt !== undefined }
+    delete restored.history; delete restored.historyLoading; delete restored.historyUnsupported
+    this.state.set(restored)
     if (this.active) void this.refresh()
   }
   /** Publish a Web link only for the currently selected destination.
@@ -128,7 +136,7 @@ export class RemoteSessionController {
   resume(): void { this.active = true; void this.refresh() }
   /** Stop in-flight reads and timers while preserving the last received transcript. */
   pause(): void {
-    this.active = false; this.invalidate()
+    this.active = false; this.invalidate(); this.stopHistory()
     this.stopFollow()
     this.state.update((value) => { value.busy = false; value.uncertain = this.pendingPrompt !== undefined })
   }
@@ -141,7 +149,7 @@ export class RemoteSessionController {
     this.state.set({ loading: false, offline: false, busy: false, draft: '', uncertain: false })
   }
   /** Restart the selected stream after an explicit refresh or local reconnection. */
-  reconnect(): void { this.stopFollow(); void this.refresh() }
+  reconnect(): void { this.stopHistory(); this.stopFollow(); void this.refresh() }
   /** Update the draft unless a submission is pending or awaiting retry.
    * @param text - draft retained until the destination acknowledges submission.
    */
@@ -175,18 +183,64 @@ export class RemoteSessionController {
     const current = this.state.getSnapshot()
     if (current.busy || !current.workspace || current.sessionId === sessionId) return
     this.remember()
+    this.stopHistory()
     this.stopFollow()
     this.invalidate()
     const saved = this.conversations.get(this.conversationKey(current.workspace, sessionId))
     this.pendingPrompt = saved?.pendingPrompt
     this.state.update((value) => {
       value.sessionId = sessionId
+      delete value.history; delete value.historyLoading; delete value.historyUnsupported
       if (saved?.transcript === undefined) delete value.transcript; else value.transcript = saved.transcript
       if (saved?.streamFailure === undefined) delete value.streamFailure; else value.streamFailure = saved.streamFailure
       if (saved?.attachments === undefined) delete value.attachments; else value.attachments = saved.attachments
       value.loading = true; value.draft = saved?.draft ?? ''; value.uncertain = this.pendingPrompt !== undefined
     })
     void this.refresh()
+  }
+  private stopHistory(): void {
+    this.historyGeneration++
+    this.historyAbort?.abort(); this.historyAbort = undefined
+    this.state.update((value) => { delete value.historyLoading })
+  }
+  /** Read the page preceding the oldest currently displayed message without stopping live updates.
+   * @returns completion after the requested page is accepted or rejected.
+   */
+  async earlier(): Promise<void> {
+    const state = this.state.getSnapshot()
+    const page = state.history ?? state.transcript
+    const beforeSeq = page?.messages[0]?.seq
+    if (!state.workspace || !state.sessionId || state.historyLoading || !page?.truncated || beforeSeq === undefined) return
+    this.stopHistory()
+    const version = this.historyGeneration
+    const abort = new AbortController()
+    this.historyAbort = abort
+    const { workspace, sessionId } = state
+    this.state.update((value) => { value.historyLoading = true; delete value.historyUnsupported })
+    try {
+      const result = await this.call(workspace.environmentId, {
+        action: 'read', workspaceId: workspace.workspaceId, sessionId, beforeSeq,
+      }, abort.signal)
+      if (version !== this.historyGeneration || abort.signal.aborted) return
+      if (result.kind !== 'snapshot') throw new Error('Unexpected session history result')
+      this.state.update((value) => { value.history = result })
+    } catch (error: unknown) {
+      if (version === this.historyGeneration && !abort.signal.aborted) {
+        if (remoteErrorOf(error)?.code === 'environment/session-unsupported') {
+          this.state.update((value) => { value.historyUnsupported = true })
+        } else this.notify(false)
+      }
+    } finally {
+      if (version === this.historyGeneration) {
+        this.historyAbort = undefined
+        this.state.update((value) => { delete value.historyLoading })
+      }
+    }
+  }
+  /** Return to the latest live transcript and cancel any pending history read. */
+  backToLive(): void {
+    this.stopHistory()
+    this.state.update((value) => { delete value.history; delete value.historyUnsupported })
   }
   /** Refresh authoritative catalog and selected transcript, retaining data on failure. */
   async refresh(): Promise<void> {
@@ -284,6 +338,8 @@ export class RemoteSessionController {
     await this.mutate(state.workspace, request, (result) => {
       if (result.kind !== 'created') throw new Error('Unexpected session creation result')
       this.remember()
+      this.stopHistory()
+      this.state.update((value) => { delete value.history; delete value.historyLoading; delete value.historyUnsupported })
       this.pendingCreate = undefined
       this.pendingPrompt = undefined
       this.stopFollow()

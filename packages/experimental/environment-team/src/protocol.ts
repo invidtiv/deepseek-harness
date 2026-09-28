@@ -52,7 +52,7 @@ export const descriptorSchema = z.object({
   capabilities: z.object({
     distributedTeams: z.literal(true), teamDashboard: z.literal(true).optional(), workspaceBrowser: z.literal(true).optional(),
     workspaceSessions: z.literal(true).optional(), workspaceSessionFollow: z.literal(true).optional(),
-    workspaceSessionInteractions: z.literal(true).optional(),
+    workspaceSessionInteractions: z.literal(true).optional(), workspaceSessionHistory: z.literal(true).optional(),
   }),
 }).strict()
 /** Public environment identity and compatible protocol capabilities. */

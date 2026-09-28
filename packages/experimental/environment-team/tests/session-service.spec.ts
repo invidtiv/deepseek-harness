@@ -104,6 +104,58 @@ it('reads bounded saved text without activating an Agent and leaves replacement 
   expect(await host.executor.run(host.peer, { action: 'list', workspaceId: host.workspace.id }, signal)).toMatchObject({ sessions: [{ title: 'Destination title' }] })
 })
 
+it('pages older committed messages with an exclusive sequence ceiling and the current log cursor', async () => {
+  const host = await fixture()
+  const sessionId = SessionId(randomUUID())
+  const session = host.ctx.sessions.create(sessionId, { meta: { cwd: host.cwd } })
+  const first = session.append('user/message', createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'first' }] }), { surfaceOp: 'append' })
+  const second = session.append('user/message', createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'second' }] }), { surfaceOp: 'append' })
+  const excluded = session.append('user/message', createUserMessage({ source: { kind: 'system-prompt' }, content: [{ type: 'text', text: 'context' }] }), { surfaceOp: 'append' })
+  const third = session.append('user/message', createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: 'third' }] }), { surfaceOp: 'append' })
+  const last = session.append('user/message', createUserMessage({ source: { kind: 'user' }, content: [{ type: 'text', text: '' }] }), { surfaceOp: 'append' })
+  await host.workspace.attachSession(sessionId)
+  host.config.sessionPageSize = 1
+  const request = { action: 'read', workspaceId: host.workspace.id, sessionId } as const
+  expect(await host.executor.run(host.peer, { ...request, beforeSeq: undefined }, signal)).toMatchObject({
+    messages: [{ seq: third.seq }], truncated: true, cursor: last.seq,
+  })
+  expect(await host.executor.run(host.peer, { ...request, beforeSeq: third.seq }, signal)).toMatchObject({
+    messages: [{ seq: second.seq }], truncated: true, cursor: last.seq,
+  })
+  expect(await host.executor.run(host.peer, { ...request, beforeSeq: excluded.seq }, signal)).toMatchObject({
+    messages: [{ seq: second.seq }], truncated: true,
+  })
+  expect(await host.executor.run(host.peer, { ...request, beforeSeq: second.seq }, signal)).toMatchObject({
+    messages: [{ seq: first.seq }], truncated: false, cursor: last.seq,
+  })
+  expect(await host.executor.run(host.peer, { ...request, beforeSeq: first.seq }, signal)).toMatchObject({
+    messages: [], truncated: false, cursor: last.seq,
+  })
+  expect(await host.executor.run(host.peer, { ...request, beforeSeq: 0 }, signal)).toMatchObject({
+    messages: [], truncated: false,
+  })
+  expect(host.ctx.agents.get(sessionId)).toBeUndefined()
+  const peer = host.config.peers[0]
+  if (!peer) throw new Error('Missing peer')
+  peer.sessionAccess = false
+  await expect(host.executor.run(host.peer, { ...request, beforeSeq: third.seq }, signal)).rejects.toThrow('not granted')
+  peer.sessionAccess = true
+  peer.workspaces = []
+  await expect(host.executor.run(host.peer, { ...request, beforeSeq: third.seq }, signal)).rejects.toThrow('outside')
+  await expect(host.executor.run(host.id, { ...request, sessionId: SessionId('not-member'), beforeSeq: third.seq }, signal)).rejects.toThrow('belong')
+})
+
+it('accepts only nonnegative safe integer history ceilings on read requests', () => {
+  const request = { action: 'read', workspaceId: 'workspace', sessionId: 'session' }
+  for (const beforeSeq of [-1, 0.5, Number.MAX_SAFE_INTEGER + 1, Infinity, NaN, '1', null]) {
+    expect(sessionRequestSchema.safeParse({ ...request, beforeSeq }).success).toBe(false)
+  }
+  for (const beforeSeq of [0, 1, Number.MAX_SAFE_INTEGER, undefined]) {
+    expect(sessionRequestSchema.safeParse({ ...request, beforeSeq }).success).toBe(true)
+  }
+  expect(sessionRequestSchema.safeParse({ ...request, action: 'cancel', beforeSeq: 1 }).success).toBe(false)
+})
+
 it('lets an authorized queued retry proceed after an earlier operation rejects', async () => {
   const host = await fixture()
   const sessionId = SessionId(randomUUID())

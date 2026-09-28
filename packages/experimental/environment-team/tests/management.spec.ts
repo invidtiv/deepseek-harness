@@ -284,3 +284,15 @@ it('routes dashboard requests only to the selected coordinator and rejects misma
   await expect(controller.teamDashboard(target, { action: 'catalog' }, signal)).rejects.toThrow('unsupported')
   await expect(controller.teamDashboard(current.environmentId, { action: 'catalog' }, signal)).rejects.toThrow('unavailable')
 })
+
+it('rejects a history page containing messages outside its exclusive requested range', async () => {
+  const { start } = await fixture()
+  const { controller } = await start()
+  const environmentId = brandString<EnvironmentConfiguration['environmentId']>(randomUUID())
+  const request = sessionRequestSchema.parse({ action: 'read', workspaceId: 'workspace', sessionId: 'session', beforeSeq: 10 })
+  const response = { environmentId, workspaceId: request.workspaceId, kind: 'snapshot', sessionId: 'session', cursor: 20, running: false, messages: [{ seq: 10, role: 'user', text: 'outside requested history' }], truncated: false }
+  const call = vi.spyOn(PeerTransport.prototype, 'call').mockResolvedValue(JSON.stringify(response))
+  await expect(controller.session(environmentId, request, new AbortController().signal)).rejects.toThrow('exceeds requested range')
+  call.mockResolvedValue(JSON.stringify({ ...response, messages: [{ seq: 9, role: 'user', text: 'earlier message' }] }))
+  await expect(controller.session(environmentId, request, new AbortController().signal)).resolves.toMatchObject({ messages: [{ seq: 9 }] })
+})
