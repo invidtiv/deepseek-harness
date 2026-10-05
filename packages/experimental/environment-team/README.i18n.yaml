@@ -1,6 +1,67 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for README.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write packages/experimental/environment-team/README.md
-README.md: 972bd49997bcf755200a0a4eefc437c3683e07a8
-README.zh.md: 33b8bac8d9a7cf946e746b6712e2ec7adfea0e76
+/:
+  en: a45a99faa400f5cf
+  zh: 11e1bc0d218d1f58
+/deepseek-ai-dsh-experimental-environment-team:
+  en: 303ab8d932d204cf
+  zh: 826a336b5124ee2b
+/deepseek-ai-dsh-experimental-environment-team/summary:
+  en: 0edc1e7695978075
+  zh: b232380225b7e755
+/deepseek-ai-dsh-experimental-environment-team/table-of-contents:
+  en: d152484eb41ac6b4
+  zh: 7ba8a9440c7de021
+/deepseek-ai-dsh-experimental-environment-team/use-this-package:
+  en: 04ffff5816ab5f28
+  zh: 3ea25dffdf20a0ad
+/deepseek-ai-dsh-experimental-environment-team/use-this-package/configuration:
+  en: b4cc04eaf86d9439
+  zh: fad7578c3e1e48bf
+/deepseek-ai-dsh-experimental-environment-team/use-this-package/workspace-browser:
+  en: df36e0fd084834dd
+  zh: 4dca305d862823db
+/deepseek-ai-dsh-experimental-environment-team/use-this-package/workspace-sessions:
+  en: 832ab532c92228a3
+  zh: f265da1fd4b63bed
+/deepseek-ai-dsh-experimental-environment-team/use-this-package/pairing-invitations:
+  en: 9b3d6f6b4a4b8a98
+  zh: b0324d728bd33b2e
+/deepseek-ai-dsh-experimental-environment-team/use-this-package/team-operations:
+  en: e8009c28b6170601
+  zh: 4c3fba75ae9cb7aa
+/deepseek-ai-dsh-experimental-environment-team/use-this-package/operator-team-dashboard:
+  en: 5ff896e30fd308f5
+  zh: 973b2efbdf046b5e
+/deepseek-ai-dsh-experimental-environment-team/use-this-package/storage-and-deployment:
+  en: 7e18dc96fbdc1bac
+  zh: 253b3cfb9de01329
+/deepseek-ai-dsh-experimental-environment-team/understand-the-implementation:
+  en: 518a2e7560b4bc1f
+  zh: ce21206170cbd9b5
+/deepseek-ai-dsh-experimental-environment-team/further-exploration:
+  en: 1ea533c02d9e49c2
+  zh: 05a7fe5f8469a5a3
+/deepseek-ai-dsh-experimental-environment-team/model-experience:
+  en: 215e7ba838619b7b
+  zh: a311da3843709f90
+/deepseek-ai-dsh-experimental-environment-team/model-experience/distributed-teamwork:
+  en: 3535aa4d5b34ff20
+  zh: 08c7e6e9c9a27bc6
+/deepseek-ai-dsh-experimental-environment-team/model-experience/distributed-teamwork/what-the-model-sees:
+  en: bc4d4fec01ed41a5
+  zh: 2854b2e235d391c7
+/deepseek-ai-dsh-experimental-environment-team/model-experience/distributed-teamwork/token-effect:
+  en: 6d47726631d7124c
+  zh: d4c30ccef702cc15
+/deepseek-ai-dsh-experimental-environment-team/model-experience/distributed-teamwork/kv-cache-effect:
+  en: 6a31cbf06e23c400
+  zh: a18d745be6b9a7af
+/deepseek-ai-dsh-experimental-environment-team/known-limitations-and-deferred-work:
+  en: 6b9ce225769c0fbb
+  zh: e0805764de041ada
+/deepseek-ai-dsh-experimental-environment-team/known-limitations-and-deferred-work/dev-note:
+  en: 4ef46d43677d1440
+  zh: 78c4fdd4cf0e9f9c

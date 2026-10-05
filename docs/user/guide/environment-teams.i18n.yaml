@@ -1,6 +1,34 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for environment-teams.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/user/guide/environment-teams.md
-environment-teams.md: 9c958094671156449d1d20d755a8302f78285c63
-environment-teams.zh.md: 38cc25475b6db41eb551e6d0d8a9154cc768227f
+/:
+  en: 46537642de41ed6c
+  zh: ec9f8e02cbdf7dd1
+/distributed-teams-across-machines:
+  en: 18169f35ec5b06b1
+  zh: 0577dd396ba7a7a2
+/distributed-teams-across-machines/summary:
+  en: ce416ec69f8e393f
+  zh: 26dd446cc490a6f2
+/distributed-teams-across-machines/table-of-contents:
+  en: ec7aa1398323e02d
+  zh: 1dd471c6c9ded5d2
+/distributed-teams-across-machines/install-the-plugin:
+  en: 4bcbc0d0d42f0b27
+  zh: 16983c9f5c5ccd4d
+/distributed-teams-across-machines/configure-each-machine:
+  en: 668bcf89d8112121
+  zh: 9a5846b6df233004
+/distributed-teams-across-machines/pair-environments:
+  en: f1e962cca32c315a
+  zh: 32702dba859daa79
+/distributed-teams-across-machines/create-a-workspace-on-another-machine:
+  en: d6fdcf3618f44d33
+  zh: a507996db16f75df
+/distributed-teams-across-machines/run-a-team:
+  en: fa9d984d8206da96
+  zh: 37adea5bd42262a2
+/distributed-teams-across-machines/dev-note:
+  en: 7f22bdaf917a3543
+  zh: 8944c6a937cf4dad

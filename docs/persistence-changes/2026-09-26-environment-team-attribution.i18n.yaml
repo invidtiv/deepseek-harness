@@ -1,6 +1,28 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for 2026-09-26-environment-team-attribution.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/persistence-changes/2026-09-26-environment-team-attribution.md
-2026-09-26-environment-team-attribution.md: 5cf856b0835385a2098ef0858fd48d038b314ca3
-2026-09-26-environment-team-attribution.zh.md: afea03fa8d8127a0182a840ba630cd5360c81457
+/:
+  en: 3d5a424ae7d7e46b
+  zh: c22a8e4a62d8cc1a
+/2026-09-26-environment-team-attribution:
+  en: d6f0df838ccf2f82
+  zh: 0f35644769585202
+/2026-09-26-environment-team-attribution/summary:
+  en: 649990376c5d9b43
+  zh: 70540df95fa08dee
+/2026-09-26-environment-team-attribution/table-of-contents:
+  en: 6cf314a069ceb451
+  zh: 9adff678e9ecab3b
+/2026-09-26-environment-team-attribution/declaration:
+  en: 6907136f28e48c90
+  zh: 02f8298485f3d8e7
+/2026-09-26-environment-team-attribution/compatibility:
+  en: ef49d290fd24f31f
+  zh: ced5e53a0f0d0db0
+/2026-09-26-environment-team-attribution/verification:
+  en: c1f1f045e7dc122a
+  zh: 078597513cf3ea5a
+/2026-09-26-environment-team-attribution/dev-note:
+  en: b75c8458928b72b9
+  zh: 003ba4e17b4b5269

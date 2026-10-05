@@ -1,6 +1,22 @@
-# Bilingual-pair consistency record (docs/i18n/README.md): the git blob hash of each
-# side as of the last confirmed-consistent state. Both languages carry equal authority;
-# after editing either side, bring the other along and re-record with:
+# Bilingual-pair consistency record for multi-machine-plan.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/scratch/multi-machine-plan.md
-multi-machine-plan.md: 11b4e867735e4833e776f58fd47bee1e400c2f5a
-multi-machine-plan.zh.md: 4047d063a185da347335136e6d60b47ff91973c2
+/multi-machine-dsh-implementation-plan:
+  en: 8e0710e641dfb876
+  zh: f7ed56ee2f5c5cf8
+/multi-machine-dsh-implementation-plan/research-findings:
+  en: e08b7eb651d7cd31
+  zh: 07fe835885b2b308
+/multi-machine-dsh-implementation-plan/implementation-sequence:
+  en: 8635d46c9be0af03
+  zh: 12cafeaa97f8e965
+/multi-machine-dsh-implementation-plan/implementation-and-rollout-status:
+  en: a023dc534383e239
+  zh: ede02d80dfaf6e34
+/multi-machine-dsh-implementation-plan/initial-protocol-limits:
+  en: 9b418f8b618b2c70
+  zh: 9de61a1881c14245
+/multi-machine-dsh-implementation-plan/acceptance:
+  en: 78f5e3d79ad1256d
+  zh: 313ae1b3a7d7a9fa
