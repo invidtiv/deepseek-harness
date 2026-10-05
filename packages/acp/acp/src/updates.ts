@@ -1,7 +1,7 @@
 /** Standard ACP updates derived from committed DSH session events. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { SessionUpdate, ToolCallContent } from '@agentclientprotocol/sdk'
+import type { SessionUpdate, ToolCall, ToolCallContent, ToolCallUpdate } from '@agentclientprotocol/sdk'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import { assistantBlockToAcp } from './content.ts'
@@ -49,7 +49,7 @@ export async function assistantUpdates(
  * @param event - committed DSH tool-call event.
  * @returns the standard generic tool-call update.
  */
-export function toolCallUpdate(event: SessionEvent<'tool/call'>): SessionUpdate {
+export function toolCallUpdate(event: SessionEvent<'tool/call'>): Pick<ToolCall, 'toolCallId' | 'title' | 'kind' | 'status' | 'rawInput'> & { sessionUpdate: 'tool_call' } {
   return {
     sessionUpdate: 'tool_call',
     toolCallId: event.data.callId,
@@ -69,9 +69,9 @@ export function toolCallUpdate(event: SessionEvent<'tool/call'>): SessionUpdate 
 export async function toolResultUpdate(
   ctx: Context,
   event: SessionEvent<'tool/result'>,
-): Promise<SessionUpdate> {
+): Promise<Omit<ToolCallUpdate, 'content'> & { sessionUpdate: 'tool_call_update'; content: Extract<ToolCallContent, { type: 'content' }>[] }> {
   const message = event.data.message
-  const content: ToolCallContent[] = []
+  const content: Extract<ToolCallContent, { type: 'content' }>[] = []
   for (const block of message.content) {
     const converted = await assistantBlockToAcp(ctx, block)
     if (converted !== undefined) content.push({ type: 'content' as const, content: converted })

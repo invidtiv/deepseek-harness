@@ -9,8 +9,8 @@
   en: 5e36bdb5bef5842c
   zh: 486621193ef243a8
 /deepseek-ai-dsh-acp/summary:
-  en: 59aff9dea7a075b1
-  zh: c0f5734c5fd09126
+  en: 715f7722923feb4c
+  zh: 3905f7957c917043
 /deepseek-ai-dsh-acp/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
@@ -18,26 +18,29 @@
   en: 014a5573a8c05663
   zh: e45302786655eea5
 /deepseek-ai-dsh-acp/use-this-package/when-to-choose-it:
-  en: c3f5f144daf83157
-  zh: a65a64842fd35bef
+  en: c279629c6daeacbd
+  zh: 0251d7043a8d1a2e
 /deepseek-ai-dsh-acp/use-this-package/minimal-configuration:
-  en: 320139cc5ebcf34a
-  zh: 89beb58d9a0511ba
+  en: 3a8fc862799f1564
+  zh: a2e5d3c08f4e70c4
 /deepseek-ai-dsh-acp/use-this-package/start-a-server:
   en: 4ed8e37834267edb
   zh: a32d5dedb4e8e919
 /deepseek-ai-dsh-acp/use-this-package/protocol-contract:
-  en: 804b87d8ebed9f8d
-  zh: 1b0c1c7269cdf040
+  en: 6fc16c7b85d694c4
+  zh: 285937c1207a769d
+/deepseek-ai-dsh-acp/use-this-package/draft-acp-v2:
+  en: 76a82166c736795b
+  zh: e4dd038f0bbb8162
 /deepseek-ai-dsh-acp/understand-the-implementation:
   en: ea8afe89dbdd1934
   zh: 6567979f92f34afd
 /deepseek-ai-dsh-acp/understand-the-implementation/design-philosophy:
-  en: ad90a93d87b6caa4
-  zh: d7e90af3ea7a678c
+  en: 78ba9561b90170a2
+  zh: 7d037ca12707e2e8
 /deepseek-ai-dsh-acp/understand-the-implementation/source-map:
-  en: 9f85ae4ecdb5d022
-  zh: dc2b911360768b9e
+  en: c2a8c85f774b331f
+  zh: 939f2a19fdbc3282
 /deepseek-ai-dsh-acp/understand-the-implementation/admission-and-prompt-settlement:
   en: 6485d449b5945b4a
   zh: 90e56a9b410c9c42
@@ -75,8 +78,8 @@
   en: 83120763a07c4b72
   zh: 6a1a181dc4da869d
 /deepseek-ai-dsh-acp/known-limitations-and-deferred-work:
-  en: da83c6d3b9604f74
-  zh: d93d6f6d418bebdc
+  en: e3f83b9b0bf62fda
+  zh: 64a90da6565033c1
 /deepseek-ai-dsh-acp/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 3bb0c20c93f16f98

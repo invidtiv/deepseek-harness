@@ -225,6 +225,7 @@ export async function makeBridgeHarness(options: {
   imageCapable?: boolean
   attachments?: boolean
   persistenceRoot?: string
+  connectClient?: (stream: Stream) => void
 } = {}): Promise<BridgeHarness> {
   const adapter = new MockAdapter(options.script ?? [], options.imageCapable === true)
   const ctx = new Context()
@@ -292,6 +293,10 @@ export async function makeBridgeHarness(options: {
     inject: [...AcpPlugin.inject],
     apply: (inner: Context) => { AcpPlugin.apply(inner, config) },
   })
+  if (options.connectClient !== undefined) {
+    options.connectClient(clientStream)
+    return harness
+  }
   const clientConnection = clientApp.connect(clientStream)
   const client = clientConnection.agent
   harness.client = {

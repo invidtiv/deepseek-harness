@@ -21,7 +21,6 @@ import { errorChain } from '@deepseek-ai/dsh-llm'
 import {
   agent as createAcpAgentApp,
   methods,
-  ndJsonStream,
   PROTOCOL_VERSION,
   RequestError,
   type AgentContext,
@@ -54,8 +53,11 @@ import { supportsAcpImagePrompts } from './content.ts'
 import { AcpMcpConfigError } from './mcp.ts'
 import { AcpModelConfigError } from './model-control.ts'
 import { AcpSession } from './session.ts'
+import * as v2 from '@agentclientprotocol/sdk/experimental/v2'
+import * as v2Projection from './v2.ts'
 
 const DEFAULT_SESSION_LIST_PAGE_SIZE = 100
+const DEFAULT_SESSION_REPLAY_PAGE_SIZE = 256
 
 export const name = 'acp'
 /** Core services required by the standard automation controls. */
@@ -79,14 +81,20 @@ export interface AcpConfig {
   model?: string
   /** Maximum summaries returned by one session/list page. */
   sessionListPageSize?: number
+  /** Enable negotiated draft ACP v2 alongside stable v1. */
+  experimentalV2?: boolean
+  /** Maximum persisted events read per v2 replay page. */
+  sessionReplayPageSize?: number
   /** Runtime-only transport override; production uses stdio. */
-  stream?: Stream
+  stream?: v2.Stream
 }
 
 export const Config: Schema<AcpConfig> = Schema.object({
   provider: Schema.string(),
   model: Schema.string(),
   sessionListPageSize: Schema.natural().min(1).default(DEFAULT_SESSION_LIST_PAGE_SIZE),
+  experimentalV2: Schema.boolean().default(false),
+  sessionReplayPageSize: Schema.natural().min(1).default(DEFAULT_SESSION_REPLAY_PAGE_SIZE),
 })
 
 /**
@@ -100,10 +108,14 @@ export function apply(ctx: Context, config: AcpConfig): void {
   const persistence = ctx.sessionPersistence
   const logger = ctx.logger
   const sessionListPageSize = resolveSessionListPageSize(config.sessionListPageSize)
+  const sessionReplayPageSize = config.sessionReplayPageSize ?? DEFAULT_SESSION_REPLAY_PAGE_SIZE
   const sessions = new Map<SessionId, AcpSession>()
   const activating = new Set<SessionId>()
   let closed = false
   let imagePromptEnabled = false
+  let protocol: 1 | 2 = 1
+  let conn: AgentContext
+  let connV2: v2.AgentContext
 
   /** Return the bridge-owned record for an agent, rejecting same-id impostors. */
   const ownedRecord = (agent: Parameters<AcpSession['owns']>[0]): AcpSession | undefined => {
@@ -124,6 +136,14 @@ export function apply(ctx: Context, config: AcpConfig): void {
   /** Send one ordered protocol update while containing transport-only failure. */
   const notify = async (notification: SessionNotification): Promise<void> => {
     try {
+      if (protocol === 2) {
+        if (notification.update.sessionUpdate !== 'config_option_update') throw internalError('unexpected v1 update on v2 connection')
+        await connV2.notify('session/update', {
+          sessionId: notification.sessionId,
+          update: { sessionUpdate: 'config_option_update', configOptions: v2Projection.configOptions(notification.update.configOptions) },
+        })
+        return
+      }
       await conn.notify(methods.client.session.update, notification)
     /* v8 ignore start -- the ACP SDK contains notification-handler failures; only a transport write failure reaches this guard. */
     } catch (error: unknown) {
@@ -131,6 +151,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
     }
     /* v8 ignore stop */
   }
+  const notifyV2 = (notification: v2.UpdateSessionNotification): Promise<void> => connV2.notify('session/update', notification)
 
   ctx.on('session/event', (session, event) => {
     const record = sessions.get(session.header.id)
@@ -156,6 +177,22 @@ export function apply(ctx: Context, config: AcpConfig): void {
     const record = ownedRecord(request.agent)
     if (record === undefined || request.callId === undefined) return next()
     const callId = request.callId
+    if (protocol === 2) {
+      return record.withPermission(async () => {
+        const { outcome } = await connV2.request('session/request_permission', {
+          sessionId: record.agent.session.id,
+          title: request.toolName,
+          ...request.reason === undefined ? {} : { description: request.reason },
+          subject: { type: 'tool_call', toolCall: { toolCallId: callId } },
+          options: [
+            { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
+            { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' },
+          ],
+        }, request.signal === undefined ? undefined : { cancellationSignal: request.signal })
+        if (v2.RequestPermissionOutcome.isCancelled(outcome)) return 'cancelled'
+        return v2.RequestPermissionOutcome.isSelected(outcome) && outcome.optionId === 'allow-once' ? 'allowed-once' : 'rejected'
+      })
+    }
     return record.drainUpdates().then(() => {
       const params: RequestPermissionRequest = {
         sessionId: record.agent.session.id,
@@ -174,8 +211,6 @@ export function apply(ctx: Context, config: AcpConfig): void {
 
   const implementation = {
     async initialize(_params: InitializeRequest): Promise<InitializeResponse> {
-      // Single-version agent: the spec's "same version if supported, else
-      // the latest supported" both resolve to this server's one version.
       imagePromptEnabled = await supportsAcpImagePrompts(ctx, config.provider, config.model)
       return {
         protocolVersion: PROTOCOL_VERSION,
@@ -211,6 +246,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
           fallbackSelection: initialSelection(config),
           signal,
           notify,
+          notifyV2: protocol === 2 ? notifyV2 : undefined,
         })
       } catch (error: unknown) {
         if (error instanceof AcpMcpConfigError) throw invalidParams(error.message)
@@ -262,6 +298,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
             fallbackSelection: initialSelection(config),
             signal,
             notify,
+            notifyV2: protocol === 2 ? notifyV2 : undefined,
           })
         } catch (error: unknown) {
           if (error instanceof AcpMcpConfigError) throw invalidParams(error.message)
@@ -371,11 +408,12 @@ export function apply(ctx: Context, config: AcpConfig): void {
   }
 
   /* v8 ignore next 4 -- production stdio wiring; tests inject config.stream. */
-  const stream: Stream = config.stream ?? ndJsonStream(
+  const stream: v2.Stream = config.stream ?? v2.ndJsonStream(
     Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
     Readable.toWeb(process.stdin) as ReadableStream<Uint8Array>,
   )
   const app = createAcpAgentApp({ name: 'deepseek-harness-acp' })
+    .onConnect((connection) => { conn = connection.client })
     .onRequest(methods.agent.initialize, ({ params }) => implementation.initialize(params))
     .onRequest(methods.agent.authenticate, async ({ params }) => {
       await implementation.authenticate(params)
@@ -388,8 +426,60 @@ export function apply(ctx: Context, config: AcpConfig): void {
     .onRequest(methods.agent.session.setConfigOption, ({ params, signal }) => implementation.setSessionConfigOption(params, signal))
     .onRequest(methods.agent.session.prompt, ({ params, signal }) => implementation.prompt(params, signal))
     .onNotification(methods.agent.session.cancel, ({ params }) => implementation.cancel(params))
-  const connection = app.connect(stream)
-  const conn: AgentContext = connection.client
+  const appV2 = v2.agent({ name: 'deepseek-harness-acp-v2' })
+    .onConnect((connection) => { protocol = 2; connV2 = connection.client })
+    .onRequest('initialize', async () => {
+      imagePromptEnabled = await supportsAcpImagePrompts(ctx, config.provider, config.model)
+      return {
+        protocolVersion: 2,
+        info: { name: 'deepseek-harness', version: '0.2.1-alpha.1' },
+        capabilities: { session: {
+          mcp: { stdio: {}, http: {} },
+          prompt: imagePromptEnabled ? { image: {} } : {},
+        } },
+        authMethods: [],
+      }
+    })
+    .onRequest('session/new', async ({ params, signal }) => {
+      const result = await implementation.newSession({ ...params, mcpServers: v2Projection.mcpServers(params.mcpServers) }, signal)
+      return { sessionId: result.sessionId, configOptions: v2Projection.configOptions(result.configOptions ?? []) }
+    })
+    .onRequest('session/list', ({ params, signal }) => implementation.listSessions(params, signal))
+    .onRequest('session/resume', async ({ params, signal }) => {
+      if (params.replayFrom != null && !v2.ReplayFrom.isStart(params.replayFrom)) throw invalidParams('unsupported replay cursor')
+      const result = await implementation.resumeSession({ ...params, mcpServers: v2Projection.mcpServers(params.mcpServers) }, signal)
+      const sessionId = brandString<SessionId>(params.sessionId)
+      const record = requireSession(sessionId)
+      try {
+        if (params.replayFrom == null) await record.replayV2(undefined, sessionReplayPageSize, signal)
+        else {
+          await ctx.sessions.flush(record.agent.session)
+          const reader = await persistence.open(sessionId, 'read', { signal })
+          try { await record.replayV2(reader, sessionReplayPageSize, signal) } finally { await reader.close() }
+        }
+      } catch (error: unknown) {
+        sessions.delete(sessionId)
+        await record.close('session/resume replay failed')
+        throw error
+      }
+      return { configOptions: v2Projection.configOptions(result.configOptions ?? []) }
+    })
+    .onRequest('session/close', ({ params }) => implementation.closeSession(params))
+    .onRequest('session/set_config_option', async ({ params, signal }) => {
+      if (!v2.SetSessionConfigOptionRequest.isId(params)) throw invalidParams('unsupported configuration option type')
+      const result = await implementation.setSessionConfigOption(params, signal)
+      return { configOptions: v2Projection.configOptions(result.configOptions) }
+    })
+    .onRequest('session/prompt', ({ params, signal }) => {
+      assertOpen()
+      return requireSession(brandString<SessionId>(params.sessionId)).promptV2(
+        { sessionId: params.sessionId, prompt: v2Projection.promptContent(params.prompt) }, imagePromptEnabled, signal,
+      )
+    })
+    .onNotification('session/cancel', ({ params }) => implementation.cancel(params))
+  const router = v2.agentProtocolRouter().withV1(app)
+  if (config.experimentalV2 === true) router.withV2(appV2)
+  const connection = config.experimentalV2 === true ? router.connect(stream) : app.connect(stream as Stream)
 
   let quiescing: Promise<void> | undefined
   const quiesce = (): Promise<void> => {

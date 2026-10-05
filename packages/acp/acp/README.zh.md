@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-acp` 让受信程序通过标准 [ACP](https://agentclientprotocol.com) 自动操作持久 DeepSeek Harness agent：创建或恢复会话、选择模型与推理强度、挂载 MCP 服务器、提交或取消工作、接收语义更新，并独立关闭会话。进程外 subagent、测试运行器与脚本化控制器适合选择它；它刻意不提供 DSH 专用呈现数据与交互式 UI 功能。持久化支持跨进程重启列出、恢复与关闭会话，但不支持删除、fork、transcript（文本记录）回放与附加目录。运行 `pnpm dsh --profile acp` 可启动服务器；仓库客户端使用 `dsh-subagent-acp`。
+`dsh-acp` 让受信程序通过标准 [ACP](https://agentclientprotocol.com) 自动操作持久 DeepSeek Harness agent：创建或恢复会话、选择模型与推理强度、挂载 MCP 服务器、提交或取消工作、接收语义更新，并独立关闭会话。进程外 subagent、测试运行器与脚本化控制器适合选择它；它刻意不提供 DSH 专用呈现数据与交互式 UI 功能。持久化支持跨进程重启列出、恢复与关闭会话，但不支持删除、fork 与附加目录。运行 `pnpm dsh --profile acp` 可启动服务器；仓库客户端使用 `dsh-subagent-acp`。
 
 ## 目录
 
@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 何时选择
 
-当自动化应拥有交互时选择它：管理持久会话、工具、模型选择与权限的进程外 subagent、测试运行器或脚本化控制器。当人类需要 DSH 专用呈现卡片、计划、标题、todo、终端视图或 elicitation 时请避开；本服务器刻意只提供标准 ACP v1 界面。
+当自动化应拥有交互时选择它：管理持久会话、工具、模型选择与权限的进程外 subagent、测试运行器或脚本化控制器。当人类需要 DSH 专用呈现卡片、计划、标题、todo、终端视图或 elicitation 时请避开；本服务器提供 ACP v1 与可选的草案 ACP v2。
 
 ### 最小配置
 
@@ -47,6 +47,8 @@ kind: "package-reference"
 | `provider` | — | 每个会话 agent 的提供方路由 |
 | `model` | — | 每个会话 agent 的模型 |
 | `sessionListPageSize` | `100` | 单页 `session/list` 返回的最大摘要数量 |
+| `experimentalV2` | `false` | 启用草案 v2 协商，同时保留 v1 |
+| `sessionReplayPageSize` | `256` | v2 回放每页读取的最大持久事件数 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-acp)是每个受支持字段及其 JSDoc 的穷尽式真源。
 
@@ -57,7 +59,7 @@ kind: "package-reference"
 <a id="protocol-contract"></a><a id="standard-acp-v1-surface"></a>
 ### 协议约定
 
-一个连接可以同时运行多个会话，彼此独立。客户端发出的调用如下：
+一个连接可以同时运行多个会话，彼此独立。下表描述 v1：
 
 | 调用 | 你会得到什么 |
 |---|---|
@@ -75,6 +77,20 @@ kind: "package-reference"
 
 会话配置从实时 LLM（大语言模型）服务目录提供不透明的提供方／模型选项，并在确切模型声明推理选项时提供 `reasoning_effort`。提示词会在异步图片准入前快照该选择，并在该轮次的每个模型步骤中固定它；并发选项变更从下一轮次开始生效。ACP 客户端是受信控制器：stdio MCP 条目授权其绝对命令与环境，HTTP 条目授权其绝对 HTTP(S) URL 与 header；初始连接或发现失败会回滚尚未发布的 Agent。不支持的界面会被省略或拒绝：`session/load`、删除、fork、附加目录、SSE（Server-Sent Events）或 ACP 传输 MCP、mode、命令、计划、终端、客户端文件系统操作与 elicitation。
 
+### 草案 ACP v2
+
+在 ACP 插件配置行设置 `experimentalV2: true`，即可接受 `protocolVersion: 2` 的 `initialize` 请求。此连接使用 v2 的 `info` 与 `capabilities`；v1 客户端保留原有握手与提示词生命周期。固定的 SDK `1.7.0` 提供独立的 v1 与实验性 v2 校验器和处理程序。不公布不稳定扩展或身份验证方法。
+
+配置档补丁会替换目标行的整个 `config`。当 ACP 负责初始模型选择时，须在 `experimentalV2` 旁同时填写 `provider` 和 `model`；仅包含开关的覆盖层会移除该选择。
+
+ACP 与 Web 使用同一个 Harness 主目录时会共享已保存的凭据，但提供方定义属于各自的配置档。若要复用 Web 模型定义，请将 `llm-pi-ai` 等相关适配器行从 `$DSH_HOME/profiles/web/cordis.patch.yml` 复制到 `$DSH_HOME/profiles/acp/cordis.patch.yml`，保留凭据引用，并将 ACP 行的 `provider` 与 `model` 设置为已配置的路由。默认 Harness 主目录为 `~/.dsh`。不要复制整个 Web 补丁，因为它可能引用 Web 专用插件。编辑后重启 ACP 进程；复制的定义不会自动跟随后续 Web 编辑。已保存的密钥保留在共享的[凭据存储](../../credentials/credentials-local/README.zh.md)中，无须在 ACP 客户端环境中重复填写。
+
+v2 提示词在通过校验并插入后返回规范 Harness 用户 `messageId`，无需等待模型完成。服务器发送已接受的用户消息，然后发送 `running`。权限交换报告 `requires_action`，所有未完成回答到达后恢复 `running`。完成时报告 `idle` 与停止原因，包括 `cancelled` 或 `error`。`$/cancel_request` 只控制准入；接受后使用 `session/cancel`。每个会话仍只允许一个前台提示词。
+
+已提交的 assistant 文本与 thought 使用整条消息替换更新；工具调用使用 `tool_call_update` upsert。用户与 assistant ID 保留 Harness 标识；thought ID 在 assistant ID 后添加确定性的 `:thought` 后缀。模型选择器使用 `configId` 与 `groupId`。不带 `replayFrom` 的恢复报告当前空闲状态；`replayFrom: { type: "start" }` 还会通过分页存储读取回放保留的用户编写消息、assistant 消息与工具事实。注入的模型上下文不会成为用户回显。
+
+[v2 迁移指南](https://agentclientprotocol.com/protocol/v2/migration)与[基础 schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json)定义草案协议格式。显示终端、计划、命令与附加工作区根目录没有 ACP 投影；v2 协商不意味着支持这些功能。[T3 互操作测试](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts)导入由 `DSH_T3_CODE_ROOT` 选择的已安装检出；受测通用 T3 运行时协商 v1，并在服务器启用 v2 时完成确定性的 MCP 工具轮次。
+
 -----
 
 <a id="understand-the-implementation"></a>
@@ -91,7 +107,7 @@ kind: "package-reference"
 
 - **只发送标准语义更新。** 协议承载已提交消息与 thought、通用工具生命周期、配置与上下文用量；原始提供方增量、重试尝试、DSH 呈现数据与不受支持内容不会进入协议。
 - **诚实的能力与配置状态。** `initialize` 只公布已挂载支持，拓扑变化会发布完整配置选项，提示词则固定其准入时的确切路由。
-- **停稳后才结算。** 提示词与关闭操作只在其拥有的准入、Agent 活动、有序更新、后代、持久化与释放达到所需终态后才结算。
+- **停稳后才完成。** V1 提示词结果、v2 终态与关闭响应等待所属工作和有序输出排空；v2 提示词接受不等待完成。
 
 决策历史记录在 [ACP 作为仅面向自动化的协议笔记](../../../.agents/notes/implemented/simplification/2026-07-23-acp-automation-only-protocol.zh.md) 与[多会话笔记](../../../.agents/notes/archived/feature/2026-06-14-acp-multi-session.md) 中。
 
@@ -102,6 +118,7 @@ kind: "package-reference"
 | [`src/index.ts`](src/index.ts) | 插件入口：`Config` schema、`AgentSideConnection` 接线、按会话记录、准入与结算、清理 |
 | [`src/content.ts`](src/content.ts) | 协议内容准入与投影：图片校验、路由重查、提示词重建、assistant 块转换 |
 | [`src/codec.ts`](src/codec.ts) | 轮次结束到 ACP `stopReason` 的纯映射 |
+| [`src/v2.ts`](src/v2.ts) | 草案 v2 内容、配置与已提交事件投影 |
 
 ### 准入与提示词结算
 
@@ -168,7 +185,7 @@ kind: "package-reference"
 - **仅一个主 workspace**——附加目录仍不支持。
 - **仅光栅提示词图片**——PNG、JPEG、WebP 与 GIF 要求持久附件存储及确切的图片能力路由。
 - **仅 MCP 工具**——MCP resource 与 prompt 没有 DSH 消费方。
-- **没有 transcript 回放或交互式扩展**——会话删除、fork、`session/load`、mode、命令、计划、终端、客户端文件系统操作与 elicitation 仍不属于此自动化界面。
+- **V1 不提供文本记录回放；不支持交互扩展**——会话删除、fork、`session/load`、mode、命令、计划、终端、客户端文件系统操作与 elicitation 仍不属于此自动化界面。
 
 <a id="dev-note"></a>
 ### 开发备注

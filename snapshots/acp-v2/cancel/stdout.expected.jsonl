@@ -1,0 +1,9 @@
+{"jsonrpc":"2.0","id":1,"result":{"protocolVersion":2,"info":{"name":"deepseek-harness","version":"0.2.1-alpha.1"},"capabilities":{"session":{"prompt":{},"mcp":{"stdio":{},"http":{}}}},"authMethods":[]}}
+{"jsonrpc":"2.0","id":2,"result":{"sessionId":"{{sessionId}}","configOptions":[{"name":"Model","category":"model","type":"select","currentValue":"[\"deepseek-official\",\"deepseek-v4-flash\"]","options":[{"groupId":"deepseek-official","name":"DeepSeek","options":[{"value":"[\"deepseek-official\",\"deepseek-v4-flash\"]","name":"deepseek-v4-flash"},{"value":"[\"deepseek-official\",\"deepseek-v4-pro\"]","name":"deepseek-v4-pro"}]}],"configId":"model"}]}}
+{"jsonrpc":"2.0","id":3,"result":{"messageId":"{{messageId}}"}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"{{sessionId}}","update":{"sessionUpdate":"user_message","messageId":"{{messageId}}","content":[{"type":"text","text":"Start a long task; this turn will be cancelled mid-stream."}]}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"{{sessionId}}","update":{"sessionUpdate":"state_update","state":"running"}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"{{sessionId}}","update":{"sessionUpdate":"agent_thought","messageId":"{{messageId}}","content":[]}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"{{sessionId}}","update":{"sessionUpdate":"agent_message","messageId":"{{messageId}}","content":[{"type":"text","text":"partial"}]}}}
+{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"{{sessionId}}","update":{"sessionUpdate":"state_update","state":"idle","stopReason":"cancelled"}}}
+{"jsonrpc":"2.0","id":4,"result":{}}

@@ -447,8 +447,8 @@ importers:
         version: 0.1.6
     devDependencies:
       '@agentclientprotocol/sdk':
-        specifier: 1.4.0
-        version: 1.4.0(zod@4.4.3)
+        specifier: 1.7.0
+        version: 1.7.0(zod@4.4.3)
       '@deepseek-ai/dsh-acp':
         specifier: workspace:*
         version: link:../../packages/acp/acp
@@ -1045,8 +1045,8 @@ importers:
   packages/acp/acp:
     dependencies:
       '@agentclientprotocol/sdk':
-        specifier: 1.4.0
-        version: 1.4.0(zod@4.4.3)
+        specifier: 1.7.0
+        version: 1.7.0(zod@4.4.3)
       '@deepseek-ai/dsh-brand':
         specifier: workspace:*
         version: link:../../util/brand
@@ -15090,6 +15090,11 @@ packages:
     peerDependencies:
       zod: ^3.25.0 || ^4.0.0
 
+  '@agentclientprotocol/sdk@1.7.0':
+    resolution: {integrity: sha512-ZORuxsuEnLjRly7t6Ad7zAsWitjWsyprswyPUHz/yycPb+tTm3DGa8XheaHhRXqX8LS9snuxaYavXSRA50TlHw==}
+    peerDependencies:
+      zod: ^3.25.0 || ^4.0.0
+
   '@algolia/abtesting@1.21.2':
     resolution: {integrity: sha512-uXj0rgk30EpsKvOpuS+R+1XFDrnm56hED1Lz56e8uBkZdKCxw99LS2U8eXBqAHYU8kpkbsnV1GC8velBG070Hg==}
     engines: {node: '>= 14.0.0'}
@@ -22460,6 +22465,10 @@ packages:
 snapshots:
 
   '@agentclientprotocol/sdk@1.4.0(zod@4.4.3)':
+    dependencies:
+      zod: 4.4.3
+
+  '@agentclientprotocol/sdk@1.7.0(zod@4.4.3)':
     dependencies:
       zod: 4.4.3
 
