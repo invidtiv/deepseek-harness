@@ -73,9 +73,29 @@ interface ExactEdit {
 interface GenericSkip {
   readonly file: string
   readonly upstream: readonly string[]
+  readonly dataOnly?: boolean
 }
 
 const GENERIC_SKIPS: readonly GenericSkip[] = [
+  // These preset ids and event names are data; package imports remain eligible.
+  ...[
+    'apps/web/tests/agent-preset-selection.e2e.ts',
+    'apps/web/tests/developer-tools-settings.e2e.ts',
+    'docs/subsystems/schedule.md',
+    'docs/subsystems/schedule.zh.md',
+    'docs/upgrade-guide/v0.2.0-rc.2/schedule-bundle-retired/guide.md',
+    'docs/upgrade-guide/v0.2.0-rc.2/schedule-bundle-retired/guide.zh.md',
+    'docs/user/guide/schedule.md',
+    'docs/user/guide/schedule.zh.md',
+    'packages/bundle/web-app/cordis.patch.yml',
+    'packages/client/ui-agent-preset/src/client/CreatePluginMenuItem.tsx',
+    'packages/client/ui-agent-preset/tests/components.client.spec.tsx',
+    'packages/client/ui-agent-preset/tests/create-plugin-menu-item.client.spec.tsx',
+    'packages/client/ui-agent-preset/tests/section-store.client.spec.ts',
+    'packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts',
+    'snapshots/session/cordis-inspect-liveness/client-fixture.mjs',
+    'snapshots/session/cordis-inspect-timeout/client-fixture.mjs',
+  ].map(file => ({ file, upstream: ['cordis'], dataOnly: true })),
   // `Symbol.for('schemastery')` and the `vendor:` metadata field are upstream identifiers.
   { file: 'vendor/schemastery/src/index.ts', upstream: ['schemastery'] },
   // Narrows a Standard Schema by the same upstream `vendor:` identifier.
@@ -85,6 +105,8 @@ const GENERIC_SKIPS: readonly GenericSkip[] = [
   { file: 'packages/boot/app-boot/tests/config-schema.spec.ts', upstream: ['schemastery'] },
   // Asserts the vendored-manifest table, which gains an upstream-name column.
   { file: 'scripts/gen-third-party-notices.spec.ts', upstream: RENAMES.map(rename => rename.upstream) },
+  // Rescope fixtures contain both source and target package names.
+  { file: 'scripts/rescope-vendor.spec.ts', upstream: RENAMES.map(rename => rename.upstream) },
   // `cordis` is also an agent-preset id, so in these files the bare name is
   // product data, not a package reference. Renaming it changed which preset
   // the creator flow stages and which id the roster reports.
@@ -474,14 +496,15 @@ function patterns(reverse: boolean): Pattern[] {
     }))
 }
 
-function skipped(file: string, pattern: Pattern): boolean {
-  return GENERIC_SKIPS.some(skip => skip.file === file && skip.upstream.includes(pattern.upstream))
+function skipped(file: string, pattern: Pattern, line: string): boolean {
+  return GENERIC_SKIPS.some(skip => skip.file === file && skip.upstream.includes(pattern.upstream)
+    && (skip.dataOnly !== true || !/\b(?:from\s*|import\s*|(?:import|require)\s*\(\s*)['"]|^\s*(?:-\s*)?name:/u.test(line)))
 }
 
 function rewriteLine(line: string, file: string, all: readonly Pattern[]): string {
   let out = line
   for (const pattern of all) {
-    if (skipped(file, pattern)) continue
+    if (skipped(file, pattern, line)) continue
     out = out.replace(pattern.token, (_match, quote: string, subpath: string) => `${quote}${pattern.to}${subpath}${quote}`)
     out = out.replace(pattern.yamlName, (_match, prefix: string, suffix: string) => `${prefix}${pattern.to}${suffix}`)
   }
@@ -517,6 +540,16 @@ function rewrite(text: string, file: string, all: readonly Pattern[]): { text: s
     return next
   })
   return { text: out.join('\n'), lines }
+}
+
+/**
+ * Apply package-name rescoping while preserving file-specific runtime identifiers.
+ * @param text - authored file contents.
+ * @param file - slash-separated repository-relative path.
+ * @returns rescoped contents, unchanged when no package name needs rewriting.
+ */
+export function rescopeFileText(text: string, file: string): string {
+  return rewrite(text, file, patterns(false)).text
 }
 
 function classify(file: string): string {

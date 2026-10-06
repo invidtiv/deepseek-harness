@@ -1,12 +1,33 @@
 /** Recorded npm evidence stays intact while authored files and exact edits remain checked. */
 
 import { describe, expect, it } from 'vitest'
-import { exactEditState, isRescopeExcluded } from './rescope-vendor.ts'
+import { exactEditState, isRescopeExcluded, rescopeFileText } from './rescope-vendor.ts'
 
 const ANCHOR = '\n## Sync procedure'
 const INSERTED = `\n15. **rescope**: one log entry.\n${ANCHOR}`
 
 describe('rescope file selection', () => {
+  it.each([
+    'apps/web/tests/agent-preset-selection.e2e.ts',
+    'packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts',
+    'snapshots/session/cordis-inspect-liveness/client-fixture.mjs',
+  ])('preserves runtime identifiers in %s while rewriting imports', (file) => {
+    const data = "const preset = 'cordis'; ctx.on('cordis/inspect-query', listener)\n"
+    expect(rescopeFileText(data, file)).toBe(data)
+    expect(rescopeFileText("import { Context } from 'cordis'\n", file)).toBe("import { Context } from '@deepseek-ai/cordis'\n")
+    expect(rescopeFileText("const schema = import('schemastery')\n", file)).toBe("const schema = import('@deepseek-ai/schemastery')\n")
+  })
+
+  it('preserves preset prose while rewriting documented package imports', () => {
+    const file = 'docs/subsystems/schedule.md'
+    expect(rescopeFileText('The `cordis` preset.\n', file)).toBe('The `cordis` preset.\n')
+    expect(rescopeFileText("```ts\nimport 'cordis'\n```\n", file)).toBe("```ts\nimport '@deepseek-ai/cordis'\n```\n")
+  })
+
+  it('preserves preset comments while rewriting YAML plugin names', () => {
+    const file = 'packages/bundle/web-app/cordis.patch.yml'
+    expect(rescopeFileText('# The `cordis` preset.\n- name: cordis\n', file)).toBe('# The `cordis` preset.\n- name: @deepseek-ai/cordis\n')
+  })
   it('preserves the recorded npm resolution', () => {
     expect(isRescopeExcluded('scripts/dependency-catalog/package-lock.json')).toBe(true)
   })

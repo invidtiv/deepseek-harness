@@ -28,7 +28,7 @@ const statuses = { pending: 'pairingPending', redeeming: 'pairingRedeeming', con
  * @param props - saved configuration, localized copy and operator actions.
  * @returns invitation form and redacted invitation inventory.
  */
-export function Pairing(props: PairingActions & PropsLocale<'environmentTeams'> & { configuration: EnvironmentConfiguration; changed(): void }) {
+export function Pairing(props: PairingActions & PropsLocale<'environmentTeams'> & { configuration: EnvironmentConfiguration; changed(this: void): void }) {
   const { t } = props
   const generatedId = useRef<PairingInvitationId | undefined>(undefined)
   const consumed = useRef<Set<string>>(new Set())
