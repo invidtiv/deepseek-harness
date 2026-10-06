@@ -24,11 +24,12 @@ await Effect.runPromise(Effect.gen(function* () {
     return Effect.void
   }), Effect.forkChild)
   const started = yield* runtime.start()
-  assert.equal(started.initializeResult.protocolVersion, 1)
+  const protocolVersion = started.initializeResult.protocolVersion
+  assert.equal(protocolVersion, 1)
   const result = yield* runtime.prompt({ prompt: [{ type: 'text', text: 'exercise the attached server' }] })
   yield* runtime.drainEvents
   assert.equal(result.stopReason, 'end_turn')
   assert(events.some(event => event._tag === 'ContentDelta' && event.text.includes('model=alpha; tool=5')))
   assert(events.some(event => event._tag === 'ToolCallUpdated'))
-  process.stdout.write(JSON.stringify({ protocolVersion: 1, stopReason: result.stopReason, events: [...new Set(events.map(event => event._tag))] }) + '\n')
+  process.stdout.write(JSON.stringify({ protocolVersion, stopReason: result.stopReason, events: [...new Set(events.map(event => event._tag))] }) + '\n')
 }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)))

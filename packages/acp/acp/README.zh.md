@@ -89,7 +89,7 @@ v2 提示词在通过校验并插入后返回规范 Harness 用户 `messageId`�
 
 已提交的 assistant 文本与 thought 使用整条消息替换更新；工具调用使用 `tool_call_update` upsert。用户与 assistant ID 保留 Harness 标识；thought ID 在 assistant ID 后添加确定性的 `:thought` 后缀。模型选择器使用 `configId` 与 `groupId`。不带 `replayFrom` 的恢复报告当前空闲状态；`replayFrom: { type: "start" }` 还会通过分页存储读取回放保留的用户编写消息、assistant 消息与工具事实。注入的模型上下文不会成为用户回显。
 
-[v2 迁移指南](https://agentclientprotocol.com/protocol/v2/migration)与[基础 schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json)定义草案协议格式。显示终端、计划、命令与附加工作区根目录没有 ACP 投影；v2 协商不意味着支持这些功能。[T3 互操作测试](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts)导入由 `DSH_T3_CODE_ROOT` 选择的已安装检出；受测通用 T3 运行时协商 v1，并在服务器启用 v2 时完成确定性的 MCP 工具轮次。
+[v2 迁移指南](https://agentclientprotocol.com/protocol/v2/migration)与[基础 schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json)定义草案协议格式。显示终端、计划、命令与附加工作区根目录没有 ACP 投影；v2 协商不意味着支持这些功能。[T3 互操作测试](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts)导入由 `DSH_T3_CODE_ROOT` 选择的已安装检出，并验证通过稳定版 v1 完成确定性的 MCP 工具轮次。对于仅投影 v1 消息分块的通用 T3 运行时，保持 `experimentalV2: false`：仅完成 v2 握手并不能证明支持 v2 整条消息更新。
 
 -----
 
