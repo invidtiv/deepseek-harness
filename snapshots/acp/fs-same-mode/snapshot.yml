@@ -3,6 +3,8 @@ scenario: fs-same-mode
 profile: acp
 composition: acp-default
 recording: authored
+# The pinned header declares the POSIX bash tool.
+platform: posix
 header:
   class: acp-default
 permission: danger-full-access

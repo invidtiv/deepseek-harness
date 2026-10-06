@@ -3,6 +3,8 @@ scenario: escalation-approved
 profile: acp
 composition: acp-default
 recording: live
+# The recorded escalation executes a POSIX bash command.
+platform: posix
 header:
   class: acp-default
   pin: true

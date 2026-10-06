@@ -3,6 +3,8 @@ scenario: escalation-rejected
 profile: acp
 composition: acp-default
 recording: live
+# The recorded permission request belongs to the POSIX bash tool.
+platform: posix
 header:
   class: acp-default
 permission: workspace-write

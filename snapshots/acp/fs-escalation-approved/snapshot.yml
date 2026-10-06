@@ -3,6 +3,8 @@ scenario: fs-escalation-approved
 profile: acp
 composition: acp-default
 recording: live
+# The pinned header declares the POSIX bash tool.
+platform: posix
 header:
   class: acp-default
 permission: workspace-write

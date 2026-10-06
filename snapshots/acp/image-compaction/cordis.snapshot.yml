@@ -54,6 +54,20 @@
 - id: attachment-local
   name: '@deepseek-ai/dsh-attachment-local'
 
+# The recording has no platform-specific sandbox diagnosis skill catalog.
+- id: sandbox
+  config:
+    runnerCommand: [bash, -c, 'while [ "$1" != "--" ]; do shift; done; shift; exec "$@"', passthrough-runner]
+    runnerFailureSignatures: ['passthrough-runner: profile rejected']
+
+# No shell call runs here; the header retains the recording's Bash schema.
+- id: bash-sandbox
+  disabled: false
+- id: tool-bash
+  disabled: false
+- id: tool-pwsh
+  disabled: true
+
 # Tight automatic compaction budget sized to the route-priced visual tokens of
 # the scenario's inline images: the text-only history stays under the
 # threshold, so a triggered compaction proves the routed model's image pricing

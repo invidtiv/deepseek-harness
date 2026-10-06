@@ -10,3 +10,9 @@
     workspaces:
       project: !!js process.cwd()
     peers: []
+
+# The borrowed recording has no Windows ACL skill catalog and executes no shell commands.
+- id: sandbox
+  config:
+    runnerCommand: [bash, -c, 'while [ "$1" != "--" ]; do shift; done; shift; exec "$@"', passthrough-runner]
+    runnerFailureSignatures: ['passthrough-runner: profile rejected']

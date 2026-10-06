@@ -3,6 +3,8 @@ scenario: cancel
 profile: acp
 composition: acp-default
 recording: authored
+# The pinned header declares the POSIX bash tool.
+platform: posix
 header:
   class: acp-default
 replay:
