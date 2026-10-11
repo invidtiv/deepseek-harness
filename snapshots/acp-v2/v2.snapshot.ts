@@ -4,7 +4,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { expect, it } from 'vitest'
-import { fixtureContext, normalizeSessionSnapshots, normalizeStdout, latestPersistedSessionPaths } from '@deepseek-ai/dsh-session-snapshot'
+import {
+  fixtureContext, normalizeSessionSnapshots, normalizeStdout, latestPersistedSessionPaths, sessionFixtureFiles,
+} from '@deepseek-ai/dsh-session-snapshot'
 import { launchV2Profile } from '../../apps/cli/tests/profiles/acp/tests/v2-harness.ts'
 
 const corpus = fileURLToPath(new URL('../acp/', import.meta.url))
@@ -12,7 +14,7 @@ const corpus = fileURLToPath(new URL('../acp/', import.meta.url))
 it('v2 acceptance, user echo and cancellation preserve the recorded Session', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'acp-v2-snapshot-'))
   const sessionsRoot = join(cwd, '.sessions')
-  const fixture = join(corpus, 'cancel/session.v3.jsonl')
+  const fixture = join(corpus, 'cancel', sessionFixtureFiles(await readdir(join(corpus, 'cancel')))[0]!.name)
   const launched = launchV2Profile(cwd, [join(corpus, 'escalation-approved/cordis.yml'), join(corpus, 'escalation-approved/cordis.snapshot.yml')], {
     DSH_SNAPSHOT: 'replay', DSH_SNAPSHOT_FILE: fixture,
     DSH_SNAPSHOT_OVERRIDE: join(corpus, 'cancel/replay.override.json'),
