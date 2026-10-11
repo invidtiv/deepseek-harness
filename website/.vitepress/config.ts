@@ -338,6 +338,8 @@ export default withMermaid({
     },
   },
   vite: {
+    // VitePress's esbuild does not recognize the repository's ES2024 target.
+    esbuild: { tsconfigRaw: { compilerOptions: { target: 'ESNext' } } },
     // `srcDir` puts the Vite root inside the disposable generated tree, whose
     // own `public/` no tracked asset can live in.
     publicDir: resolve(import.meta.dirname, '../public'),

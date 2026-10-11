@@ -27,20 +27,20 @@ id: 2026-09-26-environment-team-attribution
 baseline: false
 changes:
   - root: "event:agent/inbox/spliced"
-    previous: "2026-09-21-user-question-reply"
-    after: "ae171dfe8377a2c24c34fe35e740a802b867c286a3a6ef5acb64b1ae9e0c90b2"
+    previous: "2026-10-05-working-directory-attribution"
+    after: "c604bac26672deea53a6eeff7c19d5292001f865c5bca9d794638eede940faf4"
     decision: same-version
   - root: "event:developer/message"
-    previous: "2026-09-21-user-question-reply"
-    after: "e5544078869437d76803043c4af58a7c28b42974f70f31681f2adbc32ecf0be5"
+    previous: "2026-10-05-working-directory-attribution"
+    after: "b0e816dd625b9264e5257db0ab8cc223e194053f757ed851de65d4790bc92887"
     decision: same-version
   - root: "event:session/title-llm-request"
-    previous: "2026-09-21-user-question-reply"
-    after: "da0b393c135750aa4ec31f20c49f969b78318756bcda50830984da8b9acf30e5"
+    previous: "2026-10-07-title-reasoning-effort"
+    after: "16ae762957c18b0e40e0eda3f0f13b3daf3d400dd0aa0ee6df65b82096c48b15"
     decision: same-version
   - root: "event:user/message"
-    previous: "2026-09-21-user-question-reply"
-    after: "20c059492f81b9fd68d3ec1683968b48e95c2619381d03d8ac26036274d3432b"
+    previous: "2026-10-05-working-directory-attribution"
+    after: "3d46896ed1c15eb94c3ef68a4e8d219202780d2579d572f8e49a73fff075f91f"
     decision: same-version
 ```
 
@@ -52,7 +52,7 @@ Existing records and Session format remain unchanged. The qualified source kind 
 <a id="verification"></a>
 ## Verification
 
-The environment-team integration tests read delivered messages with the producer unloaded, retain attribution, and suppress duplicate delivery after receiver restart. Focused package coverage passes all 35 tests at 100%.
+The environment-team integration and session-follow projection tests read delivered messages with the producer unloaded, retain attribution, and suppress duplicate delivery after receiver restart. All 47 focused tests pass.
 
 <a id="dev-note"></a>
 ## Dev Note

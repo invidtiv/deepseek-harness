@@ -8,6 +8,7 @@ const INSERTED = `\n15. **rescope**: one log entry.\n${ANCHOR}`
 
 describe('rescope file selection', () => {
   it.each([
+    'apps/cli/tests/optional-bundle-transitions.e2e.ts',
     'apps/web/tests/agent-preset-selection.e2e.ts',
     'packages/extensions/cordis-host-runner/tests/inspect-registry.spec.ts',
     'snapshots/session/cordis-inspect-liveness/client-fixture.mjs',

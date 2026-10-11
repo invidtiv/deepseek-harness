@@ -140,13 +140,17 @@ it('waits for a configured interval and can restart after the first configuratio
 })
 
 it('does not schedule another reader if paused while resolving retry configuration', async () => {
+  vi.useFakeTimers()
   let resolveInterval!: (value: number) => void
   const interval = () => new Promise<number>((resolve) => { resolveInterval = resolve })
-  const follow: SessionFollow = async function* () { yield base }
+  const follow = vi.fn<SessionFollow>(async function* () { yield base })
   const controller = new RemoteSessionController(async () => { throw new Error('offline') }, interval, vi.fn(), follow)
   roots.push(controller); controller.open(workspace); controller.select(sessionId); controller.resume()
   await vi.waitFor(() => { expect(controller.state.getSnapshot().offline).toBe(true); expect(resolveInterval).toBeTypeOf('function') })
   controller.pause(); resolveInterval(1000)
-  await controller.dispose()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(follow).toHaveBeenCalledTimes(1)
   expect(controller.state.getSnapshot().offline).toBe(true)
+  await controller.dispose()
+  expect(controller.state.getSnapshot().offline).toBe(false)
 })

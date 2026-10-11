@@ -79,6 +79,7 @@ interface GenericSkip {
 const GENERIC_SKIPS: readonly GenericSkip[] = [
   // These preset ids and event names are data; package imports remain eligible.
   ...[
+    'apps/cli/tests/optional-bundle-transitions.e2e.ts',
     'apps/web/tests/agent-preset-selection.e2e.ts',
     'apps/web/tests/developer-tools-settings.e2e.ts',
     'docs/subsystems/schedule.md',
