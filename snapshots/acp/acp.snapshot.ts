@@ -29,6 +29,7 @@ const controllerCases: readonly {
   readonly configPath?: string
 }[] = [
   { name: 'handshake', hasModelTurn: false },
+  { name: 'goal-command', hasModelTurn: false },
   { name: 'reject-extra-dirs', hasModelTurn: false },
   { name: 'cancel', hasModelTurn: true },
   { name: 'cancel-tool-calls', hasModelTurn: true },

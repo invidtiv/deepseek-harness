@@ -1069,6 +1069,18 @@ importers:
       '@deepseek-ai/dsh-attachment':
         specifier: workspace:*
         version: link:../../attachment/attachment
+      '@deepseek-ai/dsh-command-goal':
+        specifier: workspace:*
+        version: link:../../goal/command-goal
+      '@deepseek-ai/dsh-commands':
+        specifier: workspace:*
+        version: link:../../interaction/commands
+      '@deepseek-ai/dsh-goal':
+        specifier: workspace:*
+        version: link:../../goal/goal
+      '@deepseek-ai/dsh-goal-round-driver':
+        specifier: workspace:*
+        version: link:../../goal/goal-round-driver
       '@deepseek-ai/dsh-llm':
         specifier: workspace:*
         version: link:../../llm/llm

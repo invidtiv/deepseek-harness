@@ -166,6 +166,12 @@ export function apply(ctx: Context, config: AcpConfig): void {
     ownedRecord(agent)?.onAgentError(turn, error)
   })
 
+  ctx.on('commands/change', () => {
+    for (const record of sessions.values()) record.commandsChanged()
+  })
+
+  ctx.on('agent/status', ({ agent, status }) => { ownedRecord(agent)?.onStatus(status) })
+
   ctx.on('llm/adapters-updated', () => {
     for (const record of sessions.values()) record.topologyChanged()
   })
@@ -264,6 +270,10 @@ export function apply(ctx: Context, config: AcpConfig): void {
         // The attached log writer's flush materializes an empty session durably.
         await ctx.sessions.flush(record.agent.session)
         assertOpen()
+        if (protocol === 1 && record.availableCommands().length > 0) {
+          record.commandsChanged()
+          await record.drainUpdates()
+        }
         return { sessionId, configOptions }
       } catch (error: unknown) {
         sessions.delete(sessionId)
@@ -317,7 +327,12 @@ export function apply(ctx: Context, config: AcpConfig): void {
         }
         sessions.set(sessionId, record)
         try {
-          return { configOptions: await record.configOptions(signal) }
+          const configOptions = await record.configOptions(signal)
+          if (protocol === 1 && record.availableCommands().length > 0) {
+            record.commandsChanged()
+            await record.drainUpdates()
+          }
+          return { configOptions }
         } catch (error: unknown) {
           sessions.delete(sessionId)
           await record.close('session/resume option discovery failed')
@@ -442,7 +457,9 @@ export function apply(ctx: Context, config: AcpConfig): void {
     })
     .onRequest('session/new', async ({ params, signal }) => {
       const result = await implementation.newSession({ ...params, mcpServers: v2Projection.mcpServers(params.mcpServers) }, signal)
-      return { sessionId: result.sessionId, configOptions: v2Projection.configOptions(result.configOptions ?? []) }
+      return { sessionId: result.sessionId, configOptions: v2Projection.configOptions(result.configOptions ?? []),
+        availableCommands: requireSession(brandString<SessionId>(result.sessionId)).availableCommandsV2(),
+      }
     })
     .onRequest('session/list', ({ params, signal }) => implementation.listSessions(params, signal))
     .onRequest('session/resume', async ({ params, signal }) => {
@@ -462,7 +479,9 @@ export function apply(ctx: Context, config: AcpConfig): void {
         await record.close('session/resume replay failed')
         throw error
       }
-      return { configOptions: v2Projection.configOptions(result.configOptions ?? []) }
+      return { configOptions: v2Projection.configOptions(result.configOptions ?? []),
+        availableCommands: record.availableCommandsV2(),
+      }
     })
     .onRequest('session/close', ({ params }) => implementation.closeSession(params))
     .onRequest('session/set_config_option', async ({ params, signal }) => {

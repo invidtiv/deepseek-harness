@@ -17,6 +17,7 @@ it('runs model selection, reasoning, MCP tools and replay through v2 stdio', asy
     expect(await client.request('initialize', { protocolVersion: 2, info: { name: 'profile-test', version: '1' }, capabilities: {} })).toMatchObject({ protocolVersion: 2 })
     const mcpServers: v2.McpServer[] = [{ type: 'stdio', name: 'fixture', command: process.execPath, args: [join(repoRoot, 'packages/mcp/mcp-client/tests/fixture-server.ts')] }]
     const created = await client.request('session/new', { cwd, mcpServers })
+    expect(created.availableCommands?.map(command => command.name)).toContain('goal')
     const sessionId = created.sessionId
     const model = created.configOptions?.find(option => option.configId === 'model')
     if (model === undefined || !v2.SessionConfigOption.isSelect(model)) throw new Error('model selector missing')
@@ -33,6 +34,9 @@ it('runs model selection, reasoning, MCP tools and replay through v2 stdio', asy
       { toolCallId: 'control-add', status: 'in_progress' }, { toolCallId: 'control-add', status: 'completed' },
     ])
     const messages = updates.filter(update => update.sessionUpdate === 'agent_message' || update.sessionUpdate === 'user_message')
+    const command = await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: '/goal' }] })
+    expect(updates).toContainEqual({ sessionUpdate: 'user_message', messageId: command.messageId, content: [{ type: 'text', text: '/goal' }] })
+    expect(updates).toContainEqual(expect.objectContaining({ sessionUpdate: 'agent_message', messageId: `${command.messageId}:result` }))
     await client.request('session/close', { sessionId })
     updates.length = 0
     await client.request('session/resume', { sessionId, cwd, mcpServers, replayFrom: { type: 'start' } })

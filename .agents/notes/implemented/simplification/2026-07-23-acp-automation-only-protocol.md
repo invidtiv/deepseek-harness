@@ -4,7 +4,7 @@ Status: implemented
 
 English | [中文](2026-07-23-acp-automation-only-protocol.zh.md)
 
-> The automation-only boundary remains current. [Standard ACP v1 automation controls](../../../../packages/acp/acp/README.md) supersedes only this note's prompt-only method, configuration, MCP, update, and lifecycle inventory; it does not restore ACP as a UI.
+> The automation-only boundary remains current. [Standard ACP v1 automation controls](../../../../packages/acp/acp/README.md) supersedes only this note's prompt-only method, configuration, MCP, update, and lifecycle inventory; it does not restore ACP as a UI. [ACP command control](../architecture/2026-10-17-acp-command-control.md) supersedes the command exclusion while retaining the presentation restrictions.
 
 ## Problem
 

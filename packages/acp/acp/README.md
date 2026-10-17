@@ -75,7 +75,17 @@ One connection can run several sessions at once, each independent. The following
 | `session/update` | Committed assistant messages and thoughts, generic tool lifecycle, configuration changes, and context usage, serialized per session. |
 | `session/request_permission` | A permission prompt with one-shot allow/reject choices; your client can answer automatically. |
 
-Session configuration offers opaque provider/model choices from the live LLM service catalog and a `reasoning_effort` selector when the exact model declares one. A prompt snapshots that selection before asynchronous image admission and pins it across every model step in that turn; a concurrent option change applies to the next turn. ACP clients are trusted controllers: stdio MCP entries authorize their absolute commands and environment, HTTP entries authorize their absolute HTTP(S) URLs and headers, and any initial connection or discovery failure rolls back the unpublished Agent. Unsupported surfaces are omitted or rejected: `session/load`, deletion, fork, additional directories, SSE or ACP-transport MCP, modes, commands, plans, terminals, client filesystem operations, and elicitation.
+Session configuration offers opaque provider/model choices from the live LLM service catalog and a `reasoning_effort` selector when the exact model declares one. A prompt snapshots that selection before asynchronous image admission and pins it across every model step in that turn; a concurrent option change applies to the next turn. ACP clients are trusted controllers: stdio MCP entries authorize their absolute commands and environment, HTTP entries authorize their absolute HTTP(S) URLs and headers, and any initial connection or discovery failure rolls back the unpublished Agent. Unsupported surfaces are omitted or rejected: `session/load`, deletion, fork, additional directories, SSE or ACP-transport MCP, modes, plans, terminals, client filesystem operations, and elicitation.
+
+<a id="slash-commands"></a>
+
+### Slash commands
+
+Send a registered slash command as text in `session/prompt`, for example `/goal finish the task`, `/goal`, `/goal edit revised objective`, `/goal pause`, `/goal resume`, or `/goal clear`. The bridge executes the receiving Agent's command registry directly; command input and output do not enter model history. The shipped profile includes the goal service and automatic round driver, so creating or resuming a goal starts work. Commands accept text only; accompanying images or resource links are rejected before execution. Unrecognized slash commands remain ordinary model prompts.
+
+V1 announces the complete command list through `available_commands_update` on creation and resume; v2 returns `availableCommands` in those responses. Registry changes replace the list. Command results use standard assistant text updates. V1 returns `end_turn` after the command result is delivered, without waiting for automatic goal rounds. V2 echoes the command with a live-only user message ID and returns that ID; this echo and its direct result are not replayed. The command registry persists its own lifecycle events and the goal service persists accepted mutations.
+
+A command can inspect, pause, or edit a goal during a foreground prompt or automatic round. Each session accepts one command at a time and rejects ordinary prompts during command execution. Automatic rounds publish v2 activity states independently of command acknowledgements. `session/cancel` stops active goal work through the existing cancellation path; closing the session cancels and drains commands before releasing the Agent. A custom composition without a command registry advertises no commands.
 
 ### Draft ACP v2
 
@@ -89,7 +99,7 @@ A v2 prompt returns its canonical Harness user `messageId` after validated inser
 
 Committed assistant text and thoughts use whole-message replacement updates; tool calls use `tool_call_update` upserts. User and assistant IDs retain their Harness identities; thought IDs add a deterministic `:thought` suffix to the assistant ID. Model selectors use `configId` and `groupId`. Resume without `replayFrom` reports the current idle state; `replayFrom: { type: "start" }` additionally replays retained user-authored messages, assistant messages, and tool facts from paged storage reads. Injected model context is not a user echo.
 
-The [v2 migration guide](https://agentclientprotocol.com/protocol/v2/migration) and [baseline schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json) define the draft wire format. Display terminals, plans, commands, and additional workspace roots have no ACP projection; they are not implied by v2 negotiation. The [T3 interoperability test](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts) imports an installed checkout selected by `DSH_T3_CODE_ROOT`; the tested generic T3 runtime negotiates v1 and completes a deterministic MCP tool turn with v2 enabled on the server.
+The [v2 migration guide](https://agentclientprotocol.com/protocol/v2/migration) and [baseline schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json) define the draft wire format. Display terminals, plans, and additional workspace roots have no ACP projection; they are not implied by v2 negotiation. The [T3 interoperability test](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts) imports an installed checkout selected by `DSH_T3_CODE_ROOT`; the tested generic T3 runtime negotiates v1 and completes a deterministic MCP tool turn with v2 enabled on the server.
 
 -----
 
@@ -185,7 +195,7 @@ These limits define when this package is a poor fit or needs special operational
 - **One primary workspace** — additional directories remain unsupported.
 - **Raster prompt images only** — PNG, JPEG, WebP, and GIF require a durable attachment store and an exact image-capable route.
 - **MCP tools only** — MCP resources and prompts have no DSH consumer.
-- **V1 has no transcript replay; interactive extensions are unsupported** — session deletion, fork, `session/load`, modes, commands, plans, terminals, client filesystem operations, and elicitation remain outside this automation surface.
+- **V1 has no transcript replay; interactive extensions are unsupported** — session deletion, fork, `session/load`, modes, plans, terminals, client filesystem operations, and elicitation remain outside this automation surface.
 
 <a id="dev-note"></a>
 ### Dev Note

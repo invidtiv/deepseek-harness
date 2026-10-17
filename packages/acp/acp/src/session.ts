@@ -1,8 +1,10 @@
 /** One standard ACP session's Agent, configuration, prompt, update, and teardown lifecycle. */
 
+import { parseCommand } from '@deepseek-ai/dsh-commands'
 import type { Context } from '@deepseek-ai/cordis'
 import {
   RequestError,
+  type AvailableCommand,
   type McpServer,
   type PromptRequest,
   type PromptResponse,
@@ -11,7 +13,7 @@ import {
   type StopReason,
 } from '@agentclientprotocol/sdk'
 import type { Agent, AgentHandle, AgentOptions, ModelSelection } from '@deepseek-ai/dsh-agent'
-import { createUserMessage, errorChain, type UserMessage } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, errorChain, type MessageId, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { type Session, type SessionEvent, type SessionId, type TurnEndReason } from '@deepseek-ai/dsh-session'
 import { AcpContentError, admitAcpPrompt } from './content.ts'
 import { turnEndToStopReason } from './codec.ts'
@@ -64,7 +66,6 @@ interface InflightPrompt {
   settlementStarted: boolean
   outputError: Error | undefined
   agentError: Error | undefined
-  pendingPermissions: number
 }
 
 /** Standard invalid-parameter failure with protocol-safe detail. */
@@ -107,7 +108,11 @@ export class AcpSession {
   private readonly modelControl: AcpModelControl
   private outputTail = Promise.resolve()
   private inflight: InflightPrompt | undefined
+  private autonomousEnding: TurnEndReason | undefined
+  private autonomousCancelled = false
+  private pendingPermissions = 0
   private closing: Promise<void> | undefined
+  private command: { controller: AbortController; done: Promise<void> } | undefined
   private readonly pendingSelections = new Map<string, ModelSelection>()
 
   private constructor(
@@ -241,6 +246,107 @@ export class AcpSession {
   }
 
   /**
+   * Read commands registered for this exact Agent; no registry means no commands.
+   * @returns standard command descriptors without Harness presentation metadata.
+   */
+  availableCommands(): AvailableCommand[] {
+    return (this.ctx.get('commands')?.list(this.agent) ?? []).map(({ name, description, input }) => ({
+      name, description,
+      ...input === undefined ? {} : { input: { hint: input.hint } },
+    }))
+  }
+
+  /**
+   * Project command discovery for draft v2.
+   * @returns commands with explicit text-input discriminants.
+   */
+  availableCommandsV2(): v2.AvailableCommand[] {
+    return this.availableCommands().map(({ name, description, input }) => ({
+      name, description,
+      ...input == null ? {} : { input: { type: 'text', hint: input.hint } },
+    }))
+  }
+
+  /** Publish a complete replacement command list after registry changes. */
+  commandsChanged(): void {
+    if (this.closing !== undefined) return
+    const availableCommands = this.availableCommands()
+    if (this.notifyV2 !== undefined) {
+      this.enqueueV2(() => [{ sessionUpdate: 'available_commands_update', availableCommands: this.availableCommandsV2() }])
+    } else {
+      this.outputTail = this.outputTail.then(() => this.notify({
+        sessionId: this.agent.session.id,
+        update: { sessionUpdate: 'available_commands_update', availableCommands },
+      }))
+    }
+  }
+
+  /**
+   * Publish autonomous activity outside a foreground prompt, including goal rounds.
+   * @param status - current Agent status after a lifecycle transition.
+   */
+  onStatus(status: Agent['status']): void {
+    if (this.closing !== undefined) return
+    if (status === 'running') {
+      this.autonomousEnding = undefined
+      this.autonomousCancelled = false
+    }
+    if (this.inflight !== undefined) return
+    if (status === 'running') {
+      this.enqueueV2(() => [{ sessionUpdate: 'state_update', state: 'running' }])
+    }
+    if (status === 'idle') {
+      const ending = this.autonomousEnding
+      const stopReason = this.autonomousCancelled || ending === undefined ? 'cancelled'
+        : ending.kind === 'error' ? 'error' : turnEndToStopReason(ending)
+      this.enqueueV2(() => [{ sessionUpdate: 'state_update', state: 'idle', stopReason }])
+    }
+  }
+
+  /** Execute recognized text commands independently of the foreground model prompt. */
+  private runCommand(params: PromptRequest, requestSignal?: AbortSignal): Promise<MessageId> | undefined {
+    this.assertActive()
+    const registry = this.ctx.get('commands')
+    const line = params.prompt.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
+    const parsed = parseCommand(line)
+    if (registry === undefined || parsed === undefined || registry.find(this.agent, parsed.name) === undefined) return undefined
+    if (params.prompt.some(block => block.type !== 'text')) throw invalidParams('ACP commands accept text only')
+    if (this.command !== undefined) throw invalidParams('a command is already in flight for this session')
+    const controller = new AbortController()
+    const signal = requestSignal === undefined ? controller.signal : AbortSignal.any([controller.signal, requestSignal])
+    signal.throwIfAborted()
+    const completion = Promise.withResolvers<void>()
+    this.command = { controller, done: completion.promise }
+    const { id: messageId } = createUserMessage({ content: [{ type: 'text', text: line }], source: { kind: 'user' } })
+    return (async () => {
+      try {
+        const execution = await registry.execute(this.agent, line, [], signal)
+        if (execution === undefined) throw invalidParams(`command is no longer available: /${parsed.name}`)
+        await this.ctx.sessions.flush(this.agent.session)
+        this.enqueueV2(() => [{ sessionUpdate: 'user_message', messageId, content: [{ type: 'text', text: line }] }])
+        const text = execution.result.text ?? ''
+        if (this.notifyV2 !== undefined) {
+          this.enqueueV2(() => [
+            { sessionUpdate: 'agent_message', messageId: `${messageId}:result`, content: [{ type: 'text', text }] },
+            ...this.inflight === undefined && this.agent.status === 'idle'
+              ? [{ sessionUpdate: 'state_update' as const, state: 'idle' as const, stopReason: 'end_turn' as const }] : [],
+          ])
+        } else {
+          this.outputTail = this.outputTail.then(() => this.notify({
+            sessionId: this.agent.session.id,
+            update: { sessionUpdate: 'agent_message_chunk', messageId: `${messageId}:result`, content: { type: 'text', text } },
+          }))
+        }
+        await this.outputTail
+        return messageId
+      } finally {
+        this.command = undefined
+        completion.resolve()
+      }
+    })()
+  }
+
+  /**
    * Admit, enqueue, and settle one prompt at whole-Agent quiescence.
    * @param params - standard ACP prompt request for this session.
    * @param imageEnabled - connection capability advertised at initialization.
@@ -255,6 +361,12 @@ export class AcpSession {
     accepted?: (message: UserMessage) => void,
   ): Promise<PromptResponse> {
     this.assertActive()
+    const command = this.runCommand(params, requestSignal)
+    if (command !== undefined) {
+      await command
+      return { stopReason: 'end_turn' }
+    }
+    if (this.command !== undefined) throw invalidParams('a command is already in flight for this session')
     if (this.inflight !== undefined) throw invalidParams('a prompt is already in flight for this session')
     const completion = Promise.withResolvers<StopReason>()
     const admission = Promise.withResolvers<void>()
@@ -274,7 +386,6 @@ export class AcpSession {
       settlementStarted: false,
       outputError: undefined,
       agentError: undefined,
-      pendingPermissions: 0,
     }
     this.inflight = inflight
     const onRequestAbort = (): void => { this.cancelPrompt('ACP prompt request cancelled') }
@@ -350,9 +461,11 @@ export class AcpSession {
    * @param params - admitted prompt fields shared with v1.
    * @param imageEnabled - negotiated image capability.
    * @param signal - cancellation before insertion only.
-   * @returns the canonical inbox message id without waiting for the turn.
+   * @returns the canonical inbox ID before model completion, or a live-only command ID after execution.
    */
   promptV2(params: PromptRequest, imageEnabled: boolean, signal: AbortSignal): Promise<v2.PromptResponse> {
+    const command = this.runCommand(params, signal)
+    if (command !== undefined) return command.then(messageId => ({ messageId }))
     const acceptance = Promise.withResolvers<v2.PromptResponse>()
     let inserted = false
     void this.prompt(params, imageEnabled, signal, (message) => {
@@ -367,26 +480,25 @@ export class AcpSession {
   }
 
   /**
-   * Bracket a permission exchange with states owned by its foreground interval.
+   * Bracket foreground and autonomous permission exchanges with activity states.
    * @param answer - transport exchange; policy remains with the approval service.
    * @returns the client's answer after the corresponding state transition.
    */
   async withPermission<T>(answer: () => Promise<T>): Promise<T> {
     const owner = this.inflight
-    if (owner !== undefined) {
-      owner.pendingPermissions++
-      if (!owner.cancelRequested) this.enqueueV2(() => [{ sessionUpdate: 'state_update', state: 'requires_action' }])
+    this.pendingPermissions++
+    if (owner?.cancelRequested !== true && !this.autonomousCancelled) {
+      this.enqueueV2(() => [{ sessionUpdate: 'state_update', state: 'requires_action' }])
     }
     await this.outputTail
     try {
       return await answer()
     } finally {
-      if (owner !== undefined) {
-        owner.pendingPermissions--
-        if (this.inflight === owner && !owner.cancelRequested && owner.pendingPermissions === 0 && this.closing === undefined) {
-          this.enqueueV2(() => [{ sessionUpdate: 'state_update', state: 'running' }])
-          await this.outputTail
-        }
+      this.pendingPermissions--
+      if (this.inflight === owner && owner?.cancelRequested !== true && !this.autonomousCancelled
+        && this.pendingPermissions === 0 && this.closing === undefined) {
+        this.enqueueV2(() => [{ sessionUpdate: 'state_update', state: 'running' }])
+        await this.outputTail
       }
     }
   }
@@ -422,8 +534,12 @@ export class AcpSession {
   /** Cancel the active prompt, or autonomous work when no ACP prompt exists. */
   cancel(): void {
     const inflight = this.inflight
+    this.command?.controller.abort(new Error('ACP command cancelled'))
     this.cancelPrompt('ACP prompt cancelled')
-    if (inflight === undefined) this.agent.cancel({ kind: 'user' })
+    if (inflight === undefined) {
+      this.autonomousCancelled = true
+      this.agent.cancel({ kind: 'user' })
+    }
   }
 
   /**
@@ -478,7 +594,10 @@ export class AcpSession {
       if (inflight !== undefined && event.type === 'turn/end' && inflight.turn === event.data.turn) {
         inflight.endReason = event.data.reason
       }
-      if (event.type === 'turn/end') this.modelControl.releaseTurn(event.data.turn)
+      if (event.type === 'turn/end') {
+        this.autonomousEnding = event.data.reason
+        this.modelControl.releaseTurn(event.data.turn)
+      }
     }
   }
 
@@ -489,7 +608,7 @@ export class AcpSession {
    */
   onInboxClaimed(message: UserMessage, turn: number): void {
     if (this.inflight !== undefined && this.inflight.messageId === message.id) this.inflight.turn = turn
-    const selection = this.pendingSelections.get(message.id)
+    const selection = this.pendingSelections.get(message.id) ?? this.modelControl.snapshot()
     this.pendingSelections.delete(message.id)
     if (selection !== undefined) this.modelControl.pinTurn(turn, selection)
   }
@@ -524,9 +643,11 @@ export class AcpSession {
     this.closing = (async () => {
       const failures: unknown[] = []
       const inflight = this.inflight
+      this.command?.controller.abort(new Error(detail))
       this.cancelPrompt(detail)
       if (inflight === undefined || !inflight.messageQueued) this.agent.cancel({ kind: 'user' })
       try {
+        await this.command?.done
         await inflight?.admissionDone
         await this.agent.whenIdle()
         await this.outputTail

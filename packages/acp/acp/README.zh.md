@@ -75,7 +75,17 @@ kind: "package-reference"
 | `session/update` | 已提交 assistant 消息与 thought、通用工具生命周期、配置变化与上下文用量，按会话串行交付。 |
 | `session/request_permission` | 带一次性允许／拒绝选项的权限提示；你的客户端可以自动回答。 |
 
-会话配置从实时 LLM（大语言模型）服务目录提供不透明的提供方／模型选项，并在确切模型声明推理选项时提供 `reasoning_effort`。提示词会在异步图片准入前快照该选择，并在该轮次的每个模型步骤中固定它；并发选项变更从下一轮次开始生效。ACP 客户端是受信控制器：stdio MCP 条目授权其绝对命令与环境，HTTP 条目授权其绝对 HTTP(S) URL 与 header；初始连接或发现失败会回滚尚未发布的 Agent。不支持的界面会被省略或拒绝：`session/load`、删除、fork、附加目录、SSE（Server-Sent Events）或 ACP 传输 MCP、mode、命令、计划、终端、客户端文件系统操作与 elicitation。
+会话配置从实时 LLM（大语言模型）服务目录提供不透明的提供方／模型选项，并在确切模型声明推理选项时提供 `reasoning_effort`。提示词会在异步图片准入前快照该选择，并在该轮次的每个模型步骤中固定它；并发选项变更从下一轮次开始生效。ACP 客户端是受信控制器：stdio MCP 条目授权其绝对命令与环境，HTTP 条目授权其绝对 HTTP(S) URL 与 header；初始连接或发现失败会回滚尚未发布的 Agent。不支持的界面会被省略或拒绝：`session/load`、删除、fork、附加目录、SSE（Server-Sent Events）或 ACP 传输 MCP、mode、计划、终端、客户端文件系统操作与 elicitation。
+
+<a id="slash-commands"></a>
+
+### 斜杠命令
+
+在 `session/prompt` 中以文本发送已注册的斜杠命令，例如 `/goal finish the task`、`/goal`、`/goal edit revised objective`、`/goal pause`、`/goal resume` 或 `/goal clear`。桥接层直接执行接收 Agent 的命令注册表；命令输入和输出不进入模型历史。随附配置包含目标服务与自动轮次驱动器，因此创建或恢复目标会启动工作。命令仅接受文本；附带图片或资源链接会在执行前被拒绝。未识别的斜杠命令仍作为普通模型提示词处理。
+
+V1 在创建和恢复时通过 `available_commands_update` 公布完整命令列表；v2 在这些响应中返回 `availableCommands`。注册表变更会替换列表。命令结果使用标准助手文本更新。V1 在命令结果交付后返回 `end_turn`，不等待自动目标轮次。V2 使用仅在实时连接中有效的用户消息 ID 回显命令并返回该 ID；该回显及其直接结果不会重放。命令注册表持久化自身生命周期事件，目标服务持久化已接受的变更。
+
+命令可以在前台提示词或自动轮次执行期间查看、暂停或编辑目标。每个会话同时只接受一个命令，命令执行期间拒绝普通提示词。自动轮次独立于命令确认发布 v2 活动状态。`session/cancel` 通过现有取消路径停止正在执行的目标工作；关闭会话会先取消并排空命令，再释放 Agent。没有命令注册表的自定义组装不会公布命令。
 
 ### 草案 ACP v2
 
@@ -89,7 +99,7 @@ v2 提示词在通过校验并插入后返回规范 Harness 用户 `messageId`�
 
 已提交的 assistant 文本与 thought 使用整条消息替换更新；工具调用使用 `tool_call_update` upsert。用户与 assistant ID 保留 Harness 标识；thought ID 在 assistant ID 后添加确定性的 `:thought` 后缀。模型选择器使用 `configId` 与 `groupId`。不带 `replayFrom` 的恢复报告当前空闲状态；`replayFrom: { type: "start" }` 还会通过分页存储读取回放保留的用户编写消息、assistant 消息与工具事实。注入的模型上下文不会成为用户回显。
 
-[v2 迁移指南](https://agentclientprotocol.com/protocol/v2/migration)与[基础 schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json)定义草案协议格式。显示终端、计划、命令与附加工作区根目录没有 ACP 投影；v2 协商不意味着支持这些功能。[T3 互操作测试](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts)导入由 `DSH_T3_CODE_ROOT` 选择的已安装检出；受测通用 T3 运行时协商 v1，并在服务器启用 v2 时完成确定性的 MCP 工具轮次。
+[v2 迁移指南](https://agentclientprotocol.com/protocol/v2/migration)与[基础 schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json)定义草案协议格式。显示终端、计划与附加工作区根目录没有 ACP 投影；v2 协商不意味着支持这些功能。[T3 互操作测试](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts)导入由 `DSH_T3_CODE_ROOT` 选择的已安装检出；受测通用 T3 运行时协商 v1，并在服务器启用 v2 时完成确定性的 MCP 工具轮次。
 
 -----
 
@@ -185,7 +195,7 @@ v2 提示词在通过校验并插入后返回规范 Harness 用户 `messageId`�
 - **仅一个主 workspace**——附加目录仍不支持。
 - **仅光栅提示词图片**——PNG、JPEG、WebP 与 GIF 要求持久附件存储及确切的图片能力路由。
 - **仅 MCP 工具**——MCP resource 与 prompt 没有 DSH 消费方。
-- **V1 不提供文本记录回放；不支持交互扩展**——会话删除、fork、`session/load`、mode、命令、计划、终端、客户端文件系统操作与 elicitation 仍不属于此自动化界面。
+- **V1 不提供文本记录回放；不支持交互扩展**——会话删除、fork、`session/load`、mode、计划、终端、客户端文件系统操作与 elicitation 仍不属于此自动化界面。
 
 <a id="dev-note"></a>
 ### 开发备注

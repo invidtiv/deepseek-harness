@@ -4,6 +4,10 @@ import * as v2 from '@agentclientprotocol/sdk/experimental/v2'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { ToolCallId } from '@deepseek-ai/dsh-llm'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
+import Commands from '@deepseek-ai/dsh-commands'
+import Goals from '@deepseek-ai/dsh-goal'
+import * as commandGoal from '@deepseek-ai/dsh-command-goal'
+import * as goalDriver from '@deepseek-ai/dsh-goal-round-driver'
 import { makeBridgeHarness, textResponse, errorResponse, type BridgeHarness } from './harness.ts'
 
 describe('negotiated ACP v2', () => {
@@ -204,6 +208,33 @@ describe('negotiated ACP v2', () => {
       await idle(sessionId, 'cancelled')
     } finally {
       answer.resolve({ outcome: { outcome: '_future' } })
+    }
+    expect(await request).toBe('rejected')
+    expect(updates.at(-1)?.update).toMatchObject({ state: 'idle', stopReason: 'cancelled' })
+  })
+
+  it('reports permission waits during an autonomous goal round without reviving cancelled work', async () => {
+    await setup({ script: ['hang'] })
+    await harness.ctx.plugin(ApprovalService)
+    await harness.ctx.plugin(Commands)
+    await harness.ctx.plugin(Goals)
+    await harness.ctx.plugin(commandGoal)
+    await harness.ctx.plugin(goalDriver)
+    const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
+    await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: '/goal finish the task' }] })
+    await expect.poll(() => harness.adapter.requests.length).toBe(1)
+    const entered = Promise.withResolvers<undefined>()
+    const answer = Promise.withResolvers<v2.RequestPermissionResponse>()
+    permission = () => { entered.resolve(undefined); return answer.promise }
+    const agent = harness.ctx.agents.get(SessionId(sessionId))!
+    const request = harness.ctx.approval.request({ agent, toolName: 'bash', callId: ToolCallId('goal-call') })
+    try {
+      await entered.promise
+      expect(updates.at(-1)?.update).toMatchObject({ state: 'requires_action' })
+      await client.notify('session/cancel', { sessionId })
+      await idle(sessionId, 'cancelled')
+    } finally {
+      answer.resolve({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
     }
     expect(await request).toBe('rejected')
     expect(updates.at(-1)?.update).toMatchObject({ state: 'idle', stopReason: 'cancelled' })

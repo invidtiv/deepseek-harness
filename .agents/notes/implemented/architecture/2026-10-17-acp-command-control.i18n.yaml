@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-17-acp-command-control.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-17-acp-command-control.md
+/agent-note-acp-command-control:
+  en: 943a7a4a49215902
+  zh: 8e6bedccd279567e
+/agent-note-acp-command-control/problem:
+  en: 952ae40b382fafc8
+  zh: 9c0868a22d7facef
+/agent-note-acp-command-control/decision:
+  en: 5809e3a5df12c7ef
+  zh: 18ac0d575b15be3d
+/agent-note-acp-command-control/alternatives-considered:
+  en: c21c21132f0f756d
+  zh: 4400a2876db76dba
+/agent-note-acp-command-control/consequences:
+  en: dc9d1133b33128f8
+  zh: 88c09f77c8d01fa8

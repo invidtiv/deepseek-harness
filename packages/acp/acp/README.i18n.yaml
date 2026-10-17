@@ -27,11 +27,14 @@
   en: 4ed8e37834267edb
   zh: a32d5dedb4e8e919
 /deepseek-ai-dsh-acp/use-this-package/protocol-contract:
-  en: 6fc16c7b85d694c4
-  zh: 285937c1207a769d
+  en: 7010df5d43a6946d
+  zh: 6aa7f58ae1b063ec
+/deepseek-ai-dsh-acp/use-this-package/slash-commands:
+  en: d4a61694e21652cf
+  zh: 7b89e453a82ffb91
 /deepseek-ai-dsh-acp/use-this-package/draft-acp-v2:
-  en: 76a82166c736795b
-  zh: e4dd038f0bbb8162
+  en: be7cf0f4e859aa3a
+  zh: fdafb4fddd70e17a
 /deepseek-ai-dsh-acp/understand-the-implementation:
   en: ea8afe89dbdd1934
   zh: 6567979f92f34afd
@@ -78,8 +81,8 @@
   en: 83120763a07c4b72
   zh: 6a1a181dc4da869d
 /deepseek-ai-dsh-acp/known-limitations-and-deferred-work:
-  en: e3f83b9b0bf62fda
-  zh: 64a90da6565033c1
+  en: b1e9b8a3b135d73c
+  zh: cfe4c85bad25b7c0
 /deepseek-ai-dsh-acp/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 3bb0c20c93f16f98
