@@ -4,7 +4,7 @@ Status: implemented
 
 [English](2026-07-23-acp-automation-only-protocol.md) | 中文
 
-> 仅面向自动化的边界仍然有效。[标准 ACP v1 自动化控制](../../../../packages/acp/acp/README.zh.md)仅取代本说明中仅支持提示词的方法、配置、MCP、更新和生命周期清单；它不会把 ACP 恢复为 UI。 [ACP 命令控制](../architecture/2026-10-17-acp-command-control.zh.md)取代命令排除项，同时保留展示限制。
+> 仅面向自动化的边界仍然有效。[标准 ACP v1 自动化控制](../../../../packages/acp/acp/README.zh.md)仅取代本说明中仅支持提示词的方法、配置、MCP、更新和生命周期清单；它不会把 ACP 恢复为 UI。 [ACP 命令控制](../architecture/2026-10-17-acp-command-control.zh.md)取代命令排除项，同时保留展示限制。 [ACP 进度与历史](../architecture/2026-10-18-acp-progress-and-history.zh.md)取代了对历史加载和任务计划的排除。
 
 ## 问题
 

@@ -1,0 +1,19 @@
+# Bilingual-pair consistency record for 2026-10-18-acp-progress-and-history.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write .agents/notes/implemented/architecture/2026-10-18-acp-progress-and-history.md
+/agent-note-acp-progress-and-history:
+  en: d89fdc10371737e1
+  zh: f1195b046267f40f
+/agent-note-acp-progress-and-history/problem:
+  en: 086fffddc9100276
+  zh: 4ec4d74c7c5079ec
+/agent-note-acp-progress-and-history/decision:
+  en: f904152c1dd103ac
+  zh: bf3859d05c9b9bcc
+/agent-note-acp-progress-and-history/alternatives-considered:
+  en: 7608625bb74ca73a
+  zh: 8766b65cc3bbaf6b
+/agent-note-acp-progress-and-history/consequences:
+  en: bc063bfc572cc649
+  zh: abbc28baef88d3cc

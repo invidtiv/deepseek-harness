@@ -29,7 +29,7 @@ Use this package when a script, test runner, or another harness needs to run age
 
 ### When to choose it
 
-Choose it when automation should own the interaction: an out-of-process subagent, test runner, or scripted controller that manages persistent sessions, tools, model selection, and permissions. Avoid it when a human needs DSH-specific presentation cards, plans, titles, todos, terminal views, or elicitation; this server exposes ACP v1 and opt-in draft ACP v2.
+Choose it when automation should own the interaction: an out-of-process subagent, test runner, or scripted controller that manages persistent sessions, tools, model selection, and permissions. Avoid it when a human needs DSH-specific presentation cards, titles, terminal views, or elicitation; this server exposes ACP v1 and opt-in draft ACP v2.
 
 ### Minimal configuration
 
@@ -48,7 +48,7 @@ Every session the server creates uses the provider and model configured here. Bo
 | `model` | — | Model for every session's agent |
 | `sessionListPageSize` | `100` | Maximum summaries returned in one `session/list` page |
 | `experimentalV2` | `false` | Enable draft v2 negotiation while retaining v1 |
-| `sessionReplayPageSize` | `256` | Maximum persisted events read per v2 replay page |
+| `sessionReplayPageSize` | `256` | Maximum persisted events read per transcript replay page |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-acp) is the exhaustive source for every accepted field and its JSDoc.
 
@@ -67,6 +67,7 @@ One connection can run several sessions at once, each independent. The following
 | `authenticate` | Immediate success; the server requires no authentication. |
 | `session/new` | A fresh persistent agent whose absolute workspace and stdio or HTTP MCP servers are validated before publication, plus its complete configuration-option state. |
 | `session/list` | Deterministic newest-first pages of persisted, resumable root sessions; an optional absolute `cwd` filter uses physical-directory identity where possible. |
+| `session/load` | Restore an inactive persistent session and replay retained conversation messages, tools, and task plans before returning. |
 | `session/resume` | A persisted inactive session whose canonical workspace is verified before composition; its log is restored without replaying old updates. |
 | `session/close` | Quiescent cancellation, update draining, descendant disposal, persistence flush, and disposal of only the addressed Agent scope. |
 | `session/set_config_option` | A serialized update to the advertised `model` or `reasoning_effort`, returning the complete resulting state. |
@@ -75,7 +76,7 @@ One connection can run several sessions at once, each independent. The following
 | `session/update` | Committed assistant messages and thoughts, generic tool lifecycle, configuration changes, and context usage, serialized per session. |
 | `session/request_permission` | A permission prompt with one-shot allow/reject choices; your client can answer automatically. |
 
-Session configuration offers opaque provider/model choices from the live LLM service catalog and a `reasoning_effort` selector when the exact model declares one. A prompt snapshots that selection before asynchronous image admission and pins it across every model step in that turn; a concurrent option change applies to the next turn. ACP clients are trusted controllers: stdio MCP entries authorize their absolute commands and environment, HTTP entries authorize their absolute HTTP(S) URLs and headers, and any initial connection or discovery failure rolls back the unpublished Agent. Unsupported surfaces are omitted or rejected: `session/load`, deletion, fork, additional directories, SSE or ACP-transport MCP, modes, plans, terminals, client filesystem operations, and elicitation.
+Session configuration offers opaque provider/model choices from the live LLM service catalog and a `reasoning_effort` selector when the exact model declares one. A prompt snapshots that selection before asynchronous image admission and pins it across every model step in that turn; a concurrent option change applies to the next turn. ACP clients are trusted controllers: stdio MCP entries authorize their absolute commands and environment, HTTP entries authorize their absolute HTTP(S) URLs and headers, and any initial connection or discovery failure rolls back the unpublished Agent. Unsupported surfaces are omitted or rejected: deletion, fork, additional directories, SSE or ACP-transport MCP, modes, terminals, client filesystem operations, and elicitation.
 
 <a id="slash-commands"></a>
 
@@ -87,19 +88,35 @@ V1 announces the complete command list through `available_commands_update` on cr
 
 A command can inspect, pause, or edit a goal during a foreground prompt or automatic round. Each session accepts one command at a time and rejects ordinary prompts during command execution. Automatic rounds publish v2 activity states independently of command acknowledgements. `session/cancel` stops active goal work through the existing cancellation path; closing the session cancels and drains commands before releasing the Agent. A custom composition without a command registry advertises no commands.
 
+### Goal status and task plans
+
+Goal mutations, activation changes, and admitted rounds publish standard assistant text with the objective, phase, continuation eligibility, round count, and any blocking reason. Loading or resuming publishes the current goal status without arming a restored goal; `/goal resume` explicitly restarts automatic work. These status messages are transport output and do not enter model history. Command acknowledgements and goal status can both appear for one command.
+
+Persisted `todo/write` lists become complete ACP plans: v1 `plan` updates and v2 `plan_update` item lists with the session-local ID `todos`. Priorities are `medium` because DSH tasks have no priority field. A new turn clears the previous list; resume restores a current list, and history loading replays its replacements. Planning mode and plan document previews remain separate from task-list progress.
+
 ### Draft ACP v2
 
 Set `experimentalV2: true` on the ACP plugin's configuration row to allow `initialize` requests with `protocolVersion: 2`. The connection then uses v2 `info` and `capabilities`; v1 clients keep their existing handshake and prompt lifecycle. The pinned SDK `1.7.0` supplies separate v1 and experimental v2 validators and handlers. No unstable extensions or authentication methods are advertised.
 
 Profile patches replace the whole `config` of a targeted row. Include `provider` and `model` alongside `experimentalV2` when ACP owns the initial selection; an overlay containing only the flag removes that selection.
 
-ACP and Web share saved credentials when they use the same Harness home, but their provider definitions are profile-local. To reuse Web model definitions, copy the relevant adapter rows, such as `llm-pi-ai`, from `$DSH_HOME/profiles/web/cordis.patch.yml` into `$DSH_HOME/profiles/acp/cordis.patch.yml`, preserving credential references, and set the ACP row's `provider` and `model` to a configured route. The default Harness home is `~/.dsh`. Do not copy the entire Web patch, which can reference Web-only plugins. Restart the ACP process after editing; copied definitions do not automatically follow later Web edits. Saved keys remain in the shared [credential store](../../credentials/credentials-local/README.md) and need not be duplicated in the ACP client's environment.
+ACP and Web can share provider definitions and saved credentials through the same Harness home (`$DSH_HOME`, default `~/.dsh`). Put the shared adapter configuration in `$DSH_HOME/cordis.patch.yml`, which both profiles read above their profile-local patches. For example, this row shares an installed catalog provider while referring to the existing [credential store](../../credentials/credentials-local/README.md):
+
+```yaml
+- id: llm-pi-ai
+  config:
+    providers:
+      openai:
+        apiKeyEnv: OPENAI_API_KEY
+```
+
+Move the complete adapter configuration into this shared row once; patches replace the entire `config`. Keep ACP's `provider`, `model`, and `experimentalV2` selection in `$DSH_HOME/profiles/acp/cordis.patch.yml`. Restart ACP after shared edits. Web settings forms remain profile-local and reject edits overridden by the shared row; edit the shared file for those providers. Only share rows mounted in each consuming profile, and do not move Web-only plugins into the home patch.
 
 A v2 prompt returns its canonical Harness user `messageId` after validated insertion, before the model finishes. The server emits the accepted user message, then `running`. Permission exchanges report `requires_action`, returning to `running` after the outstanding answers arrive. Completion reports `idle` with a stop reason, including `cancelled` or `error`. `$/cancel_request` owns admission only; after acceptance use `session/cancel`. Each session still admits one foreground prompt at a time.
 
 Committed assistant text and thoughts use whole-message replacement updates; tool calls use `tool_call_update` upserts. User and assistant IDs retain their Harness identities; thought IDs add a deterministic `:thought` suffix to the assistant ID. Model selectors use `configId` and `groupId`. Resume without `replayFrom` reports the current idle state; `replayFrom: { type: "start" }` additionally replays retained user-authored messages, assistant messages, and tool facts from paged storage reads. Injected model context is not a user echo.
 
-The [v2 migration guide](https://agentclientprotocol.com/protocol/v2/migration) and [baseline schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json) define the draft wire format. Display terminals, plans, and additional workspace roots have no ACP projection; they are not implied by v2 negotiation. The [T3 interoperability test](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts) imports an installed checkout selected by `DSH_T3_CODE_ROOT`; the tested generic T3 runtime negotiates v1 and completes a deterministic MCP tool turn with v2 enabled on the server.
+The [v2 migration guide](https://agentclientprotocol.com/protocol/v2/migration) and [baseline schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json) define the draft wire format. Display terminals and additional workspace roots have no ACP projection; they are not implied by v2 negotiation. The [T3 interoperability test](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts) imports an installed checkout selected by `DSH_T3_CODE_ROOT`; the probe checks MCP tools, goal rounds, permissions, pause/resume, cancellation, and history loading.
 
 -----
 
@@ -195,7 +212,7 @@ These limits define when this package is a poor fit or needs special operational
 - **One primary workspace** — additional directories remain unsupported.
 - **Raster prompt images only** — PNG, JPEG, WebP, and GIF require a durable attachment store and an exact image-capable route.
 - **MCP tools only** — MCP resources and prompts have no DSH consumer.
-- **V1 has no transcript replay; interactive extensions are unsupported** — session deletion, fork, `session/load`, modes, plans, terminals, client filesystem operations, and elicitation remain outside this automation surface.
+- **Interactive extensions are unsupported** — session deletion, fork, modes, terminals, client filesystem operations, and elicitation remain outside this automation surface.
 
 <a id="dev-note"></a>
 ### Dev Note

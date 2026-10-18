@@ -43,6 +43,15 @@
     },
     {
       "path": "../../interaction/commands"
+    },
+    {
+      "path": "../../goal/goal"
+    },
+    {
+      "path": "../../todo/tool-todo"
+    },
+    {
+      "path": "../../session/session-projection"
     }
   ]
 }

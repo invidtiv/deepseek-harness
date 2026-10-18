@@ -4,6 +4,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type { SessionUpdate, ToolCall, ToolCallContent, ToolCallUpdate } from '@agentclientprotocol/sdk'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-token-meter'
+import type {} from '@deepseek-ai/dsh-goal'
+import type {} from '@deepseek-ai/dsh-tool-todo'
 import { assistantBlockToAcp } from './content.ts'
 
 /**
@@ -107,5 +109,47 @@ function parseToolArguments(value: string): unknown {
     return JSON.parse(value) as unknown
   } catch (_invalidModelJson) {
     return value
+  }
+}
+
+/**
+ * Project the standing task list into ACP's complete plan replacement.
+ * @param event - committed task-list write or turn reset.
+ * @returns the standard plan, including an empty replacement at a new turn.
+ */
+export function planUpdate(event: SessionEvent<'todo/write' | 'turn/start'>): Extract<SessionUpdate, { sessionUpdate: 'plan' }> {
+  return {
+    sessionUpdate: 'plan' as const,
+    entries: event.type === 'todo/write'
+      ? event.data.todos.map(item => ({ ...item, priority: 'medium' as const })) : [],
+  }
+}
+
+/**
+ * Replay retained conversation facts using stable ACP updates.
+ * @param ctx - attachment and usage services.
+ * @param session - restored session.
+ * @param event - committed event to project.
+ * @returns ordered updates; non-conversation events have no transcript output.
+ */
+export async function replayUpdates(ctx: Context, session: Session, event: SessionEvent): Promise<SessionUpdate[]> {
+  switch (event.type) {
+    case 'user/message': {
+      if (event.data.source.kind !== 'user') return []
+      const updates: SessionUpdate[] = []
+      for (const block of event.data.content) {
+        const content = await assistantBlockToAcp(ctx, block)
+        if (content !== undefined) updates.push({ sessionUpdate: 'user_message_chunk', messageId: event.data.id, content })
+      }
+      return updates
+    }
+    case 'assistant/message': return assistantUpdates(ctx, session, event)
+    case 'tool/call': return [toolCallUpdate(event)]
+    case 'tool/result': return [await toolResultUpdate(ctx, event)]
+    case 'todo/write':
+      return [planUpdate(event)]
+    default:
+      // Session events are merge-extensible; only retained conversation facts are replayed.
+      return []
   }
 }

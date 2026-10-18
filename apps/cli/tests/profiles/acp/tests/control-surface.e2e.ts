@@ -52,6 +52,7 @@ describe('standard ACP v1 control surface', () => {
         clientCapabilities: { _meta: { ignored: true } },
       })
       expect(initialized.agentCapabilities).toEqual({
+        loadSession: true,
         mcpCapabilities: { http: true },
         promptCapabilities: { image: false, audio: false, embeddedContext: false },
         sessionCapabilities: { close: {}, list: {}, resume: {} },

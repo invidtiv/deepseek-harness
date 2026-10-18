@@ -16,7 +16,7 @@ Each package entry labels its data with three identifiers: `inject` lists the se
 
 - `inject`: `agents` · `llm` · `sessionPersistence` · `sessions`
 - `refs`: `v2` (`@agentclientprotocol/sdk/experimental/v2`)
-- `source`: [`packages/acp/acp/src/index.ts:77`](../packages/acp/acp/src/index.ts)
+- `source`: [`packages/acp/acp/src/index.ts:79`](../packages/acp/acp/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: the provider/model selection used for each ACP-created agent. */
@@ -29,7 +29,7 @@ export interface AcpConfig {
   sessionListPageSize?: number
   /** Enable negotiated draft ACP v2 alongside stable v1. */
   experimentalV2?: boolean
-  /** Maximum persisted events read per v2 replay page. */
+  /** Maximum persisted events read per transcript replay page. */
   sessionReplayPageSize?: number
   /** Runtime-only transport override; production uses stdio. */
   stream?: v2.Stream

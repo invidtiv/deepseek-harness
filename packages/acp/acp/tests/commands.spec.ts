@@ -113,7 +113,7 @@ describe.each([1, 2] as const)('ACP v%s commands', (version) => {
     expect(output().join('\n')).toContain('first round')
     if (client !== undefined) {
       expect(updates).toContainEqual({ sessionId, update: { sessionUpdate: 'state_update', state: 'running' } })
-      await expect.poll(() => updates.at(-1)?.update).toMatchObject({ sessionUpdate: 'state_update', state: 'idle' })
+      await expect.poll(() => updates.filter(({ update }) => update.sessionUpdate === 'state_update').at(-1)?.update).toMatchObject({ sessionUpdate: 'state_update', state: 'idle' })
     }
   })
 
@@ -126,7 +126,7 @@ describe.each([1, 2] as const)('ACP v%s commands', (version) => {
     else await client.notify('session/cancel', { sessionId })
     await expect.poll(() => harness.ctx.goals.get(agent(sessionId))?.phase).toBe('paused')
     await agent(sessionId).whenIdle()
-    if (client !== undefined) await expect.poll(() => updates.at(-1)?.update).toMatchObject({ state: 'idle', stopReason: 'cancelled' })
+    if (client !== undefined) await expect.poll(() => updates.filter(({ update }) => update.sessionUpdate === 'state_update').at(-1)?.update).toMatchObject({ state: 'idle', stopReason: 'cancelled' })
   })
 
   it('allows controls during a foreground prompt and preserves its completion', async () => {

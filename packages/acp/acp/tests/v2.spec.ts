@@ -35,7 +35,8 @@ describe('negotiated ACP v2', () => {
   }
 
   async function idle(sessionId: string, stopReason: string) {
-    await expect.poll(() => updates.filter(item => item.sessionId === sessionId).at(-1)?.update).toMatchObject({
+    await expect.poll(() => updates.filter(item => item.sessionId === sessionId
+      && v2.SessionUpdate.isStateUpdate(item.update)).at(-1)?.update).toMatchObject({
       sessionUpdate: 'state_update', state: 'idle', stopReason,
     })
   }
@@ -210,7 +211,7 @@ describe('negotiated ACP v2', () => {
       answer.resolve({ outcome: { outcome: '_future' } })
     }
     expect(await request).toBe('rejected')
-    expect(updates.at(-1)?.update).toMatchObject({ state: 'idle', stopReason: 'cancelled' })
+    expect(updates.filter(({ update }) => update.sessionUpdate === 'state_update').at(-1)?.update).toMatchObject({ state: 'idle', stopReason: 'cancelled' })
   })
 
   it('reports permission waits during an autonomous goal round without reviving cancelled work', async () => {
@@ -237,6 +238,6 @@ describe('negotiated ACP v2', () => {
       answer.resolve({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
     }
     expect(await request).toBe('rejected')
-    expect(updates.at(-1)?.update).toMatchObject({ state: 'idle', stopReason: 'cancelled' })
+    expect(updates.filter(({ update }) => update.sessionUpdate === 'state_update').at(-1)?.update).toMatchObject({ state: 'idle', stopReason: 'cancelled' })
   })
 })

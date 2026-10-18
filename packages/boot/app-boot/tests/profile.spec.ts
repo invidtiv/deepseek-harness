@@ -812,3 +812,26 @@ describe('removeLinkProjections', () => {
     expect(existsSync(join(profile, 'node_modules', 'my-plugin', 'package.json'))).toBe(true)
   })
 })
+
+
+it('shares provider definitions between Web and ACP through the home patch', () => {
+  const home = tmp()
+  const installAnchor = stageInstallation({ base: { patch: '- insert:\n  - id: llm-pi-ai\n    name: provider\n    config: { providers: {} }\n' } })
+  const contexts = ['web', 'acp'].map((name) => {
+    const dir = resolveProfileDir(name, home)
+    initProfile(dir, ['base'])
+    return { name, dir, patchPath: join(dir, PROFILE_PATCH_FILENAME), installAnchor, home, cwd: home,
+      startedBundles: ['base'], overlays: [], telemetryDisabledEnv: undefined }
+  })
+  const shared = join(home, PROFILE_PATCH_FILENAME)
+  const readProviders = (): unknown[] => contexts.map((context): unknown =>
+    composeEntries([readProfilePatches('test', context)])[0]?.config)
+  writeFileSync(shared, '- id: llm-pi-ai\n  config:\n    providers:\n      shared: { apiKeyEnv: SHARED_API_KEY, models: [first] }\n')
+  const first = { providers: { shared: { apiKeyEnv: 'SHARED_API_KEY', models: ['first'] } } }
+  expect(readProviders()).toEqual([first, first])
+  writeFileSync(shared, '- id: llm-pi-ai\n  config:\n    providers:\n      shared: { apiKeyEnv: SHARED_API_KEY, models: [second] }\n')
+  const second = { providers: { shared: { apiKeyEnv: 'SHARED_API_KEY', models: ['second'] } } }
+  expect(readProviders()).toEqual([second, second])
+  writeFileSync(shared, 'invalid: mapping\n')
+  expect(readProviders).toThrow()
+})

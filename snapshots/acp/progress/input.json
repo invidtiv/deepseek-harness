@@ -1,0 +1,12 @@
+{
+  "steps": [
+    { "op": "initialize" },
+    { "op": "newSession" },
+    { "op": "prompt", "text": "/goal ship the task" },
+    { "op": "prompt", "text": "/goal pause" },
+    { "op": "prompt", "text": "/fixture-plan" },
+    { "op": "closeSession" },
+    { "op": "loadSession" },
+    { "op": "prompt", "text": "/goal clear" }
+  ]
+}

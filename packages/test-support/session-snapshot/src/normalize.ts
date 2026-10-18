@@ -389,6 +389,7 @@ export function normalizeSessionLog(
       const data = record.data as Record<string, unknown>
       if ('createdAt' in data) data.createdAt = 0
       if ('updatedAt' in data) data.updatedAt = 0
+      if ('clearedAt' in data) data.clearedAt = 0
     }
     if (record.type === 'subagent/catalog' && record.data !== null && typeof record.data === 'object') {
       const data = record.data as Record<string, unknown>

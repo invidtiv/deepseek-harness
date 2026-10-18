@@ -80,6 +80,8 @@ Headless/ACP 与 SDK 适配器在规范化之前，将原始目录中的子创�
 
 ### 录制、回放与刷新
 
+ACP 控制器脚本可通过 `closeSession` 和 `loadSession` 步骤关闭并重新加载同一持久会话。加载会等待保留转录回放完毕，再执行下一脚本步骤。对于既要比较持久事件又要比较协议输出的纯命令场景，设置 `comparesLog: true`。
+
 `pnpm run test:snapshot:record` 调用在线 LLM（大语言模型），并在规范具名版本文件下写入收集到的当前 generation。record 与 refresh 绝不重命名或删除已完成的 generation，即使后续运行不再产生某个 child 角色也一样；受审阅的源树整理只有在同角色存在已验证的当前替代文件后才移除前代。显式声明 `sessionFormat` 的场景在录制模式下保持只读。`pnpm run test:snapshot:refresh` 保持无密钥，运行选定的最高 replay 输入，并写入 stdout、各 pin 自有的提示词与工具 schema 伴随文件，以及新鲜当前 generation 的可比较 Session 输出；保留历史输入的场景写入单独的 writer 输出比较基准，而非规范当前格式 replay 代际。每个组合 owner 把 replay patch 放在 live patch 旁；顶层 `snapshots/` 拥有 Session 驱动场景，其他预期输出留在其 package owner 旁。[`dsh-llm-replay`](../llm-replay/README.zh.md) 提供通过 `DSH_SNAPSHOT_*` 环境值选择的已记录流。
 
 ### 固定请求 header 与系统提示

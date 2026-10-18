@@ -49,3 +49,46 @@ it('runs model selection, reasoning, MCP tools and replay through v2 stdio', asy
     try { await launched.close() } finally { await rm(cwd, { recursive: true, force: true }) }
   }
 }, 45_000)
+
+
+it('publishes autonomous goal status, permissions and plans and restores progress through v2', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'dsh-acp-v2-goal-'))
+  let permissions = 0
+  const launched = launchV2Profile(cwd, [fileURLToPath(new URL('./fixtures/control-surface/cordis.yml', import.meta.url))],
+    { DSH_CONFORMANCE_PERSISTENCE_ROOT: join(cwd, '.sessions') }, async () => {
+      permissions++
+      return { outcome: { outcome: 'selected', optionId: 'allow-once' } }
+    })
+  const { client, updates } = launched
+  try {
+    await client.request('initialize', { protocolVersion: 2, info: { name: 'goal-test', version: '1' }, capabilities: {} })
+    const { sessionId } = await client.request('session/new', { cwd })
+    const command = (text: string) => client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text }] })
+    await command('/goal finish the task')
+    await expect.poll(() => permissions, { timeout: 20_000 }).toBe(1)
+    expect(updates).toContainEqual(expect.objectContaining({ sessionUpdate: 'plan_update', plan: {
+      type: 'items', planId: 'todos', entries: [{ content: 'Finish the goal', status: 'in_progress', priority: 'medium' }],
+    } }))
+    await command('/goal pause')
+    await command('/goal resume')
+    await expect.poll(() => permissions, { timeout: 20_000 }).toBe(2)
+    await client.notify('session/cancel', { sessionId })
+    await expect.poll(() => updates.filter(update => update.sessionUpdate === 'state_update').at(-1), { timeout: 20_000 })
+      .toMatchObject({ state: 'idle', stopReason: 'cancelled' })
+    await client.request('session/close', { sessionId })
+    const finalGoal = updates.findLast(update => v2.SessionUpdate.isAgentMessage(update)
+      && update.content?.some(block => v2.ContentBlock.isText(block) && block.text.startsWith('Goal paused (disarmed):')))
+    expect(finalGoal).toBeDefined()
+    updates.length = 0
+    await client.request('session/resume', { sessionId, cwd })
+    if (finalGoal === undefined || !v2.SessionUpdate.isAgentMessage(finalGoal)) throw new Error('missing final goal status')
+    expect(updates).toContainEqual(expect.objectContaining({ sessionUpdate: 'agent_message', content: finalGoal.content }))
+    expect(updates.some(update => update.sessionUpdate === 'plan_update')).toBe(true)
+    expect(permissions).toBe(2)
+    await client.request('session/close', { sessionId })
+  } catch (error: unknown) {
+    throw new Error(`v2 goals failed; stderr: ${launched.stderr()}`, { cause: error })
+  } finally {
+    try { await launched.close() } finally { await rm(cwd, { recursive: true, force: true }) }
+  }
+})

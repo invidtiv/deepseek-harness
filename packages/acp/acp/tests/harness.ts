@@ -187,6 +187,7 @@ interface BridgeClient {
   authenticate: NonNullable<AcpAgent['authenticate']>
   newSession: NonNullable<AcpAgent['newSession']>
   listSessions: NonNullable<AcpAgent['listSessions']>
+  loadSession: NonNullable<AcpAgent['loadSession']>
   resumeSession: NonNullable<AcpAgent['resumeSession']>
   closeSession: NonNullable<AcpAgent['closeSession']>
   setSessionConfigOption: NonNullable<AcpAgent['setSessionConfigOption']>
@@ -304,6 +305,7 @@ export async function makeBridgeHarness(options: {
     authenticate: params => client.request(methods.agent.authenticate, params),
     newSession: params => client.request(methods.agent.session.new, params),
     listSessions: params => client.request(methods.agent.session.list, params),
+    loadSession: params => client.request(methods.agent.session.load, params),
     resumeSession: params => client.request(methods.agent.session.resume, params),
     closeSession: params => client.request(methods.agent.session.close, params),
     setSessionConfigOption: params => client.request(methods.agent.session.setConfigOption, params),

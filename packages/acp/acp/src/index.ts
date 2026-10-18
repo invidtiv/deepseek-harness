@@ -32,6 +32,8 @@ import {
   type InitializeResponse,
   type ListSessionsRequest,
   type ListSessionsResponse,
+  type LoadSessionRequest,
+  type LoadSessionResponse,
   type NewSessionRequest,
   type NewSessionResponse,
   type PromptRequest,
@@ -83,7 +85,7 @@ export interface AcpConfig {
   sessionListPageSize?: number
   /** Enable negotiated draft ACP v2 alongside stable v1. */
   experimentalV2?: boolean
-  /** Maximum persisted events read per v2 replay page. */
+  /** Maximum persisted events read per transcript replay page. */
   sessionReplayPageSize?: number
   /** Runtime-only transport override; production uses stdio. */
   stream?: v2.Stream
@@ -128,6 +130,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
   }
 
   const requireSession = (sessionId: SessionId): AcpSession => {
+    if (activating.has(sessionId)) throw invalidParams(`session is activating: ${sessionId}`)
     const record = sessions.get(sessionId)
     if (record === undefined) throw invalidParams(`unknown session: ${sessionId}`)
     return record
@@ -169,6 +172,10 @@ export function apply(ctx: Context, config: AcpConfig): void {
   ctx.on('commands/change', () => {
     for (const record of sessions.values()) record.commandsChanged()
   })
+
+  ctx.on('goal/changed', ({ agent }) => { ownedRecord(agent)?.goalChanged() })
+  ctx.on('goal/activation-changed', ({ sessionId }) => { sessions.get(sessionId)?.goalChanged() })
+  ctx.on('agent/inbox/claimed', ({ agent }) => { ownedRecord(agent)?.goalChanged() })
 
   ctx.on('agent/status', ({ agent, status }) => { ownedRecord(agent)?.onStatus(status) })
 
@@ -222,6 +229,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
         protocolVersion: PROTOCOL_VERSION,
         agentInfo: { name: 'deepseek-harness-acp', version: '0.0.1' },
         agentCapabilities: {
+          loadSession: true,
           mcpCapabilities: { http: true },
           promptCapabilities: { image: imagePromptEnabled, audio: false, embeddedContext: false },
           sessionCapabilities: { close: {}, list: {}, resume: {} },
@@ -282,7 +290,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
       }
     },
 
-    async resumeSession(params: ResumeSessionRequest, signal: AbortSignal): Promise<ResumeSessionResponse> {
+    async resumeSession(params: ResumeSessionRequest, signal: AbortSignal, restoreProgress = true): Promise<ResumeSessionResponse> {
       assertOpen()
       validateWorkspaceParams(params)
       const sessionId = brandString<SessionId>(params.sessionId)
@@ -332,6 +340,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
             record.commandsChanged()
             await record.drainUpdates()
           }
+          if (restoreProgress) await record.restoreProgress()
           return { configOptions }
         } catch (error: unknown) {
           sessions.delete(sessionId)
@@ -339,6 +348,24 @@ export function apply(ctx: Context, config: AcpConfig): void {
           throw error
         }
       })().finally(() => { activating.delete(sessionId) })
+    },
+
+    async loadSession(params: LoadSessionRequest, signal: AbortSignal): Promise<LoadSessionResponse> {
+      const result = await implementation.resumeSession(params, signal, false)
+      const sessionId = brandString<SessionId>(params.sessionId)
+      const record = requireSession(sessionId)
+      activating.add(sessionId)
+      try {
+        await ctx.sessions.flush(record.agent.session)
+        const reader = await persistence.open(sessionId, 'read', { signal })
+        try { await record.replay(reader, sessionReplayPageSize, signal) } finally { await reader.close() }
+        await record.restoreProgress()
+        return result
+      } catch (error: unknown) {
+        sessions.delete(sessionId)
+        await record.close('session/load replay failed')
+        throw error
+      } finally { activating.delete(sessionId) }
     },
 
     async listSessions(params: ListSessionsRequest, signal: AbortSignal): Promise<ListSessionsResponse> {
@@ -435,6 +462,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
       return {}
     })
     .onRequest(methods.agent.session.new, ({ params, signal }) => implementation.newSession(params, signal))
+    .onRequest(methods.agent.session.load, ({ params, signal }) => implementation.loadSession(params, signal))
     .onRequest(methods.agent.session.list, ({ params, signal }) => implementation.listSessions(params, signal))
     .onRequest(methods.agent.session.resume, ({ params, signal }) => implementation.resumeSession(params, signal))
     .onRequest(methods.agent.session.close, ({ params }) => implementation.closeSession(params))
@@ -464,21 +492,25 @@ export function apply(ctx: Context, config: AcpConfig): void {
     .onRequest('session/list', ({ params, signal }) => implementation.listSessions(params, signal))
     .onRequest('session/resume', async ({ params, signal }) => {
       if (params.replayFrom != null && !v2.ReplayFrom.isStart(params.replayFrom)) throw invalidParams('unsupported replay cursor')
-      const result = await implementation.resumeSession({ ...params, mcpServers: v2Projection.mcpServers(params.mcpServers) }, signal)
+      const result = await implementation.resumeSession(
+        { ...params, mcpServers: v2Projection.mcpServers(params.mcpServers) }, signal, false,
+      )
       const sessionId = brandString<SessionId>(params.sessionId)
       const record = requireSession(sessionId)
+      activating.add(sessionId)
       try {
-        if (params.replayFrom == null) await record.replayV2(undefined, sessionReplayPageSize, signal)
+        if (params.replayFrom == null) await record.replay(undefined, sessionReplayPageSize, signal)
         else {
           await ctx.sessions.flush(record.agent.session)
           const reader = await persistence.open(sessionId, 'read', { signal })
-          try { await record.replayV2(reader, sessionReplayPageSize, signal) } finally { await reader.close() }
+          try { await record.replay(reader, sessionReplayPageSize, signal) } finally { await reader.close() }
         }
+        await record.restoreProgress()
       } catch (error: unknown) {
         sessions.delete(sessionId)
         await record.close('session/resume replay failed')
         throw error
-      }
+      } finally { activating.delete(sessionId) }
       return { configOptions: v2Projection.configOptions(result.configOptions ?? []),
         availableCommands: record.availableCommandsV2(),
       }

@@ -1,5 +1,8 @@
 /** Keyless two-model adapter for the generic ACP control-surface conformance test. */
 
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
+import type {} from '@deepseek-ai/dsh-user-approval'
+import type {} from '@deepseek-ai/dsh-tool-todo'
 import type { Context } from '@deepseek-ai/cordis'
 import {
   ToolCallId,
@@ -43,6 +46,23 @@ class ControlSurfaceAdapter extends LlmAdapter {
   }
 
   override async * stream(options: GenerateOptions): AsyncIterable<StreamChunk> {
+    const latest = options.messages.findLast(message => message.role === 'user')
+    if (latest?.source?.kind === 'goal') {
+      const after = options.messages.slice(options.messages.indexOf(latest))
+      if (!after.some(message => message.role === 'tool')) {
+        const callId = ToolCallId(`goal-probe-${latest.source.round}`)
+        yield { type: 'block-start', index: 0, blockType: 'tool-call' }
+        yield { type: 'tool-call-delta', index: 0, id: callId, name: 'acp_goal_probe', argumentsDelta: '{}' }
+        yield { type: 'block-end', index: 0, block: { type: 'tool-call', id: callId, name: 'acp_goal_probe', arguments: '{}' } }
+        yield { type: 'finish', reason: { kind: 'tool-calls' } }
+        return
+      }
+      await new Promise<void>((_resolve, reject) => {
+        if (options.signal?.aborted === true) { reject(new Error('cancelled')); return }
+        options.signal?.addEventListener('abort', () => { reject(new Error('cancelled')) }, { once: true })
+      })
+      return
+    }
     const lastUserIndex = options.messages.findLastIndex(message => message.role === 'user' && message.source?.kind === 'user')
     const current = options.messages.slice(lastUserIndex)
     const userText = current.flatMap(message => message.content)
@@ -98,9 +118,18 @@ class ControlSurfaceAdapter extends LlmAdapter {
 }
 
 export const name = 'control-surface-llm'
-export const inject = ['llm']
+export const inject = ['llm', 'tools', 'approval']
 
 /** Register the deterministic control-surface provider. */
 export function apply(ctx: Context): void {
   ctx.llm.registerAdapter(['control-fixture'], new ControlSurfaceAdapter())
+  ctx.tools.register(defineContentToolFixture({
+    name: 'acp_goal_probe', description: 'Wait for client approval during a goal round.', parameters: {},
+    execute: async (_args, exec) => {
+      if (exec.agent === undefined) throw new Error('goal probe requires an agent')
+      exec.agent.session.append('todo/write', { todos: [{ content: 'Finish the goal', status: 'in_progress' }] })
+      const outcome = await ctx.approval.request({ agent: exec.agent, callId: exec.callId, toolName: 'acp_goal_probe', signal: exec.signal })
+      return [{ type: 'text', text: `goal permission: ${outcome}` }]
+    },
+  }))
 }

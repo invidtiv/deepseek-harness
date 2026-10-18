@@ -14,9 +14,13 @@ const repoRoot = fileURLToPath(new URL('../../../../../../', import.meta.url))
  * @param cwd - caller-owned temporary workspace.
  * @param patches - ordered authored profile patches.
  * @param env - scenario-specific process environment.
+ * @param requestPermission - optional client answer for permission exchanges.
  * @returns client, wire captures, and quiescent process cleanup.
  */
-export function launchV2Profile(cwd: string, patches: string[], env: NodeJS.ProcessEnv = {}): {
+export function launchV2Profile(
+  cwd: string, patches: string[], env: NodeJS.ProcessEnv = {},
+  requestPermission?: (params: v2.RequestPermissionRequest) => Promise<v2.RequestPermissionResponse>,
+): {
   client: v2.ClientContext
   updates: v2.SessionUpdate[]
   stdout: () => string
@@ -41,9 +45,11 @@ export function launchV2Profile(cwd: string, patches: string[], env: NodeJS.Proc
   child.stdout.on('data', (chunk) => { stdout += String(chunk) })
   child.stderr.on('data', (chunk) => { stderr += String(chunk) })
   const updates: v2.SessionUpdate[] = []
-  const connection = v2.client().onNotification('session/update', ({ params }) => { updates.push(params.update) }).connect(v2.ndJsonStream(
-    Writable.toWeb(child.stdin) as WritableStream<Uint8Array>, Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
-  ))
+  const connection = v2.client().onNotification('session/update', ({ params }) => { updates.push(params.update) })
+    .onRequest('session/request_permission', ({ params }) => requestPermission?.(params) ?? Promise.resolve({ outcome: { outcome: 'cancelled' } }))
+    .connect(v2.ndJsonStream(
+      Writable.toWeb(child.stdin) as WritableStream<Uint8Array>, Readable.toWeb(child.stdout) as ReadableStream<Uint8Array>,
+    ))
   return {
     client: connection.agent, updates,
     stdout: () => stdout, stderr: () => stderr,

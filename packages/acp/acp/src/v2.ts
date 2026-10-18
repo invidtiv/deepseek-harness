@@ -6,7 +6,7 @@ import * as v2 from '@agentclientprotocol/sdk/experimental/v2'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import { assistantBlockToAcp } from './content.ts'
-import { assistantUpdates, toolCallUpdate, toolResultUpdate } from './updates.ts'
+import { assistantUpdates, planUpdate, toolCallUpdate, toolResultUpdate } from './updates.ts'
 
 /**
  * Admit only content understood by the shared Harness content adapter.
@@ -96,6 +96,8 @@ export async function eventUpdates(ctx: Context, session: Session, event: Sessio
         ...usage,
       ]
     }
+    case 'todo/write':
+      return [{ sessionUpdate: 'plan_update', plan: { type: 'items', planId: 'todos', entries: planUpdate(event).entries } }]
     case 'tool/call':
       return [{ ...toolCallUpdate(event), sessionUpdate: 'tool_call_update' }]
     case 'tool/result':

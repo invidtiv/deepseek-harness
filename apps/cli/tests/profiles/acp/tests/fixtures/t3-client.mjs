@@ -18,17 +18,51 @@ const options = JSON.parse(await readFile(optionsFile, 'utf8'))
 await Effect.runPromise(Effect.gen(function* () {
   const runtime = yield* Runtime.make(options)
   const events = []
+  const waiters = new Set()
+  const waitFor = predicate => Effect.promise(() => new Promise(resolve => {
+    const check = () => { if (predicate()) { waiters.delete(check); resolve() } }
+    waiters.add(check)
+    check()
+  }))
+  let permissions = 0
+  yield* runtime.handleRequestPermission(() => {
+    permissions++
+    for (const check of waiters) check()
+    return Effect.succeed({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+  })
   yield* runtime.getEvents().pipe(Stream.runForEach(event => {
     if (event._tag === 'EventStreamBarrier') return Deferred.succeed(event.acknowledge, undefined)
     events.push(event)
+    for (const check of waiters) check()
     return Effect.void
   }), Effect.forkChild)
   const started = yield* runtime.start()
   assert.equal(started.initializeResult.protocolVersion, 1)
-  const result = yield* runtime.prompt({ prompt: [{ type: 'text', text: 'exercise the attached server' }] })
+  yield* runtime.prompt({ prompt: [{ type: 'text', text: 'exercise the attached server' }] })
   yield* runtime.drainEvents
-  assert.equal(result.stopReason, 'end_turn')
+  yield* waitFor(() => events.some(event => event._tag === 'ContentDelta' && event.text.includes('model=alpha; tool=5')))
+  yield* runtime.drainEvents
   assert(events.some(event => event._tag === 'ContentDelta' && event.text.includes('model=alpha; tool=5')))
   assert(events.some(event => event._tag === 'ToolCallUpdated'))
-  process.stdout.write(JSON.stringify({ protocolVersion: 1, stopReason: result.stopReason, events: [...new Set(events.map(event => event._tag))] }) + '\n')
-}).pipe(Effect.scoped, Effect.provide(NodeServices.layer)))
+  const command = text => runtime.prompt({ prompt: [{ type: 'text', text }] })
+  yield* command('/goal finish the interoperability task')
+  yield* waitFor(() => permissions === 1)
+  yield* command('/goal pause')
+  yield* runtime.drainEvents
+  assert(events.some(event => event._tag === 'ContentDelta' && event.text.includes('Goal paused')))
+  assert(events.some(event => event._tag === 'PlanUpdated'))
+  yield* command('/goal resume')
+  yield* waitFor(() => permissions === 2)
+  yield* runtime.cancel
+  yield* command('/goal')
+  yield* runtime.drainEvents
+  const sessionId = started.sessionId
+  yield* runtime.closeSession(sessionId)
+  const loaded = yield* runtime.loadSession(sessionId)
+  assert.equal(loaded.sessionId, sessionId)
+  yield* runtime.drainEvents
+  yield* command('/goal clear')
+  yield* runtime.closeSession(sessionId)
+  process.stdout.write(JSON.stringify({ goals: true, permissions, loaded: true, protocolVersion: started.initializeResult.protocolVersion, events: [...new Set(events.map(event => event._tag))] }) + '\n')
+// Leave time for scoped child-process teardown before execFile's outer deadline.
+}).pipe(Effect.timeout('25 seconds'), Effect.scoped, Effect.provide(NodeServices.layer)))

@@ -517,11 +517,13 @@ describe('normalizeSessionLog', () => {
       time: 5,
       data: { operation: 'create', createdAt: 123, updatedAt: 124 },
     })
-    const tool = JSON.stringify({ type: 'tool/result', seq: 3, time: 6, data: { createdAt: 125 } })
+    const tool = JSON.stringify({ type: 'tool/result', seq: 3, time: 6, data: { createdAt: 125, clearedAt: 126 } })
     const goalWithoutClocks = JSON.stringify({ type: 'goal/change', seq: 4, time: 7, data: { operation: 'resume' } })
-    const out = normalizeSessionLog(`${header({})}\n${goal}\n${tool}\n${goalWithoutClocks}\n`, ctx)
+    const cleared = JSON.stringify({ type: 'goal/change', seq: 5, time: 8, data: { operation: 'clear', clearedAt: 127 } })
+    const out = normalizeSessionLog(`${header({})}\n${goal}\n${tool}\n${goalWithoutClocks}\n${cleared}\n`, ctx)
     expect(out).toContain('"operation":"create","createdAt":0,"updatedAt":0')
-    expect(out).toContain('"createdAt":125')
+    expect(out).toContain('"createdAt":125,"clearedAt":126')
+    expect(out).toContain('"operation":"clear","clearedAt":0')
     expect(out).toContain('"operation":"resume"')
   })
 

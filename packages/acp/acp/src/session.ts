@@ -19,9 +19,11 @@ import { AcpContentError, admitAcpPrompt } from './content.ts'
 import { turnEndToStopReason } from './codec.ts'
 import { mountAcpMcpServers } from './mcp.ts'
 import { AcpModelControl } from './model-control.ts'
-import { assistantUpdates, toolCallUpdate, toolResultUpdate } from './updates.ts'
+import { assistantUpdates, planUpdate, replayUpdates, toolCallUpdate, toolResultUpdate } from './updates.ts'
 import type * as v2 from '@agentclientprotocol/sdk/experimental/v2'
 import { eventUpdates, userUpdate } from './v2.ts'
+import type { GoalView } from '@deepseek-ai/dsh-goal'
+import type {} from '@deepseek-ai/dsh-session-projection'
 import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'
 
 /** The continuable-subagent teardown used without depending on the subagent package. */
@@ -504,22 +506,40 @@ export class AcpSession {
   }
 
   /**
-   * Replay retained conversation facts before reporting the current idle state.
-   * @param reader - storage reader when the client requested retained history.
-   * @param pageSize - configured maximum events per storage read.
-   * @param signal - resume request cancellation.
-   * @returns ordered replay completion.
+   * Replay retained conversation facts, then report v2 activity state.
+   * @param reader - persisted reader when history was requested; owned by the caller.
+   * @param pageSize - maximum events fetched per storage read.
+   * @param signal - activation request cancellation.
+   * @returns completion after all retained updates have been delivered.
    */
-  async replayV2(reader: SessionHandle | undefined, pageSize: number, signal: AbortSignal): Promise<void> {
+  async replay(reader: SessionHandle | undefined, pageSize: number, signal: AbortSignal): Promise<void> {
     const end = this.agent.session.seq
     const replay = this.outputTail.then(async () => {
+      let planVisible = false
       if (reader !== undefined) {
         for (let offset = 0; offset < end;) {
+          signal.throwIfAborted()
           const { events } = await reader.read(offset, Math.min(pageSize, end - offset), { signal })
           if (events.length === 0) throw internalError('session replay is missing persisted events')
           for (const event of events) {
-            for (const update of await eventUpdates(this.ctx, this.agent.session, event)) {
-              await this.notifyV2?.({ sessionId: this.agent.session.id, update })
+            signal.throwIfAborted()
+            if (event.type === 'turn/start' && planVisible) {
+              const entries: [] = []
+              if (this.notifyV2 !== undefined) await this.notifyV2({ sessionId: this.agent.session.id,
+                update: { sessionUpdate: 'plan_update', plan: { type: 'items', planId: 'todos', entries } },
+              })
+              else await this.notify({ sessionId: this.agent.session.id, update: { sessionUpdate: 'plan', entries } })
+              planVisible = false
+            }
+            if (event.type === 'todo/write') planVisible = event.data.todos.length > 0
+            if (this.notifyV2 !== undefined) {
+              for (const update of await eventUpdates(this.ctx, this.agent.session, event)) {
+                await this.notifyV2({ sessionId: this.agent.session.id, update })
+              }
+            } else {
+              for (const update of await replayUpdates(this.ctx, this.agent.session, event)) {
+                await this.notify({ sessionId: this.agent.session.id, update })
+              }
             }
           }
           offset += events.length
@@ -529,6 +549,48 @@ export class AcpSession {
     })
     this.outputTail = replay.catch(() => {})
     await replay
+  }
+
+  /**
+   * Restore the current goal and standing plan without replaying conversation history.
+   * @returns completion of the ordered state updates.
+   */
+  async restoreProgress(): Promise<void> {
+    this.goalChanged()
+    const projections = this.agent.ctx.get('sessionProjections')
+    if (projections !== undefined) {
+      const todos = projections.stateOf(this.agent.session, 'todos')
+      if (todos != null) this.sendPlan({ sessionUpdate: 'plan', entries: todos.map(item => ({ ...item, priority: 'medium' })) })
+    }
+    await this.outputTail
+  }
+
+  /** Publish the current goal, including process-local activation and admitted rounds. */
+  goalChanged(): void {
+    const goals = this.agent.ctx.get('goals')
+    if (goals === undefined) return
+    const goal = goals.get(this.agent)
+    if (goal === undefined && this.goalText === undefined) return
+    const text = goal === undefined ? 'Goal cleared.' : formatGoal(goal)
+    if (text === this.goalText) return
+    this.goalText = text
+    const messageId = `goal:${this.agent.session.id}:${this.agent.session.seq}:${goal?.activation ?? 'cleared'}`
+    if (this.notifyV2 !== undefined) {
+      this.enqueueV2(() => [{ sessionUpdate: 'agent_message', messageId, content: [{ type: 'text', text }] }])
+    } else {
+      this.outputTail = this.outputTail.then(() => this.notify({ sessionId: this.agent.session.id,
+        update: { sessionUpdate: 'agent_message_chunk', messageId, content: { type: 'text', text: `${text}\n` } },
+      }))
+    }
+  }
+
+  private goalText: string | undefined
+  private planVisible = false
+
+  private sendPlan(update: ReturnType<typeof planUpdate>): void {
+    this.planVisible = update.entries.length > 0
+    if (this.notifyV2 !== undefined) this.enqueueV2(() => [{ sessionUpdate: 'plan_update', plan: { type: 'items', planId: 'todos', entries: update.entries } }])
+    else this.outputTail = this.outputTail.then(() => this.notify({ sessionId: this.agent.session.id, update }))
   }
 
   /** Cancel the active prompt, or autonomous work when no ACP prompt exists. */
@@ -549,6 +611,10 @@ export class AcpSession {
    */
   onSessionEvent(session: Session, event: SessionEvent): void {
     try {
+      if (event.type === 'todo/write' || event.type === 'turn/start') {
+        if (event.type === 'todo/write' || this.planVisible) this.sendPlan(planUpdate(event))
+        return
+      }
       if (this.notifyV2 !== undefined) {
         // The insertion acknowledgement owns the live user echo; replay reads user/message.
         if (event.type !== 'user/message') this.enqueueV2(() => eventUpdates(this.ctx, session, event))
@@ -760,4 +826,10 @@ export class AcpSession {
       })
     /* v8 ignore stop */
   }
+}
+
+/** Render goal state for clients that support standard assistant text updates. */
+function formatGoal(goal: GoalView): string {
+  return `Goal ${goal.phase} (${goal.activation}): ${goal.objective}\nRounds: ${goal.roundsStarted}/${goal.maxGoalRounds}.`
+    + (goal.blockedReason === undefined ? '' : `\nBlocked: ${goal.blockedReason.message}`)
 }
