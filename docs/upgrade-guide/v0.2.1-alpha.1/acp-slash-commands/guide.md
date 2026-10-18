@@ -19,3 +19,5 @@ ACP dispatches registered slash commands through the receiving Agent's command r
 4. Verify `/goal` returns goal status or usage without starting a model request. See the [ACP command reference](../../../../packages/acp/acp/README.md#slash-commands) for discovery, lifecycle, and v2 replay behavior.
 
 Goal status now arrives independently as assistant text, including after a command response. Handle these updates until the session closes. V1 clients may use advertised `session/load` to replay retained history; both versions receive task-plan updates and current goal state on restoration.
+
+ACP now enables v2 negotiation by default. Clients requesting version 2 must handle v2 lifecycle notifications and assistant message chunks with stable IDs; set `experimentalV2: false` explicitly to retain a v1-only server. Verify the initialize response reports version 2 in T3. Its runtime waits for idle before resolving `prompt()`, so cancel active goal work before sending another prompt through that API.

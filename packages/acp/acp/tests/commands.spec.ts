@@ -52,8 +52,8 @@ describe.each([1, 2] as const)('ACP v%s commands', (version) => {
   function output() {
     return client === undefined
       ? harness.updates.flatMap(update => update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text' ? [update.content.text] : [])
-      : updates.flatMap(({ update }) => v2.SessionUpdate.isAgentMessage(update)
-        ? (update.content ?? []).flatMap(block => v2.ContentBlock.isText(block) ? [block.text] : []) : [])
+      : updates.flatMap(({ update }) => v2.SessionUpdate.isAgentMessageChunk(update)
+        && v2.ContentBlock.isText(update.content) ? [update.content.text] : [])
   }
 
   it('advertises commands and executes goal controls without a model request', async () => {

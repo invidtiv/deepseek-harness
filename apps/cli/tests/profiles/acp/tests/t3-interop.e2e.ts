@@ -19,7 +19,7 @@ it.skipIf(t3Root === undefined)('T3 generic ACP runtime launches dsh and runs to
     const launch = resolveExampleLaunch({
       srcBin: join(repoRoot, 'apps/cli/src/bin.ts'), libBin: join(repoRoot, 'apps/cli/lib/bin.js'),
       configArgs: ['--profile', 'acp', '--patch', patch], tsconfigPath: join(repoRoot, 'tsconfig.json'), sourceImport: 'tsx/esm',
-      env: { DSH_HOME: join(cwd, '.dsh'), DSH_AGENTS_HOME: join(cwd, '.agents'), DSH_CONFORMANCE_PERSISTENCE_ROOT: join(cwd, '.sessions'), DSH_ACP_V2: '0', DSH_TELEMETRY_DISABLED: '1' },
+      env: { DSH_HOME: join(cwd, '.dsh'), DSH_AGENTS_HOME: join(cwd, '.agents'), DSH_CONFORMANCE_PERSISTENCE_ROOT: join(cwd, '.sessions'), DSH_TELEMETRY_DISABLED: '1' },
     })
     const optionsFile = join(cwd, 'client.json')
     await writeFile(optionsFile, JSON.stringify({
@@ -29,7 +29,7 @@ it.skipIf(t3Root === undefined)('T3 generic ACP runtime launches dsh and runs to
     }))
     const probe = fileURLToPath(new URL('./fixtures/t3-client.mjs', import.meta.url))
     const result = await promisify(execFile)(process.execPath, ['--import', import.meta.resolve('tsx/esm'), probe, t3Root!, optionsFile], { timeout: 35_000 })
-    expect(JSON.parse(result.stdout)).toMatchObject({ protocolVersion: 1, goals: true, permissions: 2, loaded: true })
+    expect(JSON.parse(result.stdout)).toMatchObject({ protocolVersion: 2, goals: true, permissions: 2, loaded: true })
   } finally {
     await rm(cwd, { recursive: true, force: true })
   }

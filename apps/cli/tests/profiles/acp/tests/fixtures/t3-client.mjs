@@ -11,6 +11,7 @@ const load = name => import(pathToFileURL(requireT3.resolve(name)).href)
 const Effect = await load('effect/Effect')
 const Stream = await load('effect/Stream')
 const Deferred = await load('effect/Deferred')
+const Fiber = await load('effect/Fiber')
 const NodeServices = await load('@effect/platform-node/NodeServices')
 const Runtime = await import(pathToFileURL(join(root, 'apps/server/src/provider/acp/AcpSessionRuntime.ts')).href)
 const options = JSON.parse(await readFile(optionsFile, 'utf8'))
@@ -37,7 +38,7 @@ await Effect.runPromise(Effect.gen(function* () {
     return Effect.void
   }), Effect.forkChild)
   const started = yield* runtime.start()
-  assert.equal(started.initializeResult.protocolVersion, 1)
+  assert.equal(started.initializeResult.protocolVersion, 2)
   yield* runtime.prompt({ prompt: [{ type: 'text', text: 'exercise the attached server' }] })
   yield* runtime.drainEvents
   yield* waitFor(() => events.some(event => event._tag === 'ContentDelta' && event.text.includes('model=alpha; tool=5')))
@@ -45,15 +46,18 @@ await Effect.runPromise(Effect.gen(function* () {
   assert(events.some(event => event._tag === 'ContentDelta' && event.text.includes('model=alpha; tool=5')))
   assert(events.some(event => event._tag === 'ToolCallUpdated'))
   const command = text => runtime.prompt({ prompt: [{ type: 'text', text }] })
-  yield* command('/goal finish the interoperability task')
+  const goalRun = yield* command('/goal finish the interoperability task').pipe(Effect.forkChild)
   yield* waitFor(() => permissions === 1)
+  yield* runtime.cancel
+  yield* Fiber.join(goalRun)
   yield* command('/goal pause')
   yield* runtime.drainEvents
   assert(events.some(event => event._tag === 'ContentDelta' && event.text.includes('Goal paused')))
   assert(events.some(event => event._tag === 'PlanUpdated'))
-  yield* command('/goal resume')
+  const resumedRun = yield* command('/goal resume').pipe(Effect.forkChild)
   yield* waitFor(() => permissions === 2)
   yield* runtime.cancel
+  yield* Fiber.join(resumedRun)
   yield* command('/goal')
   yield* runtime.drainEvents
   const sessionId = started.sessionId

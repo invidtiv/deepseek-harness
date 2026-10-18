@@ -32,7 +32,7 @@ export function launchV2Profile(
     srcBin: join(repoRoot, 'apps/cli/src/bin.ts'), libBin: join(repoRoot, 'apps/cli/lib/bin.js'),
     configArgs: ['--profile', 'acp', ...materialized.flatMap(patch => ['--patch', patch])],
     tsconfigPath: join(repoRoot, 'tsconfig.json'), sourceImport: 'tsx/esm',
-    env: { ...env, DSH_HOME: join(cwd, '.dsh'), DSH_AGENTS_HOME: join(cwd, '.agents'), DSH_ACP_V2: '1', DSH_TELEMETRY_DISABLED: '1' },
+    env: { ...env, DSH_HOME: join(cwd, '.dsh'), DSH_AGENTS_HOME: join(cwd, '.agents'), DSH_TELEMETRY_DISABLED: '1' },
   })
   const child = spawn(launch.command, launch.args, { cwd, env: { ...process.env, ...launch.env }, stdio: 'pipe' })
   const closed = new Promise<void>((resolve, reject) => {

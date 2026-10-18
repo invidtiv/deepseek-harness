@@ -420,7 +420,9 @@ describe('ACP prompt lifecycle', () => {
     const saveImages = harness.attachments!.saveImages.bind(harness.attachments!)
     vi.spyOn(harness.attachments!, 'saveImages').mockImplementationOnce(async (inputs) => {
       const refs = await saveImages(inputs)
-      queueMicrotask(() => { void harness!.client.cancel({ sessionId }) })
+      await harness!.client.cancel({ sessionId })
+      // A wire round trip confirms cancellation reached the server before admission resumes.
+      await harness!.client.listSessions({})
       return refs
     })
 

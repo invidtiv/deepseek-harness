@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 何时选择
 
-当自动化应拥有交互时选择它：管理持久会话、工具、模型选择与权限的进程外 subagent、测试运行器或脚本化控制器。当人类需要 DSH 专用呈现卡片、标题、终端视图或 elicitation 时请避开；本服务器提供 ACP v1 与可选的草案 ACP v2。
+当自动化应拥有交互时选择它：管理持久会话、工具、模型选择与权限的进程外 subagent、测试运行器或脚本化控制器。当人类需要 DSH 专用呈现卡片、标题、终端视图或 elicitation 时请避开；本服务器提供 ACP v1 与协商的草案 ACP v2。
 
 ### 最小配置
 
@@ -47,7 +47,7 @@ kind: "package-reference"
 | `provider` | — | 每个会话 agent 的提供方路由 |
 | `model` | — | 每个会话 agent 的模型 |
 | `sessionListPageSize` | `100` | 单页 `session/list` 返回的最大摘要数量 |
-| `experimentalV2` | `false` | 启用草案 v2 协商，同时保留 v1 |
+| `experimentalV2` | `true` | 启用草案 v2 协商，同时保留 v1 |
 | `sessionReplayPageSize` | `256` | 转录回放每页读取的最大持久事件数 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-acp)是每个受支持字段及其 JSDoc 的穷尽式真源。
@@ -96,7 +96,7 @@ V1 在创建和恢复时通过 `available_commands_update` 公布完整命令列
 
 ### 草案 ACP v2
 
-在 ACP 插件配置行设置 `experimentalV2: true`，即可接受 `protocolVersion: 2` 的 `initialize` 请求。此连接使用 v2 的 `info` 与 `capabilities`；v1 客户端保留原有握手与提示词生命周期。固定的 SDK `1.7.0` 提供独立的 v1 与实验性 v2 校验器和处理程序。不公布不稳定扩展或身份验证方法。
+ACP 默认启用 v2 协商；仅在只部署 v1 时设置 `experimentalV2: false`。请求 `protocolVersion: 2` 的客户端将获得 v2。此连接使用 v2 的 `info` 与 `capabilities`；v1 客户端保留原有握手与提示词生命周期。固定的 SDK `1.7.0` 提供独立的 v1 与实验性 v2 校验器和处理程序。不公布不稳定扩展或身份验证方法。
 
 配置档补丁会替换目标行的整个 `config`。当 ACP 负责初始模型选择时，须在 `experimentalV2` 旁同时填写 `provider` 和 `model`；仅包含开关的覆盖层会移除该选择。
 
@@ -114,9 +114,9 @@ ACP 与 Web 可以通过同一个 Harness 主目录（`$DSH_HOME`，默认为 `~
 
 v2 提示词在通过校验并插入后返回规范 Harness 用户 `messageId`，无需等待模型完成。服务器发送已接受的用户消息，然后发送 `running`。权限交换报告 `requires_action`，所有未完成回答到达后恢复 `running`。完成时报告 `idle` 与停止原因，包括 `cancelled` 或 `error`。`$/cancel_request` 只控制准入；接受后使用 `session/cancel`。每个会话仍只允许一个前台提示词。
 
-已提交的 assistant 文本与 thought 使用整条消息替换更新；工具调用使用 `tool_call_update` upsert。用户与 assistant ID 保留 Harness 标识；thought ID 在 assistant ID 后添加确定性的 `:thought` 后缀。模型选择器使用 `configId` 与 `groupId`。不带 `replayFrom` 的恢复报告当前空闲状态；`replayFrom: { type: "start" }` 还会通过分页存储读取回放保留的用户编写消息、assistant 消息与工具事实。注入的模型上下文不会成为用户回显。
+已提交的 assistant 文本与 thought 使用带稳定 ID 的消息分块；工具调用使用 `tool_call_update` upsert。用户与 assistant ID 保留 Harness 标识；thought ID 在 assistant ID 后添加确定性的 `:thought` 后缀。模型选择器使用 `configId` 与 `groupId`。不带 `replayFrom` 的恢复报告当前空闲状态；`replayFrom: { type: "start" }` 还会通过分页存储读取回放保留的用户编写消息、assistant 消息与工具事实。注入的模型上下文不会成为用户回显。
 
-[v2 迁移指南](https://agentclientprotocol.com/protocol/v2/migration)与[基础 schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json)定义草案协议格式。显示终端与附加工作区根目录没有 ACP 投影；v2 协商不意味着支持这些功能。[T3 互操作测试](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts)导入由 `DSH_T3_CODE_ROOT` 选择的已安装检出；探针检查 MCP 工具、目标轮次、权限、暂停／恢复、取消和历史加载。
+[v2 迁移指南](https://agentclientprotocol.com/protocol/v2/migration)与[基础 schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json)定义草案协议格式。显示终端与附加工作区根目录没有 ACP 投影；v2 协商不意味着支持这些功能。[T3 互操作测试](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts)导入由 `DSH_T3_CODE_ROOT` 选择的已安装检出；探针要求 v2，并检查 MCP 工具、目标轮次、权限、暂停／恢复、取消和历史加载。T3 的 `prompt()` 等待空闲状态，因此通过该 API 发送下一条提示词前须取消正在运行的目标。
 
 -----
 

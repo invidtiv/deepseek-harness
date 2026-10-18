@@ -22,4 +22,4 @@ A private goal protocol would require client-specific support for basic progress
 
 ## Consequences
 
-Clients receive goal updates independently of command completion. V1 load replays retained history, while resume restores current progress without transcript replay. Recorded-session and real-profile tests cover these distinctions; the T3 probe uses stable v1 because the tested generic runtime does not project v2 whole-message text into its event stream.
+Clients receive goal updates independently of command completion. V1 load replays retained history, while resume restores current progress without transcript replay. Recorded-session and real-profile tests cover these distinctions; the T3 probe requires v2. Assistant output uses standard v2 chunks with stable message IDs because the tested generic runtime projects chunks into its event stream but omits whole-message replacements.

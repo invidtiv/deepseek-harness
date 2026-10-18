@@ -23,7 +23,7 @@ describe('negotiated ACP v2', () => {
     permission = async () => ({ outcome: { outcome: 'cancelled' } })
     harness = await makeBridgeHarness({
       ...options,
-      config: { experimentalV2: true, ...options.config },
+      config: { ...options.config },
       connectClient: (stream) => {
         client = v2.client()
           .onNotification('session/update', ({ params }) => { updates.push(params) })
@@ -41,13 +41,13 @@ describe('negotiated ACP v2', () => {
     })
   }
 
-  it('negotiates only advertised baseline capabilities and retains the v1 handshake', async () => {
+  it('negotiates v2 by default and retains the v1 handshake', async () => {
     expect(await setup()).toEqual({
       protocolVersion: 2, info: { name: 'deepseek-harness', version: '0.2.1-alpha.1' },
       capabilities: { session: { mcp: { stdio: {}, http: {} }, prompt: {} } }, authMethods: [],
     })
     await harness.dispose()
-    harness = await makeBridgeHarness({ config: { experimentalV2: true }, script: [textResponse('v1')] })
+    harness = await makeBridgeHarness({ script: [textResponse('v1')] })
     expect(await harness.client.initialize({ protocolVersion: 1 })).toMatchObject({ protocolVersion: 1, agentInfo: { name: 'deepseek-harness-acp' } })
     const { sessionId } = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })
     expect(await harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'hello' }] })).toEqual({ stopReason: 'end_turn' })
@@ -76,8 +76,8 @@ describe('negotiated ACP v2', () => {
     expect(configOptions?.[0]).toHaveProperty('configId', 'model')
     const accepted = await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'question' }] })
     await idle(sessionId, 'end_turn')
-    const message = updates.find(item => item.update.sessionUpdate === 'agent_message')?.update
-    expect(message).toMatchObject({ content: [{ type: 'text', text: 'answer' }] })
+    const message = updates.find(item => item.update.sessionUpdate === 'agent_message_chunk')?.update
+    expect(message).toMatchObject({ content: { type: 'text', text: 'answer' } })
     expect(message).toHaveProperty('messageId')
     expect(updates.some(item => item.update.sessionUpdate === 'usage_update')).toBe(true)
     await client.request('session/close', { sessionId })
@@ -94,7 +94,7 @@ describe('negotiated ACP v2', () => {
     const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
     expect(await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'hello' }] })).toHaveProperty('messageId')
     await idle(sessionId, 'error')
-    expect(updates.some(item => item.update.sessionUpdate === 'agent_message')).toBe(false)
+    expect(updates.some(item => item.update.sessionUpdate === 'agent_message_chunk')).toBe(false)
   })
 
   it('carries permissions as subjects and brackets the request with foreground states', async () => {
@@ -140,8 +140,8 @@ describe('negotiated ACP v2', () => {
     expect(updates[0]?.update).toMatchObject({ sessionUpdate: 'user_message', content: [image] })
   })
 
-  it('leaves v2 disabled by default', async () => {
-    harness = await makeBridgeHarness()
+  it('allows an explicit v1-only deployment', async () => {
+    harness = await makeBridgeHarness({ config: { experimentalV2: false } })
     expect(await harness.client.initialize({ protocolVersion: 2 })).toMatchObject({ protocolVersion: 1 })
   })
 
@@ -189,7 +189,7 @@ describe('negotiated ACP v2', () => {
     await client.request('session/close', { sessionId })
     updates = []
     await client.request('session/resume', { sessionId, cwd: process.cwd(), replayFrom: { type: 'start' } })
-    expect(updates.some(item => item.update.sessionUpdate === 'agent_message')).toBe(true)
+    expect(updates.some(item => item.update.sessionUpdate === 'agent_message_chunk')).toBe(true)
   })
 
   it('fails closed on unknown permission outcomes and does not revive completed work after a late answer', async () => {

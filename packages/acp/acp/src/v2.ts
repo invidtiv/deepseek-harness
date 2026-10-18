@@ -71,30 +71,26 @@ export async function userUpdate(ctx: Context, message: UserMessage): Promise<v2
 }
 
 /**
- * Project committed events using v2 replacement semantics.
+ * Project committed events into v2 updates with stable message identities.
  * @param ctx - attachment and usage services.
  * @param session - authoritative session.
  * @param event - durable semantic event, never a provider delta.
- * @returns ordered v2 upserts.
+ * @returns ordered message chunks and state replacements.
  */
 export async function eventUpdates(ctx: Context, session: Session, event: SessionEvent): Promise<v2.SessionUpdate[]> {
   switch (event.type) {
     case 'user/message':
       return event.data.source.kind === 'user' ? [await userUpdate(ctx, event.data)] : []
     case 'assistant/message': {
-      const content: v2.ContentBlock[] = []
-      const thought: v2.ContentBlock[] = []
-      const usage: v2.SessionUpdate[] = []
+      const updates: v2.SessionUpdate[] = []
       for (const update of await assistantUpdates(ctx, session, event)) {
-        if (update.sessionUpdate === 'agent_message_chunk') content.push(update.content)
-        else if (update.sessionUpdate === 'agent_thought_chunk') thought.push(update.content)
-        else if (update.sessionUpdate === 'usage_update') usage.push(update)
+        if (update.sessionUpdate === 'agent_message_chunk') {
+          updates.push({ ...update, messageId: event.data.message.id })
+        } else if (update.sessionUpdate === 'agent_thought_chunk') {
+          updates.push({ ...update, messageId: `${event.data.message.id}:thought` })
+        } else if (update.sessionUpdate === 'usage_update') updates.push(update)
       }
-      return [
-        { sessionUpdate: 'agent_thought', messageId: `${event.data.message.id}:thought`, content: thought },
-        { sessionUpdate: 'agent_message', messageId: event.data.message.id, content },
-        ...usage,
-      ]
+      return updates
     }
     case 'todo/write':
       return [{ sessionUpdate: 'plan_update', plan: { type: 'items', planId: 'todos', entries: planUpdate(event).entries } }]

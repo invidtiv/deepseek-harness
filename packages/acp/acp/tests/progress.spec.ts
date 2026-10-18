@@ -74,8 +74,8 @@ describe.each([1, 2] as const)('ACP v%s progress', (version) => {
     agent.session.append('todo/write', { todos: [{ content: 'Implement', status: 'in_progress' }] })
     const texts = () => version === 1
       ? harness.updates.flatMap(update => update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text' ? [update.content.text] : [])
-      : updates.flatMap(({ update }) => v2.SessionUpdate.isAgentMessage(update)
-        ? (update.content ?? []).flatMap(block => v2.ContentBlock.isText(block) ? [block.text] : []) : [])
+      : updates.flatMap(({ update }) => v2.SessionUpdate.isAgentMessageChunk(update)
+        && v2.ContentBlock.isText(update.content) ? [update.content.text] : [])
     const plans = () => version === 1
       ? harness.updates.flatMap(update => update.sessionUpdate === 'plan' ? [update.entries] : [])
       : updates.flatMap(({ update }) => v2.SessionUpdate.isPlanUpdate(update) && v2.PlanUpdateContent.isItems(update.plan)

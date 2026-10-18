@@ -29,7 +29,7 @@ Use this package when a script, test runner, or another harness needs to run age
 
 ### When to choose it
 
-Choose it when automation should own the interaction: an out-of-process subagent, test runner, or scripted controller that manages persistent sessions, tools, model selection, and permissions. Avoid it when a human needs DSH-specific presentation cards, titles, terminal views, or elicitation; this server exposes ACP v1 and opt-in draft ACP v2.
+Choose it when automation should own the interaction: an out-of-process subagent, test runner, or scripted controller that manages persistent sessions, tools, model selection, and permissions. Avoid it when a human needs DSH-specific presentation cards, titles, terminal views, or elicitation; this server exposes ACP v1 and negotiated draft ACP v2.
 
 ### Minimal configuration
 
@@ -47,7 +47,7 @@ Every session the server creates uses the provider and model configured here. Bo
 | `provider` | — | Provider route for every session's agent |
 | `model` | — | Model for every session's agent |
 | `sessionListPageSize` | `100` | Maximum summaries returned in one `session/list` page |
-| `experimentalV2` | `false` | Enable draft v2 negotiation while retaining v1 |
+| `experimentalV2` | `true` | Enable draft v2 negotiation while retaining v1 |
 | `sessionReplayPageSize` | `256` | Maximum persisted events read per transcript replay page |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-acp) is the exhaustive source for every accepted field and its JSDoc.
@@ -96,7 +96,7 @@ Persisted `todo/write` lists become complete ACP plans: v1 `plan` updates and v2
 
 ### Draft ACP v2
 
-Set `experimentalV2: true` on the ACP plugin's configuration row to allow `initialize` requests with `protocolVersion: 2`. The connection then uses v2 `info` and `capabilities`; v1 clients keep their existing handshake and prompt lifecycle. The pinned SDK `1.7.0` supplies separate v1 and experimental v2 validators and handlers. No unstable extensions or authentication methods are advertised.
+ACP enables v2 negotiation by default; set `experimentalV2: false` only for a v1-only deployment. A client requesting `protocolVersion: 2` receives v2. The connection then uses v2 `info` and `capabilities`; v1 clients keep their existing handshake and prompt lifecycle. The pinned SDK `1.7.0` supplies separate v1 and experimental v2 validators and handlers. No unstable extensions or authentication methods are advertised.
 
 Profile patches replace the whole `config` of a targeted row. Include `provider` and `model` alongside `experimentalV2` when ACP owns the initial selection; an overlay containing only the flag removes that selection.
 
@@ -114,9 +114,9 @@ Move the complete adapter configuration into this shared row once; patches repla
 
 A v2 prompt returns its canonical Harness user `messageId` after validated insertion, before the model finishes. The server emits the accepted user message, then `running`. Permission exchanges report `requires_action`, returning to `running` after the outstanding answers arrive. Completion reports `idle` with a stop reason, including `cancelled` or `error`. `$/cancel_request` owns admission only; after acceptance use `session/cancel`. Each session still admits one foreground prompt at a time.
 
-Committed assistant text and thoughts use whole-message replacement updates; tool calls use `tool_call_update` upserts. User and assistant IDs retain their Harness identities; thought IDs add a deterministic `:thought` suffix to the assistant ID. Model selectors use `configId` and `groupId`. Resume without `replayFrom` reports the current idle state; `replayFrom: { type: "start" }` additionally replays retained user-authored messages, assistant messages, and tool facts from paged storage reads. Injected model context is not a user echo.
+Committed assistant text and thoughts use message chunks with stable IDs; tool calls use `tool_call_update` upserts. User and assistant IDs retain their Harness identities; thought IDs add a deterministic `:thought` suffix to the assistant ID. Model selectors use `configId` and `groupId`. Resume without `replayFrom` reports the current idle state; `replayFrom: { type: "start" }` additionally replays retained user-authored messages, assistant messages, and tool facts from paged storage reads. Injected model context is not a user echo.
 
-The [v2 migration guide](https://agentclientprotocol.com/protocol/v2/migration) and [baseline schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json) define the draft wire format. Display terminals and additional workspace roots have no ACP projection; they are not implied by v2 negotiation. The [T3 interoperability test](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts) imports an installed checkout selected by `DSH_T3_CODE_ROOT`; the probe checks MCP tools, goal rounds, permissions, pause/resume, cancellation, and history loading.
+The [v2 migration guide](https://agentclientprotocol.com/protocol/v2/migration) and [baseline schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json) define the draft wire format. Display terminals and additional workspace roots have no ACP projection; they are not implied by v2 negotiation. The [T3 interoperability test](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts) imports an installed checkout selected by `DSH_T3_CODE_ROOT`; the probe requires v2 and checks MCP tools, goal rounds, permissions, pause/resume, cancellation, and history loading. T3's `prompt()` waits for idle, so a running goal must be cancelled before issuing another prompt through that API.
 
 -----
 

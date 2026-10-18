@@ -329,7 +329,7 @@ export class AcpSession {
         const text = execution.result.text ?? ''
         if (this.notifyV2 !== undefined) {
           this.enqueueV2(() => [
-            { sessionUpdate: 'agent_message', messageId: `${messageId}:result`, content: [{ type: 'text', text }] },
+            { sessionUpdate: 'agent_message_chunk', messageId: `${messageId}:result`, content: { type: 'text', text } },
             ...this.inflight === undefined && this.agent.status === 'idle'
               ? [{ sessionUpdate: 'state_update' as const, state: 'idle' as const, stopReason: 'end_turn' as const }] : [],
           ])
@@ -576,7 +576,7 @@ export class AcpSession {
     this.goalText = text
     const messageId = `goal:${this.agent.session.id}:${this.agent.session.seq}:${goal?.activation ?? 'cleared'}`
     if (this.notifyV2 !== undefined) {
-      this.enqueueV2(() => [{ sessionUpdate: 'agent_message', messageId, content: [{ type: 'text', text }] }])
+      this.enqueueV2(() => [{ sessionUpdate: 'agent_message_chunk', messageId, content: { type: 'text', text } }])
     } else {
       this.outputTail = this.outputTail.then(() => this.notify({ sessionId: this.agent.session.id,
         update: { sessionUpdate: 'agent_message_chunk', messageId, content: { type: 'text', text: `${text}\n` } },

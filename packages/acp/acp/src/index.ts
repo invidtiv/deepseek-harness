@@ -95,7 +95,7 @@ export const Config: Schema<AcpConfig> = Schema.object({
   provider: Schema.string(),
   model: Schema.string(),
   sessionListPageSize: Schema.natural().min(1).default(DEFAULT_SESSION_LIST_PAGE_SIZE),
-  experimentalV2: Schema.boolean().default(false),
+  experimentalV2: Schema.boolean().default(true),
   sessionReplayPageSize: Schema.natural().min(1).default(DEFAULT_SESSION_REPLAY_PAGE_SIZE),
 })
 
@@ -110,6 +110,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
   const persistence = ctx.sessionPersistence
   const logger = ctx.logger
   const sessionListPageSize = resolveSessionListPageSize(config.sessionListPageSize)
+  const experimentalV2 = config.experimentalV2 ?? true
   const sessionReplayPageSize = config.sessionReplayPageSize ?? DEFAULT_SESSION_REPLAY_PAGE_SIZE
   const sessions = new Map<SessionId, AcpSession>()
   const activating = new Set<SessionId>()
@@ -529,8 +530,8 @@ export function apply(ctx: Context, config: AcpConfig): void {
     })
     .onNotification('session/cancel', ({ params }) => implementation.cancel(params))
   const router = v2.agentProtocolRouter().withV1(app)
-  if (config.experimentalV2 === true) router.withV2(appV2)
-  const connection = config.experimentalV2 === true ? router.connect(stream) : app.connect(stream as Stream)
+  if (experimentalV2) router.withV2(appV2)
+  const connection = experimentalV2 ? router.connect(stream) : app.connect(stream as Stream)
 
   let quiescing: Promise<void> | undefined
   const quiesce = (): Promise<void> => {

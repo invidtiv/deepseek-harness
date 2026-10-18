@@ -70,8 +70,8 @@ describe('automation-only ACP bridge', () => {
     expect(noStore.agentCapabilities?.promptCapabilities?.image).toBe(false)
   })
 
-  it('negotiates an unsupported version and accepts the required no-op authentication call', async () => {
-    harness = await makeBridgeHarness()
+  it('retains legacy negotiation and no-op authentication in a v1-only deployment', async () => {
+    harness = await makeBridgeHarness({ config: { experimentalV2: false } })
     const response = await harness.client.initialize({ protocolVersion: 0, clientCapabilities: {} })
     expect(response.protocolVersion).toBe(PROTOCOL_VERSION)
     await expect(harness.client.authenticate({ methodId: 'unused' })).resolves.toEqual({})
