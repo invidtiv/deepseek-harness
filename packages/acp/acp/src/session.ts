@@ -21,7 +21,7 @@ import { mountAcpMcpServers } from './mcp.ts'
 import { AcpModelControl } from './model-control.ts'
 import { assistantUpdates, planUpdate, replayUpdates, toolCallUpdate, toolResultUpdate } from './updates.ts'
 import type * as v2 from '@agentclientprotocol/sdk/experimental/v2'
-import { eventUpdates, userUpdate } from './v2.ts'
+import { configOptions as configOptionsV2, eventUpdates, userUpdate } from './v2.ts'
 import type { GoalView } from '@deepseek-ai/dsh-goal'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'
@@ -78,6 +78,16 @@ function invalidParams(detail: string): RequestError {
 /** Standard internal failure with protocol-safe detail. */
 function internalError(detail: string): RequestError {
   return RequestError.internalError(undefined, detail)
+}
+
+/** A command stopped by `session/cancel`, request cancellation, or session close before it settled. */
+class AcpCommandCancelled extends Error {
+  constructor() { super('ACP command cancelled') }
+}
+
+/** Terminal v2 foreground state; failure detail travels in metadata, never as transcript text. */
+function idleUpdate(stopReason: v2.StopReason, failure?: string): v2.SessionUpdate {
+  return { sessionUpdate: 'state_update', state: 'idle', stopReason, ...failure === undefined ? {} : { _meta: { error: failure } } }
 }
 
 /** Restore the latest logged route before falling back to deployment config. */
@@ -228,6 +238,10 @@ export class AcpSession {
     void this.modelControl.options()
       .then((configOptions) => {
         if (this.closing !== undefined) return
+        if (this.notifyV2 !== undefined) {
+          this.enqueueV2(() => [{ sessionUpdate: 'config_option_update', configOptions: configOptionsV2(configOptions) }])
+          return
+        }
         const previous = this.outputTail
         this.outputTail = previous
           .then(() => this.notify({
@@ -299,14 +313,14 @@ export class AcpSession {
     }
     if (status === 'idle') {
       const ending = this.autonomousEnding
-      const stopReason = this.autonomousCancelled || ending === undefined ? 'cancelled'
-        : ending.kind === 'error' ? 'error' : turnEndToStopReason(ending)
-      this.enqueueV2(() => [{ sessionUpdate: 'state_update', state: 'idle', stopReason }])
+      const update = this.autonomousCancelled || ending === undefined ? idleUpdate('cancelled')
+        : ending.kind === 'error' ? idleUpdate('error', ending.error.message) : idleUpdate(turnEndToStopReason(ending))
+      this.enqueueV2(() => [update])
     }
   }
 
   /** Execute recognized text commands independently of the foreground model prompt. */
-  private runCommand(params: PromptRequest, requestSignal?: AbortSignal): Promise<MessageId> | undefined {
+  private runCommand(params: PromptRequest, requestSignal: AbortSignal): Promise<MessageId> | undefined {
     this.assertActive()
     const registry = this.ctx.get('commands')
     const line = params.prompt.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
@@ -315,14 +329,21 @@ export class AcpSession {
     if (params.prompt.some(block => block.type !== 'text')) throw invalidParams('ACP commands accept text only')
     if (this.command !== undefined) throw invalidParams('a command is already in flight for this session')
     const controller = new AbortController()
-    const signal = requestSignal === undefined ? controller.signal : AbortSignal.any([controller.signal, requestSignal])
+    const signal = AbortSignal.any([controller.signal, requestSignal])
     signal.throwIfAborted()
     const completion = Promise.withResolvers<void>()
     this.command = { controller, done: completion.promise }
     const { id: messageId } = createUserMessage({ content: [{ type: 'text', text: line }], source: { kind: 'user' } })
     return (async () => {
       try {
-        const execution = await registry.execute(this.agent, line, [], signal)
+        let execution: Awaited<ReturnType<typeof registry.execute>>
+        try {
+          execution = await registry.execute(this.agent, line, [], signal)
+        } catch (error: unknown) {
+          // The registry settles an aborted handler as a failure; the bridge reports it as cancellation.
+          if (signal.aborted) throw new AcpCommandCancelled()
+          throw error
+        }
         if (execution === undefined) throw invalidParams(`command is no longer available: /${parsed.name}`)
         await this.ctx.sessions.flush(this.agent.session)
         this.enqueueV2(() => [{ sessionUpdate: 'user_message', messageId, content: [{ type: 'text', text: line }] }])
@@ -359,13 +380,18 @@ export class AcpSession {
   async prompt(
     params: PromptRequest,
     imageEnabled: boolean,
-    requestSignal?: AbortSignal,
+    requestSignal: AbortSignal,
     accepted?: (message: UserMessage) => void,
   ): Promise<PromptResponse> {
     this.assertActive()
     const command = this.runCommand(params, requestSignal)
     if (command !== undefined) {
-      await command
+      try {
+        await command
+      } catch (error: unknown) {
+        if (error instanceof AcpCommandCancelled) return { stopReason: 'cancelled' }
+        throw error
+      }
       return { stopReason: 'end_turn' }
     }
     if (this.command !== undefined) throw invalidParams('a command is already in flight for this session')
@@ -391,9 +417,9 @@ export class AcpSession {
     }
     this.inflight = inflight
     const onRequestAbort = (): void => { this.cancelPrompt('ACP prompt request cancelled') }
-    requestSignal?.addEventListener('abort', onRequestAbort, { once: true })
+    requestSignal.addEventListener('abort', onRequestAbort, { once: true })
     /* v8 ignore next -- the SDK dispatches a live signal, then notifies abort through its listener. */
-    if (requestSignal?.aborted === true) onRequestAbort()
+    if (requestSignal.aborted) onRequestAbort()
     try {
       let admissionFailure: unknown
       const promptSelection = this.modelControl.snapshot()
@@ -422,7 +448,7 @@ export class AcpSession {
         try {
           this.agent.followup(message)
           if (accepted !== undefined) {
-            requestSignal?.removeEventListener('abort', onRequestAbort)
+            requestSignal.removeEventListener('abort', onRequestAbort)
             accepted(message)
           }
         } catch (error: unknown) {
@@ -454,7 +480,7 @@ export class AcpSession {
       this.settleAfterQuiescence(inflight)
       return { stopReason: await completion.promise }
     } finally {
-      requestSignal?.removeEventListener('abort', onRequestAbort)
+      requestSignal.removeEventListener('abort', onRequestAbort)
     }
   }
 
@@ -467,7 +493,12 @@ export class AcpSession {
    */
   promptV2(params: PromptRequest, imageEnabled: boolean, signal: AbortSignal): Promise<v2.PromptResponse> {
     const command = this.runCommand(params, signal)
-    if (command !== undefined) return command.then(messageId => ({ messageId }))
+    if (command !== undefined) {
+      return command.then(messageId => ({ messageId }), (error: unknown) => {
+        // A cancelled command echoed nothing, so the request fails like a prompt cancelled before insertion.
+        throw error instanceof AcpCommandCancelled ? invalidParams('command cancelled before completion') : error
+      })
+    }
     const acceptance = Promise.withResolvers<v2.PromptResponse>()
     let inserted = false
     void this.prompt(params, imageEnabled, signal, (message) => {
@@ -506,78 +537,92 @@ export class AcpSession {
   }
 
   /**
-   * Replay retained conversation facts, then report v2 activity state.
-   * @param reader - persisted reader when history was requested; owned by the caller.
+   * Replay retained conversation facts, including every standing-plan replacement.
+   * @param reader - persisted reader owned by the caller.
    * @param pageSize - maximum events fetched per storage read.
    * @param signal - activation request cancellation.
    * @returns completion after all retained updates have been delivered.
    */
-  async replay(reader: SessionHandle | undefined, pageSize: number, signal: AbortSignal): Promise<void> {
+  async replay(reader: SessionHandle, pageSize: number, signal: AbortSignal): Promise<void> {
     const end = this.agent.session.seq
     const replay = this.outputTail.then(async () => {
       let planVisible = false
-      if (reader !== undefined) {
-        for (let offset = 0; offset < end;) {
+      for (let offset = 0; offset < end;) {
+        signal.throwIfAborted()
+        const { events } = await reader.read(offset, Math.min(pageSize, end - offset), { signal })
+        if (events.length === 0) throw internalError('session replay is missing persisted events')
+        for (const event of events) {
           signal.throwIfAborted()
-          const { events } = await reader.read(offset, Math.min(pageSize, end - offset), { signal })
-          if (events.length === 0) throw internalError('session replay is missing persisted events')
-          for (const event of events) {
-            signal.throwIfAborted()
-            if (event.type === 'turn/start' && planVisible) {
-              const entries: [] = []
-              if (this.notifyV2 !== undefined) await this.notifyV2({ sessionId: this.agent.session.id,
-                update: { sessionUpdate: 'plan_update', plan: { type: 'items', planId: 'todos', entries } },
-              })
-              else await this.notify({ sessionId: this.agent.session.id, update: { sessionUpdate: 'plan', entries } })
-              planVisible = false
+          if (event.type === 'turn/start' && planVisible) {
+            const entries: [] = []
+            if (this.notifyV2 !== undefined) await this.notifyV2({ sessionId: this.agent.session.id,
+              update: { sessionUpdate: 'plan_update', plan: { type: 'items', planId: 'todos', entries } },
+            })
+            else await this.notify({ sessionId: this.agent.session.id, update: { sessionUpdate: 'plan', entries } })
+            planVisible = false
+          }
+          if (event.type === 'todo/write') planVisible = event.data.todos.length > 0
+          if (this.notifyV2 !== undefined) {
+            for (const update of await eventUpdates(this.ctx, this.agent.session, event)) {
+              await this.notifyV2({ sessionId: this.agent.session.id, update })
             }
-            if (event.type === 'todo/write') planVisible = event.data.todos.length > 0
-            if (this.notifyV2 !== undefined) {
-              for (const update of await eventUpdates(this.ctx, this.agent.session, event)) {
-                await this.notifyV2({ sessionId: this.agent.session.id, update })
-              }
-            } else {
-              for (const update of await replayUpdates(this.ctx, this.agent.session, event)) {
-                await this.notify({ sessionId: this.agent.session.id, update })
-              }
+          } else {
+            for (const update of await replayUpdates(this.ctx, this.agent.session, event)) {
+              await this.notify({ sessionId: this.agent.session.id, update })
             }
           }
-          offset += events.length
         }
+        offset += events.length
       }
-      await this.notifyV2?.({ sessionId: this.agent.session.id, update: { sessionUpdate: 'state_update', state: 'idle' } })
+      // The replayed tail is the client's current plan; the next turn start clears it.
+      this.planVisible = planVisible
     })
     this.outputTail = replay.catch(() => {})
     await replay
   }
 
   /**
-   * Restore the current goal and standing plan without replaying conversation history.
+   * Restore the current goal and, unless history replay already delivered it, the standing plan.
+   * @param options - `plan` publishes the projected todo list.
    * @returns completion of the ordered state updates.
    */
-  async restoreProgress(): Promise<void> {
+  async restoreProgress(options: { plan: boolean }): Promise<void> {
     this.goalChanged()
-    const projections = this.agent.ctx.get('sessionProjections')
-    if (projections !== undefined) {
-      const todos = projections.stateOf(this.agent.session, 'todos')
+    if (options.plan) {
+      /* v8 ignore next -- the shipped profiles and the test harness mount the projection registry. */
+      const todos = this.ctx.get('sessionProjections')?.stateOf(this.agent.session, 'todos')
       if (todos != null) this.sendPlan({ sessionUpdate: 'plan', entries: todos.map(item => ({ ...item, priority: 'medium' })) })
     }
     await this.outputTail
   }
 
+  /**
+   * Report the idle v2 foreground state of a session that has just been restored.
+   * @returns completion once the state has been delivered behind restored progress.
+   */
+  async announceIdle(): Promise<void> {
+    this.enqueueV2(() => [{ sessionUpdate: 'state_update', state: 'idle' }])
+    await this.outputTail
+  }
+
   /** Publish the current goal, including process-local activation and admitted rounds. */
   goalChanged(): void {
-    const goals = this.agent.ctx.get('goals')
+    const goals = this.ctx.get('goals')
     if (goals === undefined) return
     const goal = goals.get(this.agent)
     if (goal === undefined && this.goalText === undefined) return
     const text = goal === undefined ? 'Goal cleared.' : formatGoal(goal)
     if (text === this.goalText) return
     this.goalText = text
+    // A command's own result already reports the mutation it made; status text covers
+    // autonomous changes and restoration only.
+    if (this.command !== undefined) return
     const messageId = `goal:${this.agent.session.id}:${this.agent.session.seq}:${goal?.activation ?? 'cleared'}`
     if (this.notifyV2 !== undefined) {
       this.enqueueV2(() => [{ sessionUpdate: 'agent_message_chunk', messageId, content: { type: 'text', text } }])
     } else {
+      // V1 clients may fold every text chunk into one answer regardless of message id;
+      // the trailing newline keeps a status line separate from adjacent text.
       this.outputTail = this.outputTail.then(() => this.notify({ sessionId: this.agent.session.id,
         update: { sessionUpdate: 'agent_message_chunk', messageId, content: { type: 'text', text: `${text}\n` } },
       }))
@@ -786,10 +831,11 @@ export class AcpSession {
       if (this.inflight !== inflight) return
       if (this.notifyV2 !== undefined && inflight.messageQueued) {
         const end = inflight.endReason
-        const stopReason = inflight.cancelRequested ? 'cancelled'
-          : inflight.outputError !== undefined || inflight.agentError !== undefined || end?.kind === 'error' ? 'error'
-            : end === undefined ? 'cancelled' : turnEndToStopReason(end)
-        this.enqueueV2(() => [{ sessionUpdate: 'state_update', state: 'idle', stopReason }])
+        const failure = inflight.outputError ?? inflight.agentError ?? (end?.kind === 'error' ? end.error : undefined)
+        const update = inflight.cancelRequested ? idleUpdate('cancelled')
+          : failure !== undefined ? idleUpdate('error', failure.message)
+            : end === undefined ? idleUpdate('cancelled') : idleUpdate(turnEndToStopReason(end))
+        this.enqueueV2(() => [update])
         await this.outputTail
       }
       this.inflight = undefined
@@ -818,7 +864,7 @@ export class AcpSession {
       .catch(async (error: unknown) => {
         if (this.inflight !== inflight) return
         if (inflight.messageQueued) {
-          this.enqueueV2(() => [{ sessionUpdate: 'state_update', state: 'idle', stopReason: 'error' }])
+          this.enqueueV2(() => [idleUpdate('error', errorChain(error))])
           await this.outputTail
         }
         this.inflight = undefined

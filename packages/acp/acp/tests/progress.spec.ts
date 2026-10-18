@@ -52,7 +52,8 @@ describe.each([1, 2] as const)('ACP v%s progress', (version) => {
     const updates: v2.UpdateSessionNotification[] = []
     let client: v2.ClientContext | undefined
     harness = await makeBridgeHarness({
-      script: [probeCall(), textResponse('done')], config: { experimentalV2: version === 2 },
+      // One event per page puts the todo list and the clearing turn start on different pages.
+      script: [probeCall(), textResponse('done')], config: { protocolV2: version === 2, sessionReplayPageSize: 1 },
       ...version === 1 ? {} : { connectClient: (stream) => {
         client = v2.client().onNotification('session/update', ({ params }) => { updates.push(params) }).connect(stream).agent
       } },

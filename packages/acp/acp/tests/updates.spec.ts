@@ -1,8 +1,14 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { Context } from '@deepseek-ai/cordis'
-import { ToolCallId, MessageId } from '@deepseek-ai/dsh-llm'
+import { createUserMessage, ToolCallId, MessageId, type ContextFormed, type UserMessage } from '@deepseek-ai/dsh-llm'
 import { SessionSeq, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
-import { assistantUpdates, toolCallUpdate, toolResultUpdate } from '../src/updates.ts'
+import { assistantUpdates, replayUpdates, toolCallUpdate, toolResultUpdate } from '../src/updates.ts'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    'replay-test': { kind: 'replay-test' } & ContextFormed
+  }
+}
 
 /** Minimal committed assistant event for pure update projection tests. */
 function assistantEvent(
@@ -54,6 +60,19 @@ describe('standard ACP update projection', () => {
     expect((await assistantUpdates(withoutMeter, withCapacity, event)).map(update => update.sessionUpdate))
       .toEqual(['agent_message_chunk'])
     expect(meter.measure).not.toHaveBeenCalled()
+  })
+
+  it('replays only user-authored messages and skips blocks without a wire projection', async () => {
+    const ctx = { get: () => undefined } as unknown as Context
+    const session = { requestContext: () => undefined } as unknown as Session
+    const authored = createUserMessage({ content: [{ type: 'text', text: '' }, { type: 'text', text: 'hi' }], source: { kind: 'user' } })
+    const injected = createUserMessage({ content: [{ type: 'text', text: 'context' }], source: { kind: 'replay-test' } })
+    const eventOf = (data: UserMessage): SessionEvent<'user/message'> => ({ type: 'user/message', surfaceOp: 'append', seq: SessionSeq(0), time: 0, data })
+
+    await expect(replayUpdates(ctx, session, eventOf(authored))).resolves.toEqual([
+      { sessionUpdate: 'user_message_chunk', messageId: authored.id, content: { type: 'text', text: 'hi' } },
+    ])
+    await expect(replayUpdates(ctx, session, eventOf(injected))).resolves.toEqual([])
   })
 
   it('preserves malformed tool input and projects a failed result without hidden content', async () => {

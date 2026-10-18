@@ -1,14 +1,26 @@
 /** Draft-v2 wire tests over the real Harness loop and durable session store. */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import * as v2 from '@agentclientprotocol/sdk/experimental/v2'
 import { SessionId } from '@deepseek-ai/dsh-session'
-import { ToolCallId } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { defineContentToolFixture } from '@deepseek-ai/dsh-tools'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import Commands from '@deepseek-ai/dsh-commands'
 import Goals from '@deepseek-ai/dsh-goal'
 import * as commandGoal from '@deepseek-ai/dsh-command-goal'
 import * as goalDriver from '@deepseek-ai/dsh-goal-round-driver'
-import { makeBridgeHarness, textResponse, errorResponse, type BridgeHarness } from './harness.ts'
+import { ACP_PACKAGE_VERSION, makeBridgeHarness, textResponse, errorResponse, type BridgeHarness } from './harness.ts'
+
+/** One committed call of a registered tool, so the loop runs its executor. */
+function toolCall(name: string): StreamChunk[] {
+  const id = ToolCallId(`${name}-call`)
+  return [
+    { type: 'block-start', index: 0, blockType: 'tool-call' },
+    { type: 'tool-call-delta', index: 0, id, name, argumentsDelta: '{}' },
+    { type: 'block-end', index: 0, block: { type: 'tool-call', id, name, arguments: '{}' } },
+    { type: 'finish', reason: { kind: 'tool-calls' } },
+  ]
+}
 
 describe('negotiated ACP v2', () => {
   let harness: BridgeHarness
@@ -34,16 +46,22 @@ describe('negotiated ACP v2', () => {
     return client.request('initialize', { protocolVersion: 2, info: { name: 'conformance', version: '1' }, capabilities: {} })
   }
 
+  function lastState(sessionId: string): v2.SessionUpdate | undefined {
+    return updates.filter(item => item.sessionId === sessionId && v2.SessionUpdate.isStateUpdate(item.update)).at(-1)?.update
+  }
+
   async function idle(sessionId: string, stopReason: string) {
-    await expect.poll(() => updates.filter(item => item.sessionId === sessionId
-      && v2.SessionUpdate.isStateUpdate(item.update)).at(-1)?.update).toMatchObject({
-      sessionUpdate: 'state_update', state: 'idle', stopReason,
-    })
+    await expect.poll(() => lastState(sessionId)).toMatchObject({ sessionUpdate: 'state_update', state: 'idle', stopReason })
+  }
+
+  /** The serialized terminal state, whose `_meta.error` carries failure detail. */
+  function idleDetail(sessionId: string): string {
+    return JSON.stringify(lastState(sessionId))
   }
 
   it('negotiates v2 by default and retains the v1 handshake', async () => {
     expect(await setup()).toEqual({
-      protocolVersion: 2, info: { name: 'deepseek-harness', version: '0.2.1-alpha.1' },
+      protocolVersion: 2, info: { name: 'deepseek-harness-acp', version: ACP_PACKAGE_VERSION },
       capabilities: { session: { mcp: { stdio: {}, http: {} }, prompt: {} } }, authMethods: [],
     })
     await harness.dispose()
@@ -94,6 +112,8 @@ describe('negotiated ACP v2', () => {
     const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
     expect(await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'hello' }] })).toHaveProperty('messageId')
     await idle(sessionId, 'error')
+    expect(idleDetail(sessionId)).toContain('"_meta":{"error":"')
+    expect(idleDetail(sessionId)).toContain('provider failed')
     expect(updates.some(item => item.update.sessionUpdate === 'agent_message_chunk')).toBe(false)
   })
 
@@ -141,7 +161,7 @@ describe('negotiated ACP v2', () => {
   })
 
   it('allows an explicit v1-only deployment', async () => {
-    harness = await makeBridgeHarness({ config: { experimentalV2: false } })
+    harness = await makeBridgeHarness({ config: { protocolV2: false } })
     expect(await harness.client.initialize({ protocolVersion: 2 })).toMatchObject({ protocolVersion: 1 })
   })
 
@@ -239,5 +259,152 @@ describe('negotiated ACP v2', () => {
     }
     expect(await request).toBe('rejected')
     expect(updates.filter(({ update }) => update.sessionUpdate === 'state_update').at(-1)?.update).toMatchObject({ state: 'idle', stopReason: 'cancelled' })
+  })
+
+  it('withholds activity states for a permission raised after cancellation', async () => {
+    await setup({ script: [toolCall('guarded'), 'hang'] })
+    await harness.ctx.plugin(ApprovalService)
+    const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
+    const agent = harness.ctx.agents.get(SessionId(sessionId))
+    if (agent === undefined) throw new Error('missing Agent')
+    const outcomes: string[] = []
+    harness.ctx.tools.register(defineContentToolFixture({
+      name: 'guarded', description: 'Ask for permission twice.', parameters: {},
+      execute: async () => {
+        outcomes.push(await harness.ctx.approval.request({ agent, toolName: 'guarded', callId: ToolCallId('guard-1') }))
+        outcomes.push(await harness.ctx.approval.request({ agent, toolName: 'guarded', callId: ToolCallId('guard-2') }))
+        return [{ type: 'text', text: outcomes.join(',') }]
+      },
+    }))
+    const entered = Promise.withResolvers<undefined>()
+    const answer = Promise.withResolvers<v2.RequestPermissionResponse>()
+    permission = () => { entered.resolve(undefined); return answer.promise }
+    await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'go' }] })
+    await entered.promise
+    expect(lastState(sessionId)).toMatchObject({ state: 'requires_action' })
+    await client.notify('session/cancel', { sessionId })
+    const before = updates.length
+    permission = async () => ({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+    answer.resolve({ outcome: { outcome: 'selected', optionId: 'reject-once' } })
+    await idle(sessionId, 'cancelled')
+    expect(outcomes).toEqual(['rejected', 'allowed-once'])
+    const states = updates.slice(before).flatMap(({ update }) => v2.SessionUpdate.isStateUpdate(update) ? [update.state] : [])
+    expect(states).toEqual(['idle'])
+  })
+
+  it('publishes v2 configuration options when adapter topology changes', async () => {
+    await setup()
+    const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
+    harness.registerCatalogProvider('late')
+    const latest = () => updates.filter(item => item.sessionId === sessionId).at(-1)?.update
+    await expect.poll(latest).toMatchObject({ sessionUpdate: 'config_option_update' })
+    expect(JSON.stringify(latest())).toContain('"configId":"model"')
+  })
+
+  it('forwards the permission reason and request signal and maps a cancelled answer', async () => {
+    await setup({ script: ['hang'] })
+    await harness.ctx.plugin(ApprovalService)
+    const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
+    await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'hello' }] })
+    await expect.poll(() => harness.adapter.requests.length).toBe(1)
+    const seen: v2.RequestPermissionRequest[] = []
+    permission = async (params) => { seen.push(params); return { outcome: { outcome: 'cancelled' } } }
+    const agent = harness.ctx.agents.get(SessionId(sessionId))!
+    const controller = new AbortController()
+    expect(await harness.ctx.approval.request({
+      agent, toolName: 'bash', callId: ToolCallId('call'), reason: 'writes outside the workspace', signal: controller.signal,
+    })).toBe('cancelled')
+    expect(seen[0]).toMatchObject({ title: 'bash', description: 'writes outside the workspace' })
+    await client.notify('session/cancel', { sessionId })
+    await idle(sessionId, 'cancelled')
+  })
+
+  it('changes configuration through v2 ids and rejects other option types', async () => {
+    await setup()
+    const { sessionId, configOptions } = await client.request('session/new', { cwd: process.cwd() })
+    const model = configOptions?.find(option => option.configId === 'model')
+    if (model === undefined || !v2.SessionConfigOption.isSelect(model)) throw new Error('model selector missing')
+    const plain = model.options.flatMap(option => 'groupId' in option ? option.options : [option]).find(option => option.name === 'Mock Plain')
+    if (plain === undefined) throw new Error('plain model missing')
+    const changed = await client.request('session/set_config_option', { sessionId, configId: 'model', type: 'id', value: plain.value })
+    expect(changed.configOptions.find(option => option.configId === 'model')).toMatchObject({ currentValue: plain.value })
+    await expect(client.request('session/set_config_option', { sessionId, configId: 'model', type: '_future', value: plain.value }))
+      .rejects.toThrow('unsupported configuration option type')
+  })
+
+  it('rolls back a failed v2 replay and leaves the persisted session resumable', async () => {
+    await setup({ script: [textResponse('answer')] })
+    const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
+    await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'question' }] })
+    await idle(sessionId, 'end_turn')
+    await client.request('session/close', { sessionId })
+    const open = harness.ctx.sessionPersistence.open.bind(harness.ctx.sessionPersistence)
+    const spy = vi.spyOn(harness.ctx.sessionPersistence, 'open').mockImplementation(async (...args) => {
+      if (args[1] === 'read') throw new Error('replay unavailable')
+      return open(...args)
+    })
+    try {
+      await expect(client.request('session/resume', { sessionId, cwd: process.cwd(), replayFrom: { type: 'start' } })).rejects.toThrow()
+      expect(harness.ctx.agents.get(SessionId(sessionId))).toBeUndefined()
+    } finally { spy.mockRestore() }
+    await client.request('session/resume', { sessionId, cwd: process.cwd(), replayFrom: { type: 'start' } })
+  })
+
+  it('reports a prompt removed before its turn claims it as cancelled', async () => {
+    await setup()
+    const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
+    const dispose = harness.ctx.on('agent/inbox/inserted', ({ agent, message }) => {
+      if (message.source.kind === 'user') agent.inbox.remove(message.id)
+    })
+    try {
+      await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'go' }] })
+      await idle(sessionId, 'cancelled')
+    } finally { dispose() }
+  })
+
+  it('reports a missing committed image attachment as a failed turn with its detail', async () => {
+    const missing = { attachmentId: `sha256:${'a'.repeat(64)}` as never, mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1 }
+    await setup({ script: [[
+      { type: 'block-start', index: 0, blockType: 'image' },
+      { type: 'block-end', index: 0, block: { type: 'image', attachment: missing } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]] })
+    const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
+    await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'show it' }] })
+    await idle(sessionId, 'error')
+    expect(idleDetail(sessionId)).toContain('attachment')
+    expect(updates.some(item => item.update.sessionUpdate === 'agent_message_chunk')).toBe(false)
+  })
+
+  it('contains a failed autonomous update outside any prompt', async () => {
+    const missing = { attachmentId: `sha256:${'b'.repeat(64)}` as never, mediaType: 'image/png' as const, bytes: 1, width: 1, height: 1 }
+    await setup({ script: [[
+      { type: 'block-start', index: 0, blockType: 'image' },
+      { type: 'block-end', index: 0, block: { type: 'image', attachment: missing } },
+      { type: 'finish', reason: { kind: 'stop' } },
+    ]] })
+    await harness.ctx.plugin(Commands)
+    await harness.ctx.plugin(Goals, { defaultMaxGoalRounds: 1 })
+    await harness.ctx.plugin(commandGoal)
+    await harness.ctx.plugin(goalDriver)
+    const warn = vi.spyOn(harness.ctx.logger, 'warn')
+    const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
+    await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: '/goal show the image' }] })
+    await expect.poll(() => warn.mock.calls.some(([message]) => String(message).includes('v2 update failed'))).toBe(true)
+    await expect.poll(() => lastState(sessionId)).toMatchObject({ state: 'idle' })
+    const images = updates.filter(item => v2.SessionUpdate.isAgentMessageChunk(item.update) && v2.ContentBlock.isImage(item.update.content))
+    expect(images).toEqual([])
+  })
+
+  it('reports a failed autonomous round through idle with its detail', async () => {
+    await setup({ script: [errorResponse('round failed')] })
+    await harness.ctx.plugin(Commands)
+    await harness.ctx.plugin(Goals)
+    await harness.ctx.plugin(commandGoal)
+    await harness.ctx.plugin(goalDriver)
+    const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
+    await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: '/goal finish the task' }] })
+    await idle(sessionId, 'error')
+    expect(idleDetail(sessionId)).toContain('round failed')
   })
 })

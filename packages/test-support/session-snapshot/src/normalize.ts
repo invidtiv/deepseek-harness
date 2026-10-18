@@ -15,6 +15,7 @@ import { sessionHeaderVersion } from './session-files.ts'
 
 const SESSION_ID = '{{sessionId}}'
 const MESSAGE_ID = '{{messageId}}'
+const AGENT_VERSION = '{{agentVersion}}'
 const USED_TOKENS = '{{usedTokens}}'
 const CWD = '{{cwd}}'
 const SYSTEM = '{{system}}'
@@ -228,6 +229,8 @@ function scrubValue(
       (value as { sessionUpdate?: unknown }).sessionUpdate === 'usage_update'
       && typeof (value as { used?: unknown }).used === 'number'
     ) out.used = USED_TOKENS
+    // The v1 `agentInfo` and v2 `info` handshake fields carry the ACP package release version.
+    if ((key === 'agentInfo' || key === 'info') && typeof out.version === 'string') out.version = AGENT_VERSION
     return out
   }
   return value

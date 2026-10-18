@@ -1,5 +1,5 @@
 /** Slash commands through both ACP protocols, using the real goal domain and loop. */
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { Stream } from '@agentclientprotocol/sdk'
 import * as v2 from '@agentclientprotocol/sdk/experimental/v2'
 import Commands from '@deepseek-ai/dsh-commands'
@@ -22,7 +22,7 @@ describe.each([1, 2] as const)('ACP v%s commands', (version) => {
     resetClient()
     harness = await makeBridgeHarness({
       script,
-      config: { experimentalV2: version === 2 },
+      config: { protocolV2: version === 2 },
       ...version === 1 ? {} : { connectClient: (stream: Stream) => {
         client = v2.client().onNotification('session/update', ({ params }) => { updates.push(params) }).connect(stream).agent
       } },
@@ -59,7 +59,11 @@ describe.each([1, 2] as const)('ACP v%s commands', (version) => {
   it('advertises commands and executes goal controls without a model request', async () => {
     const created = await setup()
     if (version === 2) expect(created).toMatchObject({ availableCommands: [{ name: 'goal', input: { type: 'text' } }] })
-    else expect(harness.updates).toContainEqual(expect.objectContaining({ sessionUpdate: 'available_commands_update' }))
+    else {
+      // V1 discovery follows the session/new response that names the session.
+      expect(harness.updates).toEqual([])
+      await expect.poll(() => harness.updates).toContainEqual(expect.objectContaining({ sessionUpdate: 'available_commands_update' }))
+    }
     const { sessionId } = created
     for (const line of ['/goal', '/goal finish the task', '/goal edit finish the revised task', '/goal pause', '/goal resume', '/goal clear']) {
       const result = await prompt(sessionId, line)
@@ -170,11 +174,67 @@ describe.each([1, 2] as const)('ACP v%s commands', (version) => {
     await entered.promise
     await expect(prompt(sessionId, '/goal')).rejects.toThrow('a command is already in flight')
     await expect(prompt(sessionId, 'ordinary text')).rejects.toThrow('a command is already in flight')
-    if (client === undefined) await harness.client.closeSession({ sessionId })
-    else await client.request('session/close', { sessionId })
+    const closing = client === undefined ? harness.client.closeSession({ sessionId }) : client.request('session/close', { sessionId })
     await stopped.promise
-    expect(await work).toBeInstanceOf(Error)
+    // A registry change during teardown publishes nothing behind the closing record.
+    harness.ctx.commands.register({ name: 'late', description: 'Registered during close', handler: () => ({ kind: 'success', text: 'late' }) })()
+    await closing
+    // The cancelled command settles like a cancelled prompt on each protocol.
+    if (client === undefined) expect(await work).toEqual({ stopReason: 'cancelled' })
+    else expect(await work).toBeInstanceOf(Error)
     expect(harness.ctx.agents.get(SessionId(sessionId))).toBeUndefined()
+  })
+
+  it('cancels a running command through session/cancel and keeps the session usable', async () => {
+    const { sessionId } = await setup()
+    const entered = Promise.withResolvers<undefined>()
+    harness.ctx.commands.register({ name: 'wait', description: 'Wait for cancellation', handler: ({ signal }) => {
+      entered.resolve(undefined)
+      return new Promise((resolve) => {
+        signal.addEventListener('abort', () => { resolve({ kind: 'error', text: 'stopped' }) }, { once: true })
+      })
+    } })
+    const work = prompt(sessionId, '/wait')
+    await entered.promise
+    if (client === undefined) await harness.client.cancel({ sessionId })
+    else await client.notify('session/cancel', { sessionId })
+    if (client === undefined) await expect(work).resolves.toEqual({ stopReason: 'cancelled' })
+    else await expect(work).rejects.toThrow('command cancelled before completion')
+    expect(output()).toEqual([])
+    await prompt(sessionId, '/goal')
+    expect(output().at(-1)).toContain('No goal is currently set')
+    expect(harness.adapter.requests).toEqual([])
+  })
+
+  it('delivers an empty result and reports a command withdrawn before execution', async () => {
+    const { sessionId } = await setup()
+    harness.ctx.commands.register({ name: 'silent', description: 'No output', handler: () => ({ kind: 'success' }) })
+    await prompt(sessionId, '/silent')
+    expect(output().at(-1)).toBe('')
+    const registry = harness.ctx.get('commands')
+    if (registry === undefined) throw new Error('missing command registry')
+    const execute = vi.spyOn(registry, 'execute').mockResolvedValueOnce(undefined)
+    try {
+      await expect(prompt(sessionId, '/silent')).rejects.toThrow('command is no longer available: /silent')
+      execute.mockRejectedValueOnce(new Error('registry failed'))
+      await expect(prompt(sessionId, '/silent')).rejects.toThrow()
+    } finally { execute.mockRestore() }
+    await prompt(sessionId, '/silent')
+    expect(output()).toEqual(['', ''])
+  })
+
+  it('reports status only for goal changes a command did not make itself', async () => {
+    const { sessionId } = await setup()
+    await prompt(sessionId, '/goal finish the task')
+    await prompt(sessionId, '/goal pause')
+    const results = output()
+    expect(results.filter(text => text.startsWith('Goal active (') || text.startsWith('Goal paused ('))).toEqual([])
+    expect(results.at(-1)).toContain('Goal paused')
+    const found = agent(sessionId)
+    const paused = harness.ctx.goals.get(found)
+    if (paused === undefined) throw new Error('missing goal')
+    harness.ctx.goals.resume(found, paused)
+    await expect.poll(() => output().at(-1)).toContain('Goal active (')
   })
 
   it('updates discovery when a command is registered and disposed', async () => {

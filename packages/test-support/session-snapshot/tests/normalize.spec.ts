@@ -40,6 +40,16 @@ describe('normalizeStdout', () => {
     expect(out).not.toContain('99')
   })
 
+  it('masks the advertised agent version on both protocol handshakes', () => {
+    const raw = [
+      JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersion: 1, agentInfo: { name: 'deepseek-harness-acp', version: '0.2.1-alpha.1' } } }),
+      JSON.stringify({ jsonrpc: '2.0', id: 2, result: { protocolVersion: 2, info: { name: 'deepseek-harness-acp', version: '0.2.1-alpha.1' } } }),
+    ].join('\n')
+    const out = normalizeStdout(raw, ctx)
+    expect(out).not.toContain('0.2.1-alpha.1')
+    expect(out.match(/\{\{agentVersion\}\}/g)).toHaveLength(2)
+  })
+
   it('scrubs the cwd and session id anywhere they appear', () => {
     const raw = JSON.stringify({
       jsonrpc: '2.0', method: 'session/update',

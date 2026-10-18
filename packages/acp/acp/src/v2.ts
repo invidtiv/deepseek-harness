@@ -88,7 +88,7 @@ export async function eventUpdates(ctx: Context, session: Session, event: Sessio
           updates.push({ ...update, messageId: event.data.message.id })
         } else if (update.sessionUpdate === 'agent_thought_chunk') {
           updates.push({ ...update, messageId: `${event.data.message.id}:thought` })
-        } else if (update.sessionUpdate === 'usage_update') updates.push(update)
+        } else updates.push(update)
       }
       return updates
     }

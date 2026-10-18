@@ -12,9 +12,11 @@
 import type { Context } from '@deepseek-ai/cordis'
 import { Buffer } from 'node:buffer'
 import { randomUUID } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { isAbsolute, resolve } from 'node:path'
 import { Readable, Writable } from 'node:stream'
+import { fileURLToPath } from 'node:url'
 import Schema from '@deepseek-ai/schemastery'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import { errorChain } from '@deepseek-ai/dsh-llm'
@@ -43,6 +45,7 @@ import {
   type ResumeSessionResponse,
   type SetSessionConfigOptionRequest,
   type SetSessionConfigOptionResponse,
+  type SessionConfigOption,
   type SessionNotification,
   type Stream,
 } from '@agentclientprotocol/sdk'
@@ -60,6 +63,9 @@ import * as v2Projection from './v2.ts'
 
 const DEFAULT_SESSION_LIST_PAGE_SIZE = 100
 const DEFAULT_SESSION_REPLAY_PAGE_SIZE = 256
+/** Agent identity advertised on both protocol versions; the version is this package's. */
+const AGENT_NAME = 'deepseek-harness-acp'
+const AGENT_VERSION = packageVersion()
 
 export const name = 'acp'
 /** Core services required by the standard automation controls. */
@@ -83,8 +89,8 @@ export interface AcpConfig {
   model?: string
   /** Maximum summaries returned by one session/list page. */
   sessionListPageSize?: number
-  /** Enable negotiated draft ACP v2 alongside stable v1. */
-  experimentalV2?: boolean
+  /** Negotiate draft ACP v2 alongside stable v1. */
+  protocolV2?: boolean
   /** Maximum persisted events read per transcript replay page. */
   sessionReplayPageSize?: number
   /** Runtime-only transport override; production uses stdio. */
@@ -95,7 +101,7 @@ export const Config: Schema<AcpConfig> = Schema.object({
   provider: Schema.string(),
   model: Schema.string(),
   sessionListPageSize: Schema.natural().min(1).default(DEFAULT_SESSION_LIST_PAGE_SIZE),
-  experimentalV2: Schema.boolean().default(true),
+  protocolV2: Schema.boolean().default(true),
   sessionReplayPageSize: Schema.natural().min(1).default(DEFAULT_SESSION_REPLAY_PAGE_SIZE),
 })
 
@@ -110,7 +116,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
   const persistence = ctx.sessionPersistence
   const logger = ctx.logger
   const sessionListPageSize = resolveSessionListPageSize(config.sessionListPageSize)
-  const experimentalV2 = config.experimentalV2 ?? true
+  const protocolV2 = config.protocolV2 ?? true
   const sessionReplayPageSize = config.sessionReplayPageSize ?? DEFAULT_SESSION_REPLAY_PAGE_SIZE
   const sessions = new Map<SessionId, AcpSession>()
   const activating = new Set<SessionId>()
@@ -137,17 +143,9 @@ export function apply(ctx: Context, config: AcpConfig): void {
     return record
   }
 
-  /** Send one ordered protocol update while containing transport-only failure. */
+  /** Send one ordered v1 update while containing transport-only failure. */
   const notify = async (notification: SessionNotification): Promise<void> => {
     try {
-      if (protocol === 2) {
-        if (notification.update.sessionUpdate !== 'config_option_update') throw internalError('unexpected v1 update on v2 connection')
-        await connV2.notify('session/update', {
-          sessionId: notification.sessionId,
-          update: { sessionUpdate: 'config_option_update', configOptions: v2Projection.configOptions(notification.update.configOptions) },
-        })
-        return
-      }
       await conn.notify(methods.client.session.update, notification)
     /* v8 ignore start -- the ACP SDK contains notification-handler failures; only a transport write failure reaches this guard. */
     } catch (error: unknown) {
@@ -163,7 +161,11 @@ export function apply(ctx: Context, config: AcpConfig): void {
   })
 
   ctx.on('agent/inbox/claimed', ({ agent, message, turn }) => {
-    ownedRecord(agent)?.onInboxClaimed(message, turn)
+    const record = ownedRecord(agent)
+    if (record === undefined) return
+    record.onInboxClaimed(message, turn)
+    // An admitted goal round changes the published round count.
+    record.goalChanged()
   })
 
   ctx.on('agent/error', ({ agent, turn, error }) => {
@@ -175,8 +177,9 @@ export function apply(ctx: Context, config: AcpConfig): void {
   })
 
   ctx.on('goal/changed', ({ agent }) => { ownedRecord(agent)?.goalChanged() })
+  // The payload carries only a session id, so ownership cannot be checked; the record
+  // re-reads its own Agent's goal and publishes nothing when that state is unchanged.
   ctx.on('goal/activation-changed', ({ sessionId }) => { sessions.get(sessionId)?.goalChanged() })
-  ctx.on('agent/inbox/claimed', ({ agent }) => { ownedRecord(agent)?.goalChanged() })
 
   ctx.on('agent/status', ({ agent, status }) => { ownedRecord(agent)?.onStatus(status) })
 
@@ -228,7 +231,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
       imagePromptEnabled = await supportsAcpImagePrompts(ctx, config.provider, config.model)
       return {
         protocolVersion: PROTOCOL_VERSION,
-        agentInfo: { name: 'deepseek-harness-acp', version: '0.0.1' },
+        agentInfo: { name: AGENT_NAME, version: AGENT_VERSION },
         agentCapabilities: {
           loadSession: true,
           mcpCapabilities: { http: true },
@@ -243,7 +246,9 @@ export function apply(ctx: Context, config: AcpConfig): void {
       return Promise.resolve()
     },
 
-    async newSession(params: NewSessionRequest, signal: AbortSignal): Promise<NewSessionResponse> {
+    async newSession(
+      params: NewSessionRequest, signal: AbortSignal,
+    ): Promise<NewSessionResponse & { configOptions: SessionConfigOption[] }> {
       assertOpen()
       validateWorkspaceParams(params)
       const sessionId = brandString<SessionId>(randomUUID())
@@ -279,10 +284,6 @@ export function apply(ctx: Context, config: AcpConfig): void {
         // The attached log writer's flush materializes an empty session durably.
         await ctx.sessions.flush(record.agent.session)
         assertOpen()
-        if (protocol === 1 && record.availableCommands().length > 0) {
-          record.commandsChanged()
-          await record.drainUpdates()
-        }
         return { sessionId, configOptions }
       } catch (error: unknown) {
         sessions.delete(sessionId)
@@ -291,7 +292,9 @@ export function apply(ctx: Context, config: AcpConfig): void {
       }
     },
 
-    async resumeSession(params: ResumeSessionRequest, signal: AbortSignal, restoreProgress = true): Promise<ResumeSessionResponse> {
+    async resumeSession(
+      params: ResumeSessionRequest, signal: AbortSignal, restoreProgress = true,
+    ): Promise<ResumeSessionResponse & { configOptions: SessionConfigOption[] }> {
       assertOpen()
       validateWorkspaceParams(params)
       const sessionId = brandString<SessionId>(params.sessionId)
@@ -299,7 +302,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
         throw invalidParams(`session is already active: ${sessionId}`)
       }
       activating.add(sessionId)
-      return (async (): Promise<ResumeSessionResponse> => {
+      return (async (): Promise<ResumeSessionResponse & { configOptions: SessionConfigOption[] }> => {
         const persisted = (await persistence.stat(sessionId, { signal }))?.header
         if (persisted === undefined || persisted.origin === 'subagent' || persisted.parentSession !== undefined) {
           throw invalidParams(`session is not resumable: ${sessionId}`)
@@ -337,11 +340,12 @@ export function apply(ctx: Context, config: AcpConfig): void {
         sessions.set(sessionId, record)
         try {
           const configOptions = await record.configOptions(signal)
+          // The client already knows this session id, so v1 discovery precedes the response.
           if (protocol === 1 && record.availableCommands().length > 0) {
             record.commandsChanged()
             await record.drainUpdates()
           }
-          if (restoreProgress) await record.restoreProgress()
+          if (restoreProgress) await record.restoreProgress({ plan: true })
           return { configOptions }
         } catch (error: unknown) {
           sessions.delete(sessionId)
@@ -360,7 +364,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
         await ctx.sessions.flush(record.agent.session)
         const reader = await persistence.open(sessionId, 'read', { signal })
         try { await record.replay(reader, sessionReplayPageSize, signal) } finally { await reader.close() }
-        await record.restoreProgress()
+        await record.restoreProgress({ plan: false })
         return result
       } catch (error: unknown) {
         sessions.delete(sessionId)
@@ -455,14 +459,21 @@ export function apply(ctx: Context, config: AcpConfig): void {
     Writable.toWeb(process.stdout) as WritableStream<Uint8Array>,
     Readable.toWeb(process.stdin) as ReadableStream<Uint8Array>,
   )
-  const app = createAcpAgentApp({ name: 'deepseek-harness-acp' })
+  const app = createAcpAgentApp({ name: AGENT_NAME })
     .onConnect((connection) => { conn = connection.client })
     .onRequest(methods.agent.initialize, ({ params }) => implementation.initialize(params))
     .onRequest(methods.agent.authenticate, async ({ params }) => {
       await implementation.authenticate(params)
       return {}
     })
-    .onRequest(methods.agent.session.new, ({ params, signal }) => implementation.newSession(params, signal))
+    .onRequest(methods.agent.session.new, async ({ params, signal }) => {
+      const result = await implementation.newSession(params, signal)
+      const record = sessions.get(brandString<SessionId>(result.sessionId))
+      // The client learns the session id from this response; the SDK writes the response
+      // before any later macrotask, so command discovery follows it on the wire.
+      if (record !== undefined && record.availableCommands().length > 0) setImmediate(() => { record.commandsChanged() })
+      return result
+    })
     .onRequest(methods.agent.session.load, ({ params, signal }) => implementation.loadSession(params, signal))
     .onRequest(methods.agent.session.list, ({ params, signal }) => implementation.listSessions(params, signal))
     .onRequest(methods.agent.session.resume, ({ params, signal }) => implementation.resumeSession(params, signal))
@@ -470,13 +481,13 @@ export function apply(ctx: Context, config: AcpConfig): void {
     .onRequest(methods.agent.session.setConfigOption, ({ params, signal }) => implementation.setSessionConfigOption(params, signal))
     .onRequest(methods.agent.session.prompt, ({ params, signal }) => implementation.prompt(params, signal))
     .onNotification(methods.agent.session.cancel, ({ params }) => implementation.cancel(params))
-  const appV2 = v2.agent({ name: 'deepseek-harness-acp-v2' })
+  const appV2 = v2.agent({ name: AGENT_NAME })
     .onConnect((connection) => { protocol = 2; connV2 = connection.client })
     .onRequest('initialize', async () => {
       imagePromptEnabled = await supportsAcpImagePrompts(ctx, config.provider, config.model)
       return {
         protocolVersion: 2,
-        info: { name: 'deepseek-harness', version: '0.2.1-alpha.1' },
+        info: { name: AGENT_NAME, version: AGENT_VERSION },
         capabilities: { session: {
           mcp: { stdio: {}, http: {} },
           prompt: imagePromptEnabled ? { image: {} } : {},
@@ -486,7 +497,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
     })
     .onRequest('session/new', async ({ params, signal }) => {
       const result = await implementation.newSession({ ...params, mcpServers: v2Projection.mcpServers(params.mcpServers) }, signal)
-      return { sessionId: result.sessionId, configOptions: v2Projection.configOptions(result.configOptions ?? []),
+      return { sessionId: result.sessionId, configOptions: v2Projection.configOptions(result.configOptions),
         availableCommands: requireSession(brandString<SessionId>(result.sessionId)).availableCommandsV2(),
       }
     })
@@ -500,19 +511,21 @@ export function apply(ctx: Context, config: AcpConfig): void {
       const record = requireSession(sessionId)
       activating.add(sessionId)
       try {
-        if (params.replayFrom == null) await record.replay(undefined, sessionReplayPageSize, signal)
-        else {
+        const replaying = params.replayFrom != null
+        if (replaying) {
           await ctx.sessions.flush(record.agent.session)
           const reader = await persistence.open(sessionId, 'read', { signal })
           try { await record.replay(reader, sessionReplayPageSize, signal) } finally { await reader.close() }
         }
-        await record.restoreProgress()
+        // Replayed history already carries the standing plan; the goal has no durable projection.
+        await record.restoreProgress({ plan: !replaying })
+        await record.announceIdle()
       } catch (error: unknown) {
         sessions.delete(sessionId)
         await record.close('session/resume replay failed')
         throw error
       } finally { activating.delete(sessionId) }
-      return { configOptions: v2Projection.configOptions(result.configOptions ?? []),
+      return { configOptions: v2Projection.configOptions(result.configOptions),
         availableCommands: record.availableCommandsV2(),
       }
     })
@@ -530,8 +543,8 @@ export function apply(ctx: Context, config: AcpConfig): void {
     })
     .onNotification('session/cancel', ({ params }) => implementation.cancel(params))
   const router = v2.agentProtocolRouter().withV1(app)
-  if (experimentalV2) router.withV2(appV2)
-  const connection = experimentalV2 ? router.connect(stream) : app.connect(stream as Stream)
+  if (protocolV2) router.withV2(appV2)
+  const connection = protocolV2 ? router.connect(stream) : app.connect(stream as Stream)
 
   let quiescing: Promise<void> | undefined
   const quiesce = (): Promise<void> => {
@@ -588,6 +601,14 @@ function agentOptions(config: AcpConfig): { provider?: string; model?: string } 
     ...config.provider !== undefined ? { provider: config.provider } : {},
     ...config.model !== undefined ? { model: config.model } : {},
   }
+}
+
+/** Read this package's version in both source and bundled installations. */
+function packageVersion(): string {
+  const manifest = JSON.parse(readFileSync(fileURLToPath(new URL('../package.json', import.meta.url)), 'utf8')) as { version?: unknown }
+  /* v8 ignore next -- the workspace manifest always carries a version; this guards a corrupt installation. */
+  if (typeof manifest.version !== 'string') throw new Error('acp: package.json has no version')
+  return manifest.version
 }
 
 /** Initial session selection when both deployment fields are present. */

@@ -2,6 +2,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -314,3 +315,6 @@ export async function makeBridgeHarness(options: {
   }
   return harness
 }
+
+/** The version this package advertises on both protocol handshakes. */
+export const ACP_PACKAGE_VERSION = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version

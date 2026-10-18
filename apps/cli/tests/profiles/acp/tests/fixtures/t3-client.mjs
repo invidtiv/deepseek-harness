@@ -13,7 +13,8 @@ const Stream = await load('effect/Stream')
 const Deferred = await load('effect/Deferred')
 const Fiber = await load('effect/Fiber')
 const NodeServices = await load('@effect/platform-node/NodeServices')
-const Runtime = await import(pathToFileURL(join(root, 'apps/server/src/provider/acp/AcpSessionRuntime.ts')).href)
+// The runtime moved from apps/server into the provider-acp workspace package (T3 Code ed0f7b908b2e).
+const Runtime = await load('@t3tools/provider-acp/server/AcpSessionRuntime')
 const options = JSON.parse(await readFile(optionsFile, 'utf8'))
 
 await Effect.runPromise(Effect.gen(function* () {

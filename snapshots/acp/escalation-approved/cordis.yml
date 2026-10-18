@@ -35,7 +35,6 @@
   config:
     provider: deepseek-official
     model: deepseek-v4-flash
-    experimentalV2: !!js process.env.DSH_ACP_V2 === '1'
 
 - id: system-prompt
   name: '@deepseek-ai/dsh-system-prompt'

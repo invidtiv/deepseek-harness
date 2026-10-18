@@ -47,7 +47,7 @@ kind: "package-reference"
 | `provider` | — | 每个会话 agent 的提供方路由 |
 | `model` | — | 每个会话 agent 的模型 |
 | `sessionListPageSize` | `100` | 单页 `session/list` 返回的最大摘要数量 |
-| `experimentalV2` | `true` | 启用草案 v2 协商，同时保留 v1 |
+| `protocolV2` | `true` | 协商草案 v2，同时保留稳定 v1 |
 | `sessionReplayPageSize` | `256` | 转录回放每页读取的最大持久事件数 |
 
 生成的[配置目录](../../../docs/config-catalog.zh.md#deepseek-aidsh-acp)是每个受支持字段及其 JSDoc 的穷尽式真源。
@@ -65,7 +65,7 @@ kind: "package-reference"
 |---|---|
 | `initialize` | 稳定 ACP v1，以及 `session/list`、`session/resume`、`session/close` 与 Streamable HTTP MCP 支持；图片提示词只在持久附件存储和配置的确切路由支持时公布。 |
 | `authenticate` | 立即成功；服务器不需要身份验证。 |
-| `session/new` | 全新持久 agent；其绝对工作区与 stdio 或 HTTP MCP 服务器会在发布前通过校验，并返回完整配置选项状态。 |
+| `session/new` | 全新持久 agent；其绝对工作区与 stdio 或 HTTP MCP 服务器会在发布前通过校验，并返回完整配置选项状态；命令列表在响应之后发送。 |
 | `session/list` | 按确定的新到旧顺序分页返回已持久化、可恢复的根会话；可选绝对 `cwd` 筛选会尽可能使用物理目录标识。 |
 | `session/load` | 恢复非活跃的持久会话，并在返回前回放保留的对话消息、工具和任务计划。 |
 | `session/resume` | 恢复一个已持久化且非活跃的会话；组合前校验其规范工作区，并恢复日志但不回放旧更新。 |
@@ -84,21 +84,21 @@ kind: "package-reference"
 
 在 `session/prompt` 中以文本发送已注册的斜杠命令，例如 `/goal finish the task`、`/goal`、`/goal edit revised objective`、`/goal pause`、`/goal resume` 或 `/goal clear`。桥接层直接执行接收 Agent 的命令注册表；命令输入和输出不进入模型历史。随附配置包含目标服务与自动轮次驱动器，因此创建或恢复目标会启动工作。命令仅接受文本；附带图片或资源链接会在执行前被拒绝。未识别的斜杠命令仍作为普通模型提示词处理。
 
-V1 在创建和恢复时通过 `available_commands_update` 公布完整命令列表；v2 在这些响应中返回 `availableCommands`。注册表变更会替换列表。命令结果使用标准助手文本更新。V1 在命令结果交付后返回 `end_turn`，不等待自动目标轮次。V2 使用仅在实时连接中有效的用户消息 ID 回显命令并返回该 ID；该回显及其直接结果不会重放。命令注册表持久化自身生命周期事件，目标服务持久化已接受的变更。
+V1 通过 `available_commands_update` 公布完整命令列表：在 `session/new` 响应之后、在 `session/load` 或 `session/resume` 响应之前发送，因此客户端总是先知道会话 ID；v2 在这些响应中返回 `availableCommands`。注册表变更会替换列表。命令结果使用标准助手文本更新。V1 在命令结果交付后返回 `end_turn`，不等待自动目标轮次。V2 使用仅在实时连接中有效的用户消息 ID 回显命令并返回该 ID；该回显及其直接结果不会重放。命令注册表持久化自身生命周期事件，目标服务持久化已接受的变更。
 
-命令可以在前台提示词或自动轮次执行期间查看、暂停或编辑目标。每个会话同时只接受一个命令，命令执行期间拒绝普通提示词。自动轮次独立于命令确认发布 v2 活动状态。`session/cancel` 通过现有取消路径停止正在执行的目标工作；关闭会话会先取消并排空命令，再释放 Agent。没有命令注册表的自定义组装不会公布命令。
+命令可以在前台提示词或自动轮次执行期间查看、暂停或编辑目标。每个会话同时只接受一个命令，命令执行期间拒绝普通提示词。自动轮次独立于命令确认发布 v2 活动状态。`session/cancel` 通过现有取消路径停止正在执行的目标工作，并中止正在运行的命令，该命令随后像被取消的提示词一样结算：v1 返回 `cancelled`，v2 拒绝该请求且不回显；关闭会话会先取消并排空命令，再释放 Agent。没有命令注册表的自定义组装不会公布命令。
 
 ### 目标状态与任务计划
 
-目标变更、激活状态变化和已接纳轮次通过标准助手文本发布目标内容、阶段、续行资格、轮次数及阻塞原因。加载或恢复会发布当前目标状态，但不会启用已恢复目标的自动续行；使用 `/goal resume` 显式重启自动工作。这些状态消息仅用于传输输出，不进入模型历史。同一命令可能同时产生命令确认与目标状态。
+目标变更、激活状态变化和已接纳轮次通过标准助手文本发布目标内容、阶段、续行资格、轮次数及阻塞原因。加载或恢复会发布当前目标状态，但不会启用已恢复目标的自动续行；使用 `/goal resume` 显式重启自动工作。这些状态消息仅用于传输输出，不进入模型历史。命令自身的结果已报告其所做的变更；该命令不会再重复一条状态文本，状态文本只覆盖自主变化与恢复。
 
 持久化的 `todo/write` 列表映射为完整 ACP 计划：v1 使用 `plan` 更新，v2 使用会话内 ID 为 `todos` 的 `plan_update` 条目列表。由于 DSH 任务没有优先级字段，所有优先级均为 `medium`。新轮次清空之前的列表；恢复会重建当前列表，历史加载则回放其替换记录。计划模式与计划文档预览仍独立于任务列表进度。
 
 ### 草案 ACP v2
 
-ACP 默认启用 v2 协商；仅在只部署 v1 时设置 `experimentalV2: false`。请求 `protocolVersion: 2` 的客户端将获得 v2。此连接使用 v2 的 `info` 与 `capabilities`；v1 客户端保留原有握手与提示词生命周期。固定的 SDK `1.7.0` 提供独立的 v1 与实验性 v2 校验器和处理程序。不公布不稳定扩展或身份验证方法。
+ACP 默认启用 v2 协商；仅在只部署 v1 时设置 `protocolV2: false`。请求 `protocolVersion: 2` 的客户端将获得 v2。此连接使用 v2 的 `info` 与 `capabilities`；v1 客户端保留原有握手与提示词生命周期。两种握手都报告 agent 名称 `deepseek-harness-acp` 与本包的版本。固定的 SDK `1.7.0` 提供独立的 v1 与实验性 v2 校验器和处理程序。不公布不稳定扩展或身份验证方法。
 
-配置档补丁会替换目标行的整个 `config`。当 ACP 负责初始模型选择时，须在 `experimentalV2` 旁同时填写 `provider` 和 `model`；仅包含开关的覆盖层会移除该选择。
+配置档补丁会替换目标行的整个 `config`。当 ACP 负责初始模型选择时，须在 `protocolV2` 旁同时填写 `provider` 和 `model`；仅包含开关的覆盖层会移除该选择。
 
 ACP 与 Web 可以通过同一个 Harness 主目录（`$DSH_HOME`，默认为 `~/.dsh`）共享提供方定义和已保存的凭据。将共享适配器配置放入 `$DSH_HOME/cordis.patch.yml`，两个配置档都会在各自补丁之上读取它。例如，此行共享已安装目录中的提供方，并引用现有的[凭据存储](../../credentials/credentials-local/README.zh.md)：
 
@@ -110,13 +110,13 @@ ACP 与 Web 可以通过同一个 Harness 主目录（`$DSH_HOME`，默认为 `~
         apiKeyEnv: OPENAI_API_KEY
 ```
 
-将完整适配器配置一次性移入此共享行；补丁会替换整个 `config`。ACP 的 `provider`、`model` 和 `experimentalV2` 选择保留在 `$DSH_HOME/profiles/acp/cordis.patch.yml` 中。修改共享配置后重启 ACP。Web 设置表单仍编辑配置档本地文件，并拒绝修改被共享行覆盖的配置；这些提供方应在共享文件中编辑。只共享各消费配置档都挂载的行，不要将 Web 专用插件移入主目录补丁。
+将完整适配器配置一次性移入此共享行；补丁会替换整个 `config`。ACP 的 `provider`、`model` 和 `protocolV2` 选择保留在 `$DSH_HOME/profiles/acp/cordis.patch.yml` 中。修改共享配置后重启 ACP。Web 设置表单仍编辑配置档本地文件，并拒绝修改被共享行覆盖的配置；这些提供方应在共享文件中编辑。只共享各消费配置档都挂载的行，不要将 Web 专用插件移入主目录补丁。
 
-v2 提示词在通过校验并插入后返回规范 Harness 用户 `messageId`，无需等待模型完成。服务器发送已接受的用户消息，然后发送 `running`。权限交换报告 `requires_action`，所有未完成回答到达后恢复 `running`。完成时报告 `idle` 与停止原因，包括 `cancelled` 或 `error`。`$/cancel_request` 只控制准入；接受后使用 `session/cancel`。每个会话仍只允许一个前台提示词。
+v2 提示词在通过校验并插入后返回规范 Harness 用户 `messageId`，无需等待模型完成。服务器发送已接受的用户消息，然后发送 `running`。权限交换报告 `requires_action`，所有未完成回答到达后恢复 `running`。完成时报告 `idle` 与停止原因，包括 `cancelled` 或 `error`；失败的轮次还会在 `_meta.error` 中携带失败消息，而不是作为转录文本。`$/cancel_request` 只控制准入；接受后使用 `session/cancel`。每个会话仍只允许一个前台提示词。
 
-已提交的 assistant 文本与 thought 使用带稳定 ID 的消息分块；工具调用使用 `tool_call_update` upsert。用户与 assistant ID 保留 Harness 标识；thought ID 在 assistant ID 后添加确定性的 `:thought` 后缀。模型选择器使用 `configId` 与 `groupId`。不带 `replayFrom` 的恢复报告当前空闲状态；`replayFrom: { type: "start" }` 还会通过分页存储读取回放保留的用户编写消息、assistant 消息与工具事实。注入的模型上下文不会成为用户回显。
+已提交的 assistant 文本与 thought 使用带稳定 ID 的消息分块；工具调用使用 `tool_call_update` upsert。用户与 assistant ID 保留 Harness 标识；thought ID 在 assistant ID 后添加确定性的 `:thought` 后缀。模型选择器使用 `configId` 与 `groupId`。恢复会发布已恢复的目标状态与现行计划，然后发布当前空闲状态；`replayFrom: { type: "start" }` 会先通过分页存储读取回放保留的用户编写消息、assistant 消息、工具事实与计划替换。注入的模型上下文不会成为用户回显。
 
-[v2 迁移指南](https://agentclientprotocol.com/protocol/v2/migration)与[基础 schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json)定义草案协议格式。显示终端与附加工作区根目录没有 ACP 投影；v2 协商不意味着支持这些功能。[T3 互操作测试](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts)导入由 `DSH_T3_CODE_ROOT` 选择的已安装检出；探针要求 v2，并检查 MCP 工具、目标轮次、权限、暂停／恢复、取消和历史加载。T3 的 `prompt()` 等待空闲状态，因此通过该 API 发送下一条提示词前须取消正在运行的目标。
+[v2 迁移指南](https://agentclientprotocol.com/protocol/v2/migration)与[基础 schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json)定义草案协议格式。显示终端与附加工作区根目录没有 ACP 投影；v2 协商不意味着支持这些功能。[T3 互操作测试](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts)导入由 `DSH_T3_CODE_ROOT` 选择的已安装检出；探针按 T3 Code 提交 `ed0f7b908b2e`（2026-10-11）的布局，通过该检出的 server 工作区解析 `@t3tools/provider-acp/server/AcpSessionRuntime`，要求 v2，并检查 MCP 工具、目标轮次、权限、暂停／恢复、取消和历史加载。CI 从不设置 `DSH_T3_CODE_ROOT`，因此更新该检出后须重新运行探针。T3 的 `prompt()` 等待空闲状态，因此通过该 API 发送下一条提示词前须取消正在运行的目标。
 
 -----
 
@@ -142,8 +142,10 @@ v2 提示词在通过校验并插入后返回规范 Harness 用户 `messageId`�
 
 | 文件 | 职责 |
 |---|---|
-| [`src/index.ts`](src/index.ts) | 插件入口：`Config` schema、`AgentSideConnection` 接线、按会话记录、准入与结算、清理 |
+| [`src/index.ts`](src/index.ts) | 插件入口：`Config` schema、协议路由与握手、按会话记录、监听器接线、清理 |
+| [`src/session.ts`](src/session.ts) | 单个会话的 Agent、命令、提示词准入与结算、有序更新、回放与进度 |
 | [`src/content.ts`](src/content.ts) | 协议内容准入与投影：图片校验、路由重查、提示词重建、assistant 块转换 |
+| [`src/updates.ts`](src/updates.ts) | 由已提交会话事件派生的标准 v1 更新，包括历史回放 |
 | [`src/codec.ts`](src/codec.ts) | 轮次结束到 ACP `stopReason` 的纯映射 |
 | [`src/v2.ts`](src/v2.ts) | 草案 v2 内容、配置与已提交事件投影 |
 

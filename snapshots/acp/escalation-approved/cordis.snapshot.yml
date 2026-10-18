@@ -11,7 +11,6 @@
   config:
     provider: deepseek-official
     model: deepseek-v4-flash
-    experimentalV2: !!js process.env.DSH_ACP_V2 === '1'
 
 - id: session-persistence-jsonl
   name: '@deepseek-ai/dsh-session-persistence-jsonl'

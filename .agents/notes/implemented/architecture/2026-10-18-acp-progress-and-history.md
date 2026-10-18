@@ -10,7 +10,7 @@ Automation clients need retained conversation history and progress after reconne
 
 ## Decision
 
-ACP projects existing goal and todo state without adding a second domain model. Standard assistant text carries current goal phase, activation, round count, and blocking reason; standard plan updates carry complete todo lists. Restoring a goal reports its disarmed state and does not restart work. V1 history loading and v2 replay use paged persistence reads and preserve conversation message identities.
+ACP projects existing goal and todo state without adding a second domain model. Standard assistant text carries current goal phase, activation, round count, and blocking reason; standard plan updates carry complete todo lists. Restoring a goal reports its disarmed state and does not restart work. A command's own result already reports the mutation it made, so status text is withheld while that command runs and covers autonomous changes and restoration. V1 history loading and v2 replay use paged persistence reads and preserve conversation message identities; replayed history carries every plan replacement, so restoration after replay publishes only the goal.
 
 This supersedes the history-loading and task-plan exclusions in [ACP as an automation-only protocol](../simplification/2026-07-23-acp-automation-only-protocol.md). [Command control](2026-10-17-acp-command-control.md) still owns command dispatch. Editor cards, plan-document review, terminals, and client filesystem access remain outside this transport.
 

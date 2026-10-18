@@ -8,6 +8,9 @@ import type {} from '@deepseek-ai/dsh-goal'
 import type {} from '@deepseek-ai/dsh-tool-todo'
 import { assistantBlockToAcp } from './content.ts'
 
+/** The standard updates one committed assistant message can produce. */
+export type AssistantUpdate = Extract<SessionUpdate, { sessionUpdate: 'agent_message_chunk' | 'agent_thought_chunk' | 'usage_update' }>
+
 /**
  * Convert one committed assistant message and its context usage in block order.
  * @param ctx - bridge context carrying attachment and token-meter services.
@@ -19,8 +22,8 @@ export async function assistantUpdates(
   ctx: Context,
   session: Session,
   event: SessionEvent<'assistant/message'>,
-): Promise<SessionUpdate[]> {
-  const updates: SessionUpdate[] = []
+): Promise<AssistantUpdate[]> {
+  const updates: AssistantUpdate[] = []
   for (const block of event.data.message.content) {
     if (block.type === 'reasoning') {
       if (block.text.length > 0) {
@@ -91,7 +94,7 @@ function usageUpdate(
   ctx: Context,
   session: Session,
   event: SessionEvent<'assistant/message'>,
-): SessionUpdate | undefined {
+): Extract<AssistantUpdate, { sessionUpdate: 'usage_update' }> | undefined {
   if (event.data.usage === undefined) return undefined
   const size = session.requestContext()?.contextWindow
   const meter = ctx.get('tokenMeter')

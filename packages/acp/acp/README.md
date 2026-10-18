@@ -47,7 +47,7 @@ Every session the server creates uses the provider and model configured here. Bo
 | `provider` | — | Provider route for every session's agent |
 | `model` | — | Model for every session's agent |
 | `sessionListPageSize` | `100` | Maximum summaries returned in one `session/list` page |
-| `experimentalV2` | `true` | Enable draft v2 negotiation while retaining v1 |
+| `protocolV2` | `true` | Negotiate draft v2 alongside stable v1 |
 | `sessionReplayPageSize` | `256` | Maximum persisted events read per transcript replay page |
 
 The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-aidsh-acp) is the exhaustive source for every accepted field and its JSDoc.
@@ -65,7 +65,7 @@ One connection can run several sessions at once, each independent. The following
 |---|---|
 | `initialize` | Stable ACP v1 plus `session/list`, `session/resume`, `session/close`, and Streamable HTTP MCP support; image prompts only when the durable attachment store and configured exact route support them. |
 | `authenticate` | Immediate success; the server requires no authentication. |
-| `session/new` | A fresh persistent agent whose absolute workspace and stdio or HTTP MCP servers are validated before publication, plus its complete configuration-option state. |
+| `session/new` | A fresh persistent agent whose absolute workspace and stdio or HTTP MCP servers are validated before publication, plus its complete configuration-option state; the command list follows the response. |
 | `session/list` | Deterministic newest-first pages of persisted, resumable root sessions; an optional absolute `cwd` filter uses physical-directory identity where possible. |
 | `session/load` | Restore an inactive persistent session and replay retained conversation messages, tools, and task plans before returning. |
 | `session/resume` | A persisted inactive session whose canonical workspace is verified before composition; its log is restored without replaying old updates. |
@@ -84,21 +84,21 @@ Session configuration offers opaque provider/model choices from the live LLM ser
 
 Send a registered slash command as text in `session/prompt`, for example `/goal finish the task`, `/goal`, `/goal edit revised objective`, `/goal pause`, `/goal resume`, or `/goal clear`. The bridge executes the receiving Agent's command registry directly; command input and output do not enter model history. The shipped profile includes the goal service and automatic round driver, so creating or resuming a goal starts work. Commands accept text only; accompanying images or resource links are rejected before execution. Unrecognized slash commands remain ordinary model prompts.
 
-V1 announces the complete command list through `available_commands_update` on creation and resume; v2 returns `availableCommands` in those responses. Registry changes replace the list. Command results use standard assistant text updates. V1 returns `end_turn` after the command result is delivered, without waiting for automatic goal rounds. V2 echoes the command with a live-only user message ID and returns that ID; this echo and its direct result are not replayed. The command registry persists its own lifecycle events and the goal service persists accepted mutations.
+V1 announces the complete command list through `available_commands_update` after the `session/new` response and before the `session/load` or `session/resume` response, so the client always knows the session ID first; v2 returns `availableCommands` in those responses. Registry changes replace the list. Command results use standard assistant text updates. V1 returns `end_turn` after the command result is delivered, without waiting for automatic goal rounds. V2 echoes the command with a live-only user message ID and returns that ID; this echo and its direct result are not replayed. The command registry persists its own lifecycle events and the goal service persists accepted mutations.
 
-A command can inspect, pause, or edit a goal during a foreground prompt or automatic round. Each session accepts one command at a time and rejects ordinary prompts during command execution. Automatic rounds publish v2 activity states independently of command acknowledgements. `session/cancel` stops active goal work through the existing cancellation path; closing the session cancels and drains commands before releasing the Agent. A custom composition without a command registry advertises no commands.
+A command can inspect, pause, or edit a goal during a foreground prompt or automatic round. Each session accepts one command at a time and rejects ordinary prompts during command execution. Automatic rounds publish v2 activity states independently of command acknowledgements. `session/cancel` stops active goal work through the existing cancellation path and aborts a running command, which then settles like a cancelled prompt: v1 returns `cancelled` and v2 rejects the request without an echo; closing the session cancels and drains commands before releasing the Agent. A custom composition without a command registry advertises no commands.
 
 ### Goal status and task plans
 
-Goal mutations, activation changes, and admitted rounds publish standard assistant text with the objective, phase, continuation eligibility, round count, and any blocking reason. Loading or resuming publishes the current goal status without arming a restored goal; `/goal resume` explicitly restarts automatic work. These status messages are transport output and do not enter model history. Command acknowledgements and goal status can both appear for one command.
+Goal mutations, activation changes, and admitted rounds publish standard assistant text with the objective, phase, continuation eligibility, round count, and any blocking reason. Loading or resuming publishes the current goal status without arming a restored goal; `/goal resume` explicitly restarts automatic work. These status messages are transport output and do not enter model history. A command's own result reports the mutation it made; status text is not repeated for that command and covers autonomous changes and restoration.
 
 Persisted `todo/write` lists become complete ACP plans: v1 `plan` updates and v2 `plan_update` item lists with the session-local ID `todos`. Priorities are `medium` because DSH tasks have no priority field. A new turn clears the previous list; resume restores a current list, and history loading replays its replacements. Planning mode and plan document previews remain separate from task-list progress.
 
 ### Draft ACP v2
 
-ACP enables v2 negotiation by default; set `experimentalV2: false` only for a v1-only deployment. A client requesting `protocolVersion: 2` receives v2. The connection then uses v2 `info` and `capabilities`; v1 clients keep their existing handshake and prompt lifecycle. The pinned SDK `1.7.0` supplies separate v1 and experimental v2 validators and handlers. No unstable extensions or authentication methods are advertised.
+ACP enables v2 negotiation by default; set `protocolV2: false` only for a v1-only deployment. A client requesting `protocolVersion: 2` receives v2. The connection then uses v2 `info` and `capabilities`; v1 clients keep their existing handshake and prompt lifecycle. Both handshakes report the agent name `deepseek-harness-acp` and this package's version. The pinned SDK `1.7.0` supplies separate v1 and experimental v2 validators and handlers. No unstable extensions or authentication methods are advertised.
 
-Profile patches replace the whole `config` of a targeted row. Include `provider` and `model` alongside `experimentalV2` when ACP owns the initial selection; an overlay containing only the flag removes that selection.
+Profile patches replace the whole `config` of a targeted row. Include `provider` and `model` alongside `protocolV2` when ACP owns the initial selection; an overlay containing only the flag removes that selection.
 
 ACP and Web can share provider definitions and saved credentials through the same Harness home (`$DSH_HOME`, default `~/.dsh`). Put the shared adapter configuration in `$DSH_HOME/cordis.patch.yml`, which both profiles read above their profile-local patches. For example, this row shares an installed catalog provider while referring to the existing [credential store](../../credentials/credentials-local/README.md):
 
@@ -110,13 +110,13 @@ ACP and Web can share provider definitions and saved credentials through the sam
         apiKeyEnv: OPENAI_API_KEY
 ```
 
-Move the complete adapter configuration into this shared row once; patches replace the entire `config`. Keep ACP's `provider`, `model`, and `experimentalV2` selection in `$DSH_HOME/profiles/acp/cordis.patch.yml`. Restart ACP after shared edits. Web settings forms remain profile-local and reject edits overridden by the shared row; edit the shared file for those providers. Only share rows mounted in each consuming profile, and do not move Web-only plugins into the home patch.
+Move the complete adapter configuration into this shared row once; patches replace the entire `config`. Keep ACP's `provider`, `model`, and `protocolV2` selection in `$DSH_HOME/profiles/acp/cordis.patch.yml`. Restart ACP after shared edits. Web settings forms remain profile-local and reject edits overridden by the shared row; edit the shared file for those providers. Only share rows mounted in each consuming profile, and do not move Web-only plugins into the home patch.
 
-A v2 prompt returns its canonical Harness user `messageId` after validated insertion, before the model finishes. The server emits the accepted user message, then `running`. Permission exchanges report `requires_action`, returning to `running` after the outstanding answers arrive. Completion reports `idle` with a stop reason, including `cancelled` or `error`. `$/cancel_request` owns admission only; after acceptance use `session/cancel`. Each session still admits one foreground prompt at a time.
+A v2 prompt returns its canonical Harness user `messageId` after validated insertion, before the model finishes. The server emits the accepted user message, then `running`. Permission exchanges report `requires_action`, returning to `running` after the outstanding answers arrive. Completion reports `idle` with a stop reason, including `cancelled` or `error`; a failed turn also carries its failure message in `_meta.error` rather than as transcript text. `$/cancel_request` owns admission only; after acceptance use `session/cancel`. Each session still admits one foreground prompt at a time.
 
-Committed assistant text and thoughts use message chunks with stable IDs; tool calls use `tool_call_update` upserts. User and assistant IDs retain their Harness identities; thought IDs add a deterministic `:thought` suffix to the assistant ID. Model selectors use `configId` and `groupId`. Resume without `replayFrom` reports the current idle state; `replayFrom: { type: "start" }` additionally replays retained user-authored messages, assistant messages, and tool facts from paged storage reads. Injected model context is not a user echo.
+Committed assistant text and thoughts use message chunks with stable IDs; tool calls use `tool_call_update` upserts. User and assistant IDs retain their Harness identities; thought IDs add a deterministic `:thought` suffix to the assistant ID. Model selectors use `configId` and `groupId`. Resume publishes the restored goal status and standing plan, then the current idle state; `replayFrom: { type: "start" }` first replays retained user-authored messages, assistant messages, tool facts, and plan replacements from paged storage reads. Injected model context is not a user echo.
 
-The [v2 migration guide](https://agentclientprotocol.com/protocol/v2/migration) and [baseline schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json) define the draft wire format. Display terminals and additional workspace roots have no ACP projection; they are not implied by v2 negotiation. The [T3 interoperability test](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts) imports an installed checkout selected by `DSH_T3_CODE_ROOT`; the probe requires v2 and checks MCP tools, goal rounds, permissions, pause/resume, cancellation, and history loading. T3's `prompt()` waits for idle, so a running goal must be cancelled before issuing another prompt through that API.
+The [v2 migration guide](https://agentclientprotocol.com/protocol/v2/migration) and [baseline schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json) define the draft wire format. Display terminals and additional workspace roots have no ACP projection; they are not implied by v2 negotiation. The [T3 interoperability test](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts) imports an installed checkout selected by `DSH_T3_CODE_ROOT`; the probe resolves `@t3tools/provider-acp/server/AcpSessionRuntime` through that checkout's server workspace as laid out at T3 Code commit `ed0f7b908b2e` (2026-10-11), requires v2, and checks MCP tools, goal rounds, permissions, pause/resume, cancellation, and history loading. CI never sets `DSH_T3_CODE_ROOT`, so rerun the probe after updating that checkout. T3's `prompt()` waits for idle, so a running goal must be cancelled before issuing another prompt through that API.
 
 -----
 
@@ -142,8 +142,10 @@ The decision history lives in the [ACP as an automation-only protocol note](../.
 
 | File | Role |
 |---|---|
-| [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, `AgentSideConnection` wiring, per-session records, admission and settlement, teardown |
+| [`src/index.ts`](src/index.ts) | Plugin entry: `Config` schema, protocol routing and handshakes, per-session records, listener wiring, teardown |
+| [`src/session.ts`](src/session.ts) | One session's Agent, commands, prompt admission and settlement, ordered updates, replay, and progress |
 | [`src/content.ts`](src/content.ts) | Wire-content admission and projection: image validation, route recheck, prompt reconstruction, assistant block conversion |
+| [`src/updates.ts`](src/updates.ts) | Standard v1 updates derived from committed session events, including history replay |
 | [`src/codec.ts`](src/codec.ts) | Pure turn-ending to ACP `stopReason` mapping |
 | [`src/v2.ts`](src/v2.ts) | Draft v2 content, configuration, and committed-event projections |
 
