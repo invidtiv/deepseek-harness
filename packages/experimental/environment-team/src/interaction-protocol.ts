@@ -21,7 +21,7 @@ const answer = z.object({
   }).strict().transform(defined)),
 }).strict()
 const question = z.object({ id: z.string(), question: z.string(), detail: z.string().optional(), header: z.string().optional(), options: z.array(z.object({ label: z.string(), description: z.string().optional() }).strict().transform(defined)).optional(), multiSelect: z.boolean().optional(), intent: z.object({ kind: z.literal('plan-review'), approve: z.string(), callId: callId.optional() }).strict().transform(defined).optional() }).strict().transform(defined)
-const terminalInfo = z.object({ id: terminalId, title: z.string(), shell: z.object({ path: z.string(), args: z.array(z.string()), name: z.string() }).strict(), cwd: z.string(), cols: dimension, rows: dimension, state: z.enum(['running', 'exited', 'failed']), exitCode: z.number().int().nullable(), error: z.string().optional(), controllerId: attachmentId.optional() }).strict().transform(defined)
+const terminalInfo = z.object({ id: terminalId, title: z.string(), shell: z.object({ path: z.string(), args: z.array(z.string()), name: z.string() }).strict(), cwd: z.string(), cols: dimension, rows: dimension, state: z.enum(['running', 'exited', 'failed']), exitCode: z.number().int().nullable(), error: z.string().optional() }).strict().transform(defined)
 const terminalCreate = z.object({
   id: terminalId, cols: dimension, rows: dimension, shellPath: z.string().optional() }).strict().transform(defined)
 const attachment = z.object({
@@ -60,7 +60,7 @@ export const interactionResultSchema: z.ZodType<EnvironmentInteractionResult> = 
 export const terminalFollowRequestSchema: z.ZodType<EnvironmentTerminalFollowRequest> = scope.extend({ terminalId, attachmentId }).strict()
 /** Ordered output frame with explicit destination identity. */
 export const environmentTerminalFrameSchema: z.ZodType<EnvironmentTerminalFrame> = resultScope.extend({ terminalId, frame: z.discriminatedUnion('type', [
-  z.object({ type: z.literal('snapshot'), sequence: z.number().int().nonnegative(), screen: z.string(), info: terminalInfo }).strict(),
+  z.object({ type: z.literal('snapshot'), sequence: z.number().int().nonnegative(), screen: z.string(), info: terminalInfo, writable: z.boolean() }).strict(),
   z.object({ type: z.literal('output'), sequence: z.number().int().nonnegative(), data: z.string() }).strict(),
-  z.object({ type: z.literal('state'), info: terminalInfo }).strict(),
+  z.object({ type: z.literal('state'), info: terminalInfo, writable: z.boolean() }).strict(),
 ]) }).strict()

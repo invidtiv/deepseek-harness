@@ -81,7 +81,7 @@ Both installations must support `workspaceSessionFollow` for live text. Followin
 
 The conversation controls show committed tool results and errors. The separate destination grants `attachmentAccess`, `approvalAccess`, and `terminalAccess` default to `false`. Attachments upload into the owning Agent's staged receipts; images enter model requests as images. Downloads require a reference in the authorized Session log. Prompt retry fingerprints persist below `stateDirectory/prompt-receipts` and reject changed submissions after receipts expire. Pending approvals and questions share the ordinary Web settlement broker, so the first valid answer wins across viewers.
 
-Terminals execute with the destination user's permissions and remain on that machine after the viewer disconnects. A connection receives a recovery screen followed by ordered output; a viewer exceeding its bounded queue must reconnect. Only the current terminal attachment may write or resize. Terminal input is never automatically replayed. The destination's terminal service owns process limits and retention; closing a terminal explicitly stops that process.
+Terminals execute with the destination user's permissions and remain on that machine after the viewer disconnects. A connection receives a recovery screen followed by ordered output; a viewer exceeding its bounded queue must reconnect. Only the current terminal attachment may write or resize; a write or resize completes once the destination terminal accepts it and fails while that attachment is read-only. Terminal input is never automatically replayed. The destination's terminal service owns process limits and retention; closing a terminal explicitly stops that process.
 
 ### Pairing invitations
 

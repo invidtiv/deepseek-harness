@@ -18,6 +18,7 @@ import { EnvironmentSessionInteractions } from '../src/session-interactions.ts'
 import { EnvironmentSessions } from '../src/session-service.ts'
 import { interactionResultSchema } from '../src/interaction-protocol.ts'
 import { sessionHost } from './session-host.ts'
+import { TerminalInputRoutes } from '../src/terminal-input.ts'
 
 const closers: (() => Promise<void>)[] = []
 afterEach(async () => { for (const close of closers.splice(0).reverse()) await close() })
@@ -41,7 +42,8 @@ async function fixture() {
   const sessionId = SessionId(randomUUID())
   const address = { workspaceId: host.workspace.id, sessionId }
   await sessions.run(peer, { ...address, action: 'create' }, signal)
-  return { ...host, peer, grant, address, sessions, interactions: new EnvironmentSessionInteractions(host.ctx, host.id, host.config) }
+  const interactions = new EnvironmentSessionInteractions(host.ctx, host.id, host.config, new TerminalInputRoutes())
+  return { ...host, peer, grant, address, sessions, interactions }
 }
 
 it('stores uploads only on the owner and reuses an accepted prompt after receipt retirement', async () => {

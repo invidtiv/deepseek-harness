@@ -6,11 +6,13 @@ import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
 import type {} from '@deepseek-ai/dsh-api-terminal-controller'
 import type {} from '@deepseek-ai/dsh-api-gateway'
-import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
+import type {} from '@deepseek-ai/dsh-client-connection'
+import { RemoteError, type RemoteInvocation } from '@deepseek-ai/dsh-typert-protocol'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { ResolvedConfig } from './config.ts'
 import type { EnvironmentId } from './protocol.ts'
 import { EnvironmentSessions } from './session-service.ts'
+import type { TerminalInputRoutes } from './terminal-input.ts'
 import { interactionRequestSchema, pendingInteractionSchema, terminalFollowRequestSchema } from './interaction-protocol.ts'
 import type { EnvironmentInteractionRequest, EnvironmentInteractionResult, EnvironmentPendingInteraction, EnvironmentSessionAttachment, EnvironmentSessionDetail, EnvironmentTerminalFollowRequest, EnvironmentTerminalFrame } from './interaction-types.ts'
 
@@ -18,7 +20,16 @@ const interactionEvents = ['approval/request', 'user-questions/request']
 
 /** Operates only on ordinary Sessions within the caller's current workspace grants. */
 export class EnvironmentSessionInteractions {
-  constructor(private readonly ctx: Context, private readonly id: EnvironmentId, private readonly config: ResolvedConfig) {}
+  /**
+   * @param ctx - destination Context providing Session, file, interaction and terminal services.
+   * @param id - this installation's environment identity.
+   * @param config - resolved grants and limits.
+   * @param terminalInputs - attachments opened through the same owning service, which route that service's terminal commands.
+   */
+  constructor(
+    private readonly ctx: Context, private readonly id: EnvironmentId, private readonly config: ResolvedConfig,
+    private readonly terminalInputs: TerminalInputRoutes,
+  ) {}
 
   /**
    * Execute an explicit destination operation after rechecking grants and ordinary Session ownership.
@@ -98,13 +109,16 @@ export class EnvironmentSessionInteractions {
         break
       }
       case 'terminal-write':
-      case 'terminal-resize':
+      case 'terminal-resize': {
+        this.require(capabilities.terminals)
+        const owner = { peer, sessionId: request.sessionId, terminalId: request.terminalId }
+        await this.terminalInputs.send(request.attachmentId, owner, request.action === 'terminal-write' ? { type: 'write', data: request.data } : { type: 'resize', cols: request.cols, rows: request.rows }, signal)
+        result = { ...scope, kind: 'acknowledged' }
+        break
+      }
       case 'terminal-close': {
         this.require(capabilities.terminals)
-        const agent = await this.agent(request.sessionId, signal)
-        if (request.action === 'terminal-write') await this.service('terminalController').write(agent, request.terminalId, request.attachmentId, request.data)
-        else if (request.action === 'terminal-resize') await this.service('terminalController').resize(agent, request.terminalId, request.attachmentId, request.cols, request.rows)
-        else await this.service('terminalController').close(agent, request.terminalId)
+        await this.service('terminalController').close(await this.agent(request.sessionId, signal), request.terminalId)
         result = { ...scope, kind: 'acknowledged' }
         break
       }
@@ -116,10 +130,12 @@ export class EnvironmentSessionInteractions {
 
   /**
    * Open ordered terminal output under a distinct terminal grant; closing the stream preserves its process.
+   * While the stream is open, `terminal-write` and `terminal-resize` requests naming its attachment
+   * reach the terminal as that attachment's input.
    * @param peer - authenticated caller or local operator.
    * @param input - owning Session and fresh physical input attachment.
    * @param signal - physical stream and runtime lifetime.
-   * @returns initial recovery screen followed by ordered output and terminal status.
+   * @returns initial recovery screen followed by ordered output and terminal status with this attachment's input control.
    */
   async *followTerminal(
     peer: EnvironmentId, input: EnvironmentTerminalFollowRequest, signal: AbortSignal,
@@ -128,12 +144,34 @@ export class EnvironmentSessionInteractions {
     await this.authorize(peer, request, signal)
     this.require(this.capabilities(peer).terminals)
     const agent = await this.agent(request.sessionId, signal)
-    for await (const frame of this.service('terminalController').follow(agent, request.terminalId, request.attachmentId, signal)) {
-      const result = {
-        environmentId: this.id, workspaceId: request.workspaceId, sessionId: request.sessionId, terminalId: request.terminalId, frame,
+    const route = this.terminalInputs.open(request.attachmentId, { peer, sessionId: request.sessionId, terminalId: request.terminalId })
+    const viewer = this.service('connection').createPeer({ principal: { kind: 'owner' }, interactions: 'none' })
+    try {
+      const invocation: RemoteInvocation = {
+        request: { namespace: 'terminalController', method: 'attach', args: { id: request.terminalId } },
+        service: 'terminalController', peer: viewer, signal,
+        uplink: <In>() => route.input() as AsyncIterable<In>,
       }
-      this.bound(result)
-      yield result
+      const terminals = this.ctx.extend({ invocation }).get('terminalController')
+      if (!terminals) throw new Error('Destination service is unavailable: terminalController')
+      for await (const frame of terminals.attach(agent, request.terminalId, signal)) {
+        if (frame.type === 'ack') {
+          route.acknowledge(frame)
+          continue
+        }
+        const output = frame.type === 'snapshot'
+          ? { type: frame.type, sequence: frame.sequence, screen: frame.screen, info: frame.info, writable: frame.writable }
+          : frame
+        const result = {
+          environmentId: this.id, workspaceId: request.workspaceId, sessionId: request.sessionId,
+          terminalId: request.terminalId, frame: output,
+        }
+        this.bound(result)
+        yield result
+      }
+    } finally {
+      this.terminalInputs.release(request.attachmentId, route)
+      await viewer.dispose()
     }
   }
 
@@ -157,7 +195,7 @@ export class EnvironmentSessionInteractions {
     return result.agent
   }
 
-  private service<K extends 'terminalController' | 'fileUploads' | 'attachments' | 'remoteEventAccess' | 'sessionController'>(name: K): Context[K] {
+  private service<K extends 'terminalController' | 'connection' | 'fileUploads' | 'attachments' | 'remoteEventAccess' | 'sessionController'>(name: K): Context[K] {
     const service = this.ctx.get(name)
     if (!service) throw new Error(`Destination service is unavailable: ${name}`)
     return service
@@ -168,7 +206,7 @@ export class EnvironmentSessionInteractions {
     return {
       attachments: (local || grant?.attachmentAccess === true) && !!this.ctx.get('fileUploads') && !!this.ctx.get('attachments'),
       approvals: (local || grant?.approvalAccess === true) && !!this.ctx.get('remoteEventAccess'),
-      terminals: (local || grant?.terminalAccess === true) && !!this.ctx.get('terminalController'),
+      terminals: (local || grant?.terminalAccess === true) && !!this.ctx.get('terminalController') && !!this.ctx.get('connection'),
     }
   }
 

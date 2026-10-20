@@ -25,12 +25,14 @@ import { sessionFrameStream } from './session-stream.ts'
 import { EnvironmentSessionInteractions } from './session-interactions.ts'
 import { interactionRequestSchema, interactionResultSchema } from './interaction-protocol.ts'
 import type { EnvironmentInteractionRequest, EnvironmentInteractionResult } from './interaction-types.ts'
+import { TerminalInputRoutes } from './terminal-input.ts'
 
 /** Operator-only configuration namespace, separate from peer execution routes. */
 export default class EnvironmentTeamSettings extends TypertRemoteService {
   static inject = ['configEditor', 'credentials', 'typert', 'workspaceRegistry', 'agents']
 
   private readonly abort = new AbortController()
+  private readonly terminalInputs = new TerminalInputRoutes()
   private readonly pending = new Set<Promise<unknown>>()
 
   constructor(ctx: Context) {
@@ -172,7 +174,9 @@ export default class EnvironmentTeamSettings extends TypertRemoteService {
       const operation = interactionRequestSchema.parse(request)
       const { config } = this.entry()
       const local = await loadIdentity(config.stateDirectory)
-      if (target === local) return new EnvironmentSessionInteractions(this.ctx, local, config).run(local, operation, lifetime)
+      if (target === local) {
+        return new EnvironmentSessionInteractions(this.ctx, local, config, this.terminalInputs).run(local, operation, lifetime)
+      }
       const transport = new PeerTransport(local, config, this.ctx.credentials)
       const descriptor = await transport.describe(target, lifetime)
       if (!descriptor.capabilities.workspaceSessionInteractions) throw new Error('Peer does not support Session interactions')
@@ -236,7 +240,9 @@ export default class EnvironmentTeamSettings extends TypertRemoteService {
       const operation = terminalFollowRequestSchema.parse(request)
       const local = await loadIdentity(config.stateDirectory)
       active.throwIfAborted()
-      if (target === local) yield* new EnvironmentSessionInteractions(this.ctx, local, config).followTerminal(local, operation, active)
+      if (target === local) {
+        yield* new EnvironmentSessionInteractions(this.ctx, local, config, this.terminalInputs).followTerminal(local, operation, active)
+      }
       else yield* new PeerTransport(local, config, this.ctx.credentials).terminalFollow(target, operation, active)
     }
     const stream = terminalFrameStream(active => open.call(this, active), lifetime, config.maxBytes)

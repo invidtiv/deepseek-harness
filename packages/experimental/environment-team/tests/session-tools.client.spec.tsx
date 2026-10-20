@@ -51,6 +51,7 @@ it('uses destination dimensions and IDs for attachment and terminal controls', a
   const attachment = { attachmentId: brandString<NonNullable<InteractionState['snapshot']>['attachments'][number]['attachmentId']>('attachment'), name: 'result.txt', bytes: 42, mediaType: 'text/plain' }
   const terminalId = brandString<NonNullable<InteractionState['snapshot']>['terminals'][number]['id']>('terminal')
   const state: InteractionState = { address, loading: false, busy: false, offline: true, terminalOffline: false, terminalRevision: 0,
+    terminalWritable: false,
     snapshot: {
       ...address, kind: 'snapshot', pending: [], attachments: [attachment], details: [{
         seq: 2, kind: 'tool-result', title: 'bash', text: 'done', isError: true }],

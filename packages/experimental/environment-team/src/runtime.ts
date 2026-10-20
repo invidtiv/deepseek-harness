@@ -25,6 +25,7 @@ import type { EnvironmentTerminalFollowRequest } from './interaction-types.ts'
 import { sessionFrameStream, type SessionFrameStream } from './session-stream.ts'
 import type { EnvironmentSessionFollowRequest } from './session-types.ts'
 import type { Assignment, Delivery, DistributedTeamId, EnvironmentDescriptor, EnvironmentId, Member, OperationId, PeerRequest, Team, TeamCommand } from './protocol.ts'
+import { TerminalInputRoutes } from './terminal-input.ts'
 
 const domainSpec = defineDomain({
   name: 'environment_teams', version: 1, layout: 'per-record',
@@ -43,6 +44,7 @@ export class EnvironmentTeams {
   private readonly handles = new Map<string, AgentHandle>()
   private readonly queues = new Map<string, Promise<void>>()
   private readonly abort = new AbortController()
+  private readonly terminalInputs = new TerminalInputRoutes()
   private readonly active = new Set<Promise<unknown>>()
   private pumping: Promise<void> | undefined
   private stopped = false
@@ -130,7 +132,7 @@ export class EnvironmentTeams {
     return this.track(async () => {
       if (request.environmentId !== this.environmentId) throw new Error('environment identity mismatch')
       switch (request.kind) {
-        case 'session-interaction': return JSON.stringify(await new EnvironmentSessionInteractions(this.ctx, this.environmentId, this.config).run(peer, request.request, AbortSignal.any([signal, this.abort.signal])))
+        case 'session-interaction': return JSON.stringify(await new EnvironmentSessionInteractions(this.ctx, this.environmentId, this.config, this.terminalInputs).run(peer, request.request, AbortSignal.any([signal, this.abort.signal])))
         case 'team-dashboard': return JSON.stringify(await this.dashboard(peer, request.request, signal))
         case 'session': return JSON.stringify(await this.workspaceSessions.run(peer, request.request, AbortSignal.any([signal, this.abort.signal])))
         case 'workspace': return JSON.stringify(await new EnvironmentWorkspaceBrowser(this.ctx, this.environmentId, this.config).run(peer, request.request))
@@ -172,7 +174,8 @@ export class EnvironmentTeams {
    */
   followTerminal(peer: EnvironmentId, request: EnvironmentTerminalFollowRequest, signal: AbortSignal): TerminalFrameStream {
     const stream = terminalFrameStream(
-      lifetime => new EnvironmentSessionInteractions(this.ctx, this.environmentId, this.config).followTerminal(peer, request, lifetime),
+      lifetime => new EnvironmentSessionInteractions(this.ctx, this.environmentId, this.config, this.terminalInputs)
+        .followTerminal(peer, request, lifetime),
       AbortSignal.any([signal, this.abort.signal]), this.config.maxBytes,
     )
     this.active.add(stream.done)

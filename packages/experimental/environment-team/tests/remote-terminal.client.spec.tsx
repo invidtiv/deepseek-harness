@@ -31,7 +31,7 @@ it('applies snapshot and ordered output, routes keyboard bytes and drops acknowl
   const rendered = vi.fn(), write = vi.fn()
   const frame: EnvironmentTerminalFrame = { ...base, frame: { type: 'snapshot', sequence: 0, screen: 'prompt', info: {
     id: base.terminalId, title: 'Shell', shell: { path: 'sh', name: 'sh', args: [] }, cwd: '/project', cols: 90, rows: 30, state: 'running', exitCode: null,
-  } } }
+  }, writable: true } }
   const props = { identity: 'one', frame, revision: 1, label: 'Input', failureLabel: 'Failed', disabled: false, write, rendered }
   const view = render(<RemoteTerminal {...props} />)
   await waitFor(() => { expect(emulator.reset).toHaveBeenCalledOnce() })

@@ -53,8 +53,8 @@ export function SessionTools({ state, disabled, t, ...actions }: PropsLocale<'en
         {terminal && <Button disabled={locked || !sizeValid} onClick={() => { actions.interaction({ action: 'terminal-resize', ...terminal, cols: Number(columns), rows: Number(lines) }) }}>{t('resizeTerminal')}</Button>}
       </div>
       {state.terminalOffline && <p role="alert">{t('terminalOffline')}</p>}
-      {state.terminalInfo && state.terminalInfo.controllerId !== terminal?.attachmentId && <p>{t('terminalReadOnly')}</p>}
-      {state.terminal && <RemoteTerminal identity={`${state.address?.environmentId}:${state.terminal.attachmentId}`} frame={state.terminalFrame} revision={state.terminalRevision} label={t('terminalInput')} failureLabel={t('terminalFailed')} disabled={state.terminalOffline || state.terminalInfo?.controllerId !== terminal?.attachmentId || disabled} write={actions.terminalWrite} rendered={actions.terminalRendered} />}
+      {state.terminalInfo && !state.terminalWritable && <p>{t('terminalReadOnly')}</p>}
+      {state.terminal && <RemoteTerminal identity={`${state.address?.environmentId}:${state.terminal.attachmentId}`} frame={state.terminalFrame} revision={state.terminalRevision} label={t('terminalInput')} failureLabel={t('terminalFailed')} disabled={state.terminalOffline || !state.terminalWritable || disabled} write={actions.terminalWrite} rendered={actions.terminalRendered} />}
     </section>}
   </div>
 }

@@ -21,6 +21,8 @@ export interface InteractionState {
   terminal?: EnvironmentTerminalFollowRequest
   terminalFrame?: EnvironmentTerminalFrame
   terminalInfo?: Snapshot['terminals'][number]
+  /** Whether the destination currently grants this viewer's attachment input control. */
+  terminalWritable: boolean
   terminalRevision: number
   terminalOffline: boolean
 }
@@ -33,7 +35,7 @@ export type TerminalFollow = (environment: Address['environmentId'], request: En
 export class RemoteInteractionController {
   /** Observable data consumed through renderer-owned hooks. */
   readonly state = createSnapshotStore<InteractionState>({
-    loading: false, busy: false, offline: false, terminalRevision: 0, terminalOffline: false,
+    loading: false, busy: false, offline: false, terminalRevision: 0, terminalOffline: false, terminalWritable: false,
   })
   private active = false
   private generation = 0
@@ -68,7 +70,7 @@ export class RemoteInteractionController {
     this.stop()
     this.state.set({
       ...(address ? { address } : {}), loading: address !== undefined,
-      busy: false, offline: false, terminalRevision: 0, terminalOffline: false,
+      busy: false, offline: false, terminalRevision: 0, terminalOffline: false, terminalWritable: false,
     })
     if (this.active) void this.refresh()
   }
@@ -141,7 +143,8 @@ export class RemoteInteractionController {
     this.terminalAbort = abort
     const request: EnvironmentTerminalFollowRequest = { workspaceId: address.workspaceId, sessionId: address.sessionId, terminalId, attachmentId: brandString<EnvironmentTerminalFollowRequest['attachmentId']>(randomUUID()) }
     this.state.update((value) => {
-      value.terminal = request; delete value.terminalFrame; delete value.terminalInfo; value.terminalOffline = false
+      value.terminal = request; delete value.terminalFrame; delete value.terminalInfo
+      value.terminalOffline = false; value.terminalWritable = false
     })
     this.terminalDone = this.terminalDone.then(async () => {
       if (aborted()) return
@@ -152,7 +155,7 @@ export class RemoteInteractionController {
             this.presented = resolve
             this.state.update((value) => {
               value.terminalFrame = frame; value.terminalRevision++; value.terminalOffline = false
-              if (frame.frame.type !== 'output') value.terminalInfo = frame.frame.info
+              if (frame.frame.type !== 'output') { value.terminalInfo = frame.frame.info; value.terminalWritable = frame.frame.writable }
             })
           })
         }

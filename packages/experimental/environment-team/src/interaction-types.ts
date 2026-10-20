@@ -3,10 +3,13 @@ import type { Branded } from '@deepseek-ai/dsh-brand'
 import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand'
 import type { FileUploadValue, FileUploadReceiptId } from '@deepseek-ai/dsh-client-file-upload/types'
 import type { AskUserQuestionAnswer, AskUserQuestionItem } from '@deepseek-ai/dsh-user-questions/types'
-import type { TerminalFrame, TerminalAttachmentId, TerminalCreateRequest, WebTerminalId, WebTerminalInfo } from '@deepseek-ai/dsh-api-terminal-controller/types'
+import type { TerminalFrame, TerminalCreateRequest, WebTerminalId, WebTerminalInfo } from '@deepseek-ai/dsh-api-terminal-controller/types'
 import type { EnvironmentSessionFollowRequest } from './session-types.ts'
 
 type EnvironmentId = Branded<'EnvironmentId'>
+
+/** Viewer-generated identity of one physical terminal connection; it routes only that viewer's input commands. */
+export type EnvironmentTerminalAttachmentId = Branded<'EnvironmentTerminalAttachmentId'>
 
 /** Gateway-owned pending interaction identity, never inferred from a tool call. */
 export type EnvironmentInteractionId = Branded<'RemoteEventId'>
@@ -42,8 +45,8 @@ export type EnvironmentInteractionRequest = EnvironmentSessionFollowRequest & (
   | { readonly action: 'approval'; readonly id: EnvironmentInteractionId; readonly decision: 'allowed-once' | 'rejected' }
   | { readonly action: 'answer'; readonly id: EnvironmentInteractionId; readonly answer: AskUserQuestionAnswer }
   | { readonly action: 'terminal-create'; readonly request: TerminalCreateRequest }
-  | { readonly action: 'terminal-write'; readonly terminalId: WebTerminalId; readonly attachmentId: TerminalAttachmentId; readonly data: string }
-  | { readonly action: 'terminal-resize'; readonly terminalId: WebTerminalId; readonly attachmentId: TerminalAttachmentId; readonly cols: number; readonly rows: number }
+  | { readonly action: 'terminal-write'; readonly terminalId: WebTerminalId; readonly attachmentId: EnvironmentTerminalAttachmentId; readonly data: string }
+  | { readonly action: 'terminal-resize'; readonly terminalId: WebTerminalId; readonly attachmentId: EnvironmentTerminalAttachmentId; readonly cols: number; readonly rows: number }
   | { readonly action: 'terminal-close'; readonly terminalId: WebTerminalId }
 )
 
@@ -59,14 +62,19 @@ export type EnvironmentInteractionResult = EnvironmentSessionFollowRequest & { r
 /** A fresh input attachment is required for each physical terminal connection. */
 export interface EnvironmentTerminalFollowRequest extends EnvironmentSessionFollowRequest {
   readonly terminalId: WebTerminalId
-  readonly attachmentId: TerminalAttachmentId
+  readonly attachmentId: EnvironmentTerminalAttachmentId
 }
+
+/** Destination terminal frames forwarded to a viewer; input acknowledgements settle the originating command instead. */
+export type EnvironmentTerminalOutput =
+  | Omit<Extract<TerminalFrame, { type: 'snapshot' }>, 'inputWindow'>
+  | Extract<TerminalFrame, { type: 'output' | 'state' }>
 
 /** Ordered terminal output; unlike conversation snapshots, output cannot be coalesced. */
 export interface EnvironmentTerminalFrame extends EnvironmentSessionFollowRequest {
   readonly environmentId: EnvironmentId
   readonly terminalId: WebTerminalId
-  readonly frame: TerminalFrame
+  readonly frame: EnvironmentTerminalOutput
 }
 
 /** Destination-issued file receipts retained until prompt acceptance. */

@@ -82,6 +82,9 @@
       "path": "../../api/terminal-controller/tsconfig.host.json"
     },
     {
+      "path": "../../client/connection/tsconfig.host.json"
+    },
+    {
       "path": "../../api/gateway/tsconfig.host.json"
     }
   ]

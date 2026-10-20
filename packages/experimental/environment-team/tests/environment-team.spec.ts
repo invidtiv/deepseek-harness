@@ -23,7 +23,7 @@ import Workspace from '@deepseek-ai/dsh-workspace'
 import Projections from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
-import Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
+import * as Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as JsonStorage from '@deepseek-ai/dsh-storage-json'
@@ -598,7 +598,7 @@ it('closes a peer request that stalls while sending its body', async () => {
   const b = await host()
   const key = pair(a, b)
   await mount(b, { ...b.config, requestTimeoutMs: 50 })
-  const socket = createConnection({ host: '127.0.0.1', port: b.ctx.webServer.port })
+  const socket = createConnection({ host: '127.0.0.1', port: Number(b.ctx.webServer.port) })
   const errors: Error[] = []
   socket.on('error', error => errors.push(error))
   try {

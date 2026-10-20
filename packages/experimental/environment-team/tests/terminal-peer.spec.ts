@@ -27,7 +27,7 @@ it('delivers a recovery screen and every output frame, releasing only the viewer
   const snapshot: EnvironmentTerminalFrame = { ...base, frame: { type: 'snapshot', sequence: 0, screen: 'screen', info: {
     id: request.terminalId, title: 'Shell', cwd: destination.cwd, cols: 80, rows: 24,
     shell: { path: '/fixture/shell', args: [], name: 'Fixture shell' }, state: 'running', exitCode: null,
-  } } }
+  }, writable: true } }
   const frames: EnvironmentTerminalFrame[] = [snapshot,
     { ...base, frame: { type: 'output', sequence: 1, data: 'first' } },
     { ...base, frame: { type: 'output', sequence: 2, data: 'second' } }]
@@ -81,7 +81,7 @@ it('requires a matching recovery baseline and contiguous output before accepting
   const snapshot: EnvironmentTerminalFrame = { ...base, frame: { type: 'snapshot', sequence: 4, screen: 'screen', info: {
     id: request.terminalId, title: 'Shell', cwd: destination.cwd, cols: 80, rows: 24,
     shell: { path: '/fixture/shell', args: [], name: 'Fixture shell' }, state: 'running', exitCode: null,
-  } } }
+  }, writable: true } }
   const output: EnvironmentTerminalFrame = { ...base, frame: { type: 'output', sequence: 6, data: 'gap' } }
   const source = vi.spyOn(EnvironmentSessionInteractions.prototype, 'followTerminal')
   const transport = new PeerTransport(caller.id, caller.config, caller.ctx.credentials)

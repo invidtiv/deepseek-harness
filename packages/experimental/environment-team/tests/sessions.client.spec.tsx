@@ -12,7 +12,7 @@ import { en as common } from '@deepseek-ai/dsh-client-locale/src/locales/en.ts'
 afterEach(cleanup)
 const dictionary = { ...common, ...en }
 const tools = {
-  useRemoteInteractions: <T,>(select: (state: import('../src/client/interaction-controller.ts').InteractionState) => T): T => select({ loading: false, busy: false, offline: false, terminalOffline: false, terminalRevision: 0 }),
+  useRemoteInteractions: <T,>(select: (state: import('../src/client/interaction-controller.ts').InteractionState) => T): T => select({ loading: false, busy: false, offline: false, terminalOffline: false, terminalRevision: 0, terminalWritable: false }),
   interaction: vi.fn(),
   upload: vi.fn(), download: vi.fn(), terminalConnect: vi.fn(), terminalCreate: vi.fn(), terminalWrite: vi.fn(), terminalRendered: vi.fn(),
   olderSessions: vi.fn(), backToLatestSessions: vi.fn(),
