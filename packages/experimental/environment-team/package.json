@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-experimental-environment-team",
   "description": "Authenticated distributed teams across independent Harness environments",
-  "version": "0.1.7-rc.1",
+  "version": "0.2.1-alpha.1",
   "type": "module",
   "license": "MIT",
   "publishConfig": {
@@ -24,6 +24,10 @@
     "./management": {
       "types": "./lib/types/management.d.ts",
       "default": "./lib/management.js"
+    },
+    "./pairing": {
+      "types": "./lib/types/pairing.d.ts",
+      "default": "./lib/pairing.js"
     },
     "./client": {
       "types": "./lib/types/client/index.d.ts",

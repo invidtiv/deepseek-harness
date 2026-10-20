@@ -142,11 +142,20 @@ it('waits for a configured interval and can restart after the first configuratio
 it('does not schedule another reader if paused while resolving retry configuration', async () => {
   let resolveInterval!: (value: number) => void
   const interval = () => new Promise<number>((resolve) => { resolveInterval = resolve })
-  const follow: SessionFollow = async function* () { yield base }
-  const controller = new RemoteSessionController(async () => { throw new Error('offline') }, interval, vi.fn(), follow)
+  const follow = vi.fn<SessionFollow>(async function* () { yield base })
+  const read = vi.fn<SessionCall>(async () => { throw new Error('offline') })
+  const controller = new RemoteSessionController(read, interval, vi.fn(), follow)
   roots.push(controller); controller.open(workspace); controller.select(sessionId); controller.resume()
   await vi.waitFor(() => { expect(controller.state.getSnapshot().offline).toBe(true); expect(resolveInterval).toBeTypeOf('function') })
+  const reads = read.mock.calls.length
+  const readers = follow.mock.calls.length
+  vi.useFakeTimers()
   controller.pause(); resolveInterval(1000)
-  await controller.dispose()
+  // Settle the resolved delay without running timers: paused work must not arm a retry wait.
+  await vi.advanceTimersByTimeAsync(0)
+  expect(vi.getTimerCount()).toBe(0)
+  await vi.runAllTimersAsync()
+  expect(follow.mock.calls).toHaveLength(readers)
+  expect(read.mock.calls).toHaveLength(reads)
   expect(controller.state.getSnapshot().offline).toBe(true)
 })
