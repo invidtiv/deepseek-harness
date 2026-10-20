@@ -67,7 +67,7 @@ kind: "package-reference"
 | `authenticate` | 立即成功；服务器不需要身份验证。 |
 | `session/new` | 全新持久 agent；其绝对工作区与 stdio 或 HTTP MCP 服务器会在发布前通过校验，并返回完整配置选项状态；命令列表在响应之后发送。 |
 | `session/list` | 按确定的新到旧顺序分页返回已持久化、可恢复的根会话；可选绝对 `cwd` 筛选会尽可能使用物理目录标识。 |
-| `session/load` | 恢复非活跃的持久会话，并在返回前回放保留的对话消息、工具和任务计划。 |
+| `session/load` | 恢复非活跃的持久会话，并在返回前回放保留的对话消息、工具和任务计划；返回前针对该会话的请求都会失败，之后的事件排在回放之后。 |
 | `session/resume` | 恢复一个已持久化且非活跃的会话；组合前校验其规范工作区，并恢复日志但不回放旧更新。 |
 | `session/close` | 停稳式取消、更新 drain、后代释放、持久化 flush，并且只释放指定 Agent 作用域。 |
 | `session/set_config_option` | 串行更新公布的 `model` 或 `reasoning_effort`，并返回完整结果状态。 |
@@ -112,9 +112,9 @@ ACP 与 Web 可以通过同一个 Harness 主目录（`$DSH_HOME`，默认为 `~
 
 将完整适配器配置一次性移入此共享行；补丁会替换整个 `config`。ACP 的 `provider`、`model` 和 `protocolV2` 选择保留在 `$DSH_HOME/profiles/acp/cordis.patch.yml` 中。修改共享配置后重启 ACP。Web 设置表单仍编辑配置档本地文件，并拒绝修改被共享行覆盖的配置；这些提供方应在共享文件中编辑。只共享各消费配置档都挂载的行，不要将 Web 专用插件移入主目录补丁。
 
-v2 提示词在通过校验并插入后返回规范 Harness 用户 `messageId`，无需等待模型完成。服务器发送已接受的用户消息，然后发送 `running`。权限交换报告 `requires_action`，所有未完成回答到达后恢复 `running`。完成时报告 `idle` 与停止原因，包括 `cancelled` 或 `error`；失败的轮次还会在 `_meta.error` 中携带失败消息，而不是作为转录文本。`$/cancel_request` 只控制准入；接受后使用 `session/cancel`。每个会话仍只允许一个前台提示词。
+v2 提示词在其轮次将消息提交到对话后返回规范 Harness 用户 `messageId`，无需等待模型完成；排在其他工作之后的提示词尚未被接受，在提交前被取消或移除的提示词会让请求失败且不回显。服务器回显已提交的用户消息，然后发送 `running`。权限交换报告 `requires_action`，所有未完成回答到达后恢复 `running`。完成时报告 `idle` 与停止原因，包括 `cancelled` 或 `error`；失败的轮次还会在 `_meta.error` 中携带失败消息，而不是作为转录文本。`$/cancel_request` 可在提交前取消提示词；接受后使用 `session/cancel`。每个会话仍只允许一个前台提示词。
 
-已提交的 assistant 文本与 thought 使用带稳定 ID 的消息分块；工具调用使用 `tool_call_update` upsert。用户与 assistant ID 保留 Harness 标识；thought ID 在 assistant ID 后添加确定性的 `:thought` 后缀。模型选择器使用 `configId` 与 `groupId`。恢复会发布已恢复的目标状态与现行计划，然后发布当前空闲状态；`replayFrom: { type: "start" }` 会先通过分页存储读取回放保留的用户编写消息、assistant 消息、工具事实与计划替换。注入的模型上下文不会成为用户回显。
+已提交的 assistant 文本与 thought 使用带稳定 ID 的消息分块；工具调用使用 `tool_call_update` upsert。用户与 assistant ID 保留 Harness 标识；thought ID 在 assistant ID 后添加确定性的 `:thought` 后缀。模型选择器使用 `configId` 与 `groupId`。恢复会发布已恢复的目标状态与现行计划，然后发布当前空闲状态；`replayFrom: { type: "start" }` 会先通过分页存储读取回放保留的用户编写消息、assistant 消息、工具事实与计划替换。实时交付与回放回显相同的已提交用户编写消息；注入的模型上下文不会成为用户回显。
 
 [v2 迁移指南](https://agentclientprotocol.com/protocol/v2/migration)与[基础 schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json)定义草案协议格式。显示终端与附加工作区根目录没有 ACP 投影；v2 协商不意味着支持这些功能。[T3 互操作测试](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts)导入由 `DSH_T3_CODE_ROOT` 选择的已安装检出；探针按 T3 Code 提交 `ed0f7b908b2e`（2026-10-11）的布局，通过该检出的 server 工作区解析 `@t3tools/provider-acp/server/AcpSessionRuntime`，要求 v2，并检查 MCP 工具、目标轮次、权限、暂停／恢复、取消和历史加载。CI 从不设置 `DSH_T3_CODE_ROOT`，因此更新该检出后须重新运行探针。T3 的 `prompt()` 等待空闲状态，因此通过该 API 发送下一条提示词前须取消正在运行的目标。
 
@@ -145,13 +145,14 @@ v2 提示词在通过校验并插入后返回规范 Harness 用户 `messageId`�
 | [`src/index.ts`](src/index.ts) | 插件入口：`Config` schema、协议路由与握手、按会话记录、监听器接线、清理 |
 | [`src/session.ts`](src/session.ts) | 单个会话的 Agent、命令、提示词准入与结算、有序更新、回放与进度 |
 | [`src/content.ts`](src/content.ts) | 协议内容准入与投影：图片校验、路由重查、提示词重建、assistant 块转换 |
-| [`src/updates.ts`](src/updates.ts) | 由已提交会话事件派生的标准 v1 更新，包括历史回放 |
+| [`src/output.ts`](src/output.ts) | 与协议无关的更新交付及其稳定 v1 实现 |
+| [`src/updates.ts`](src/updates.ts) | 已提交会话事件的标准 v1 投影，用于实时交付与历史回放 |
 | [`src/codec.ts`](src/codec.ts) | 轮次结束到 ACP `stopReason` 的纯映射 |
-| [`src/v2.ts`](src/v2.ts) | 草案 v2 内容、配置与已提交事件投影 |
+| [`src/v2.ts`](src/v2.ts) | 草案 v2 内容、配置、已提交事件投影与更新交付 |
 
 ### 准入与提示词结算
 
-每个会话只允许一个正在处理的提示词。准入先校验整个提示词批次、快照所选路由、重新检查 Agent 是否为同一对象与图片能力、持久化图片附件，然后才把用户消息入队——先于准入完成的取消绝不会让迟到的轮次入队。入队后，会话模块会将该快照与 inbox 消息关联起来，直至该消息被认领，并在提示词变量与该轮次的每个模型步骤中固定相同的提供方、模型与推理强度。按会话更新会串行交付；已提交图片会重新读取并验证完整性，因此图片缺失或损坏会让关联提示词失败，而不是发出占位符。结算优先级依次为显式取消、已提交输出失败、区间内 Agent 失败、关联轮次结束。
+每个会话只允许一个正在处理的提示词。准入先校验整个提示词批次、快照所选路由、重新检查 Agent 是否为同一对象与图片能力、持久化图片附件，然后才把用户消息入队——先于准入完成的取消绝不会让迟到的轮次入队。入队后，会话模块会将该快照与 inbox 消息关联起来，直至该消息被认领，并在提示词变量与该轮次的每个模型步骤中固定相同的提供方、模型与推理强度。按会话更新会串行交付；已提交图片会重新读取并验证完整性，因此 assistant 输出或工具结果中的图片缺失或损坏会让前台提示词失败，而不是发出占位符。两种协议都会记录传输写入失败，并交由连接清理处理。结算优先级依次为显式取消、已提交输出失败、区间内 Agent 失败、关联轮次结束。
 
 ### 清理与连接归属
 

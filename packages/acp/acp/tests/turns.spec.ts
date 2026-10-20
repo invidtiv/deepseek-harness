@@ -142,7 +142,7 @@ describe('ACP prompt lifecycle', () => {
     const sessionId = await newSession(harness)
 
     await expect(harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'show it' }] }))
-      .rejects.toThrow(/assistant output delivery failed/)
+      .rejects.toThrow(/output delivery failed/)
     expect(harness.updates).toEqual([])
   })
 

@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import { createUserMessage, ToolCallId, MessageId, type ContextFormed, type UserMessage } from '@deepseek-ai/dsh-llm'
-import { SessionSeq, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
-import { assistantUpdates, replayUpdates, toolCallUpdate, toolResultUpdate } from '../src/updates.ts'
+import { Session, SessionId, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { assistantUpdates, eventUpdates, toolCallUpdate, toolResultUpdate } from '../src/updates.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
   interface MessageSourceMap {
@@ -62,17 +62,18 @@ describe('standard ACP update projection', () => {
     expect(meter.measure).not.toHaveBeenCalled()
   })
 
-  it('replays only user-authored messages and skips blocks without a wire projection', async () => {
-    const ctx = { get: () => undefined } as unknown as Context
-    const session = { requestContext: () => undefined } as unknown as Session
+  it('replays only user-authored messages, omits live prompt echoes and skips blocks without a wire projection', async () => {
+    const ctx = new Context()
+    const session = Session.create(SessionId('replay-test'))
     const authored = createUserMessage({ content: [{ type: 'text', text: '' }, { type: 'text', text: 'hi' }], source: { kind: 'user' } })
     const injected = createUserMessage({ content: [{ type: 'text', text: 'context' }], source: { kind: 'replay-test' } })
     const eventOf = (data: UserMessage): SessionEvent<'user/message'> => ({ type: 'user/message', surfaceOp: 'append', seq: SessionSeq(0), time: 0, data })
 
-    await expect(replayUpdates(ctx, session, eventOf(authored))).resolves.toEqual([
+    await expect(eventUpdates(ctx, session, eventOf(authored), true)).resolves.toEqual([
       { sessionUpdate: 'user_message_chunk', messageId: authored.id, content: { type: 'text', text: 'hi' } },
     ])
-    await expect(replayUpdates(ctx, session, eventOf(injected))).resolves.toEqual([])
+    await expect(eventUpdates(ctx, session, eventOf(authored), false)).resolves.toEqual([])
+    await expect(eventUpdates(ctx, session, eventOf(injected), true)).resolves.toEqual([])
   })
 
   it('preserves malformed tool input and projects a failed result without hidden content', async () => {

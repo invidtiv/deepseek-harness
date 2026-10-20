@@ -1,9 +1,9 @@
 /** Pure draft-v2 projection tests for paths the wire suites cannot reach deterministically. */
 import { describe, expect, it } from 'vitest'
-import type { Context } from '@deepseek-ai/cordis'
+import { Context } from '@deepseek-ai/cordis'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 import { createUserMessage, MessageId, type ContextFormed } from '@deepseek-ai/dsh-llm'
-import { SessionSeq, type Session, type SessionEvent } from '@deepseek-ai/dsh-session'
+import { Session, SessionId, SessionSeq, type SessionEvent } from '@deepseek-ai/dsh-session'
 import { configOptions, eventUpdates, mcpServers, promptContent, userUpdate } from '../src/v2.ts'
 
 declare module '@deepseek-ai/dsh-llm' {
@@ -12,8 +12,9 @@ declare module '@deepseek-ai/dsh-llm' {
   }
 }
 
-const ctx = { get: () => undefined } as unknown as Context
-const session = { requestContext: () => undefined } as unknown as Session
+// No attachment or token-meter services and no request context: projections take their plain paths.
+const ctx = new Context()
+const session = Session.create(SessionId('v2-projection'))
 
 describe('draft v2 projections', () => {
   it('admits text, images and resource links and rejects other prompt content', () => {

@@ -92,8 +92,11 @@ describe.each([1, 2] as const)('ACP v%s progress', (version) => {
     expect(plans()).toEqual([[{ content: 'Implement', status: 'in_progress', priority: 'medium' }]])
     const prompt = { sessionId, prompt: [{ type: 'text' as const, text: 'continue' }] }
     if (client === undefined) await harness.client.prompt(prompt)
-    else await client.request('session/prompt', prompt)
-    await expect.poll(() => plans().at(-1)).toEqual([])
+    else {
+      await client.request('session/prompt', prompt)
+      await expect.poll(() => updates.at(-1)?.update).toMatchObject({ sessionUpdate: 'state_update', state: 'idle', stopReason: 'end_turn' })
+    }
+    expect(plans().at(-1)).toEqual([])
     if (client === undefined) await harness.client.closeSession({ sessionId })
     else await client.request('session/close', { sessionId })
     harness.updates.length = 0; updates.length = 0
@@ -156,6 +159,38 @@ it('rejects prompt admission until v1 history loading finishes', async () => {
     spy.mockRestore()
   }
   expect(harness.adapter.requests).toHaveLength(1)
+})
+
+it('delivers an event committed during history loading once, after the replayed history', async () => {
+  harness = await makeBridgeHarness({ script: [textResponse('answer')] })
+  await harness.ctx.plugin(todo, { allowParallelInProgress: true })
+  await harness.client.initialize({ protocolVersion: 1 })
+  const { sessionId } = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })
+  await harness.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'question' }] })
+  await harness.client.closeSession({ sessionId })
+  harness.updates.length = 0
+  const entered = Promise.withResolvers<undefined>()
+  const release = Promise.withResolvers<undefined>()
+  const open = harness.ctx.sessionPersistence.open.bind(harness.ctx.sessionPersistence)
+  const spy = vi.spyOn(harness.ctx.sessionPersistence, 'open').mockImplementation(async (...args) => {
+    if (args[1] === 'read') {
+      entered.resolve(undefined)
+      await release.promise
+    }
+    return open(...args)
+  })
+  const loading = harness.client.loadSession({ sessionId, cwd: process.cwd(), mcpServers: [] })
+  try {
+    await entered.promise
+    harness.ctx.agents.get(SessionId(sessionId))!.session.append('todo/write', { todos: [{ content: 'Live', status: 'pending' }] })
+  } finally {
+    release.resolve(undefined)
+    await loading
+    spy.mockRestore()
+  }
+  const kinds = harness.updates.map(update => update.sessionUpdate)
+  expect(kinds.filter(kind => kind === 'plan')).toHaveLength(1)
+  expect(kinds.indexOf('plan')).toBeGreaterThan(kinds.lastIndexOf('agent_message_chunk'))
 })
 
 

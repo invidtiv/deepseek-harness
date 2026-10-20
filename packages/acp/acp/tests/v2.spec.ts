@@ -350,16 +350,37 @@ describe('negotiated ACP v2', () => {
     await client.request('session/resume', { sessionId, cwd: process.cwd(), replayFrom: { type: 'start' } })
   })
 
-  it('reports a prompt removed before its turn claims it as cancelled', async () => {
+  it('rejects a prompt removed before it commits to the conversation without echoing it', async () => {
     await setup()
     const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
     const dispose = harness.ctx.on('agent/inbox/inserted', ({ agent, message }) => {
       if (message.source.kind === 'user') agent.inbox.remove(message.id)
     })
     try {
-      await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'go' }] })
-      await idle(sessionId, 'cancelled')
+      await expect(client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'go' }] }))
+        .rejects.toThrow('prompt cancelled before insertion')
     } finally { dispose() }
+    expect(updates.filter(item => item.sessionId === sessionId)).toEqual([])
+  })
+
+  it('accepts a prompt queued behind autonomous work only when its turn commits it', async () => {
+    await setup({ script: ['hang'] })
+    await harness.ctx.plugin(Commands)
+    await harness.ctx.plugin(Goals)
+    await harness.ctx.plugin(commandGoal)
+    await harness.ctx.plugin(goalDriver)
+    const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
+    await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: '/goal finish the task' }] })
+    await expect.poll(() => harness.adapter.requests.length).toBe(1)
+    const queued = client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'queued' }] })
+    const rejected = expect(queued).rejects.toThrow('prompt cancelled before insertion')
+    await expect.poll(() => harness.ctx.agents.get(SessionId(sessionId))?.inbox.nextTurn.length).toBe(1)
+    await client.notify('session/cancel', { sessionId })
+    await rejected
+    const echoed = updates.flatMap(({ update }) => v2.SessionUpdate.isUserMessage(update) ? [update] : [])
+    expect(JSON.stringify(echoed)).not.toContain('queued')
+    const agent = harness.ctx.agents.get(SessionId(sessionId))!
+    expect(JSON.stringify(agent.session.snapshotEvents().filter(event => event.type === 'user/message'))).not.toContain('queued')
   })
 
   it('reports a missing committed image attachment as a failed turn with its detail', async () => {
@@ -390,7 +411,7 @@ describe('negotiated ACP v2', () => {
     const warn = vi.spyOn(harness.ctx.logger, 'warn')
     const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
     await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: '/goal show the image' }] })
-    await expect.poll(() => warn.mock.calls.some(([message]) => String(message).includes('v2 update failed'))).toBe(true)
+    await expect.poll(() => warn.mock.calls.some(([message]) => String(message).includes('output conversion failed'))).toBe(true)
     await expect.poll(() => lastState(sessionId)).toMatchObject({ state: 'idle' })
     const images = updates.filter(item => v2.SessionUpdate.isAgentMessageChunk(item.update) && v2.ContentBlock.isImage(item.update.content))
     expect(images).toEqual([])

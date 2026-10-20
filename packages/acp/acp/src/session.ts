@@ -6,10 +6,10 @@ import {
   RequestError,
   type AvailableCommand,
   type McpServer,
+  type PlanEntry,
   type PromptRequest,
   type PromptResponse,
   type SessionConfigOption,
-  type SessionNotification,
   type StopReason,
 } from '@agentclientprotocol/sdk'
 import type { Agent, AgentHandle, AgentOptions, ModelSelection } from '@deepseek-ai/dsh-agent'
@@ -19,9 +19,8 @@ import { AcpContentError, admitAcpPrompt } from './content.ts'
 import { turnEndToStopReason } from './codec.ts'
 import { mountAcpMcpServers } from './mcp.ts'
 import { AcpModelControl } from './model-control.ts'
-import { assistantUpdates, planUpdate, replayUpdates, toolCallUpdate, toolResultUpdate } from './updates.ts'
-import type * as v2 from '@agentclientprotocol/sdk/experimental/v2'
-import { configOptions as configOptionsV2, eventUpdates, userUpdate } from './v2.ts'
+import type { AcpOutput, ForegroundState, IdleReason } from './output.ts'
+import { planEntries } from './updates.ts'
 import type { GoalView } from '@deepseek-ai/dsh-goal'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'
@@ -39,8 +38,8 @@ interface AcpSessionBuildOptions {
   agentOptions: AgentOptions
   fallbackSelection: ModelSelection | undefined
   signal: AbortSignal
-  notify: (notification: SessionNotification) => Promise<void>
-  notifyV2?: ((notification: v2.UpdateSessionNotification) => Promise<void>) | undefined
+  /** Negotiated-protocol delivery for the constructed session's updates. */
+  output: (sessionId: SessionId) => AcpOutput
 }
 
 /** Fresh ACP session construction inputs. */
@@ -58,6 +57,10 @@ interface InflightPrompt {
   reject: (error: Error) => void
   messageId: string | undefined
   messageQueued: boolean
+  /** The message's `user/message` event has committed to the conversation. */
+  committed: boolean
+  /** Commit observer; request cancellation stops owning the message once it runs. */
+  accept: ((message: UserMessage) => void) | undefined
   turn: number | undefined
   endReason: TurnEndReason | undefined
   admissionDone: Promise<void>
@@ -85,9 +88,17 @@ class AcpCommandCancelled extends Error {
   constructor() { super('ACP command cancelled') }
 }
 
-/** Terminal v2 foreground state; failure detail travels in metadata, never as transcript text. */
-function idleUpdate(stopReason: v2.StopReason, failure?: string): v2.SessionUpdate {
-  return { sessionUpdate: 'state_update', state: 'idle', stopReason, ...failure === undefined ? {} : { _meta: { error: failure } } }
+/** Terminal foreground state with optional failure detail. */
+function idleState(stopReason: IdleReason, error?: string): ForegroundState {
+  return { state: 'idle', stopReason, ...error === undefined ? {} : { error } }
+}
+
+/** Terminal state of autonomous activity, from the last turn it ended. */
+function autonomousIdle(cancelled: boolean, ending: TurnEndReason | undefined): ForegroundState {
+  if (cancelled) return idleState('cancelled')
+  /* v8 ignore next -- AgentLoop commits turn/end for every running interval, including a wake whose message was removed. */
+  if (ending === undefined) return idleState('cancelled')
+  return ending.kind === 'error' ? idleState('error', ending.error.message) : idleState(turnEndToStopReason(ending))
 }
 
 /** Restore the latest logged route before falling back to deployment config. */
@@ -111,13 +122,14 @@ function selectionFor(
 
 /**
  * Per-session ACP module. It owns the unpublished Agent composition, selected
- * route, one-prompt admission slot, ordered standard updates, and memoized
+ * route, one-prompt admission slot, ordered protocol updates, and memoized
  * quiescent teardown.
  */
 export class AcpSession {
   /** The exact top-level Agent owned by this ACP session. */
   readonly agent: Agent
   private readonly modelControl: AcpModelControl
+  private readonly output: AcpOutput
   private outputTail = Promise.resolve()
   private inflight: InflightPrompt | undefined
   private autonomousEnding: TurnEndReason | undefined
@@ -126,16 +138,18 @@ export class AcpSession {
   private closing: Promise<void> | undefined
   private command: { controller: AbortController; done: Promise<void> } | undefined
   private readonly pendingSelections = new Map<string, ModelSelection>()
+  private goalText: string | undefined
+  private planVisible = false
 
   private constructor(
     private readonly ctx: Context,
     handle: AgentHandle,
     modelControl: AcpModelControl,
-    private readonly notify: (notification: SessionNotification) => Promise<void>,
-    private readonly notifyV2?: (notification: v2.UpdateSessionNotification) => Promise<void>,
+    output: AcpSessionBuildOptions['output'],
   ) {
     this.agent = handle.agent
     this.modelControl = modelControl
+    this.output = output(handle.agent.session.id)
     this.disposeAgent = () => handle.dispose()
   }
 
@@ -144,7 +158,7 @@ export class AcpSession {
   /**
    * Compose a fresh Agent and all requested MCP clients before publication.
    * @param ctx - ACP plugin context with Agent, LLM, and persistence services.
-   * @param options - fresh session identity, workspace, route, MCP, and notifier.
+   * @param options - fresh session identity, workspace, route, MCP, and output.
    * @returns the fully composed per-session module.
    */
   static async create(ctx: Context, options: CreateAcpSessionOptions): Promise<AcpSession> {
@@ -159,13 +173,13 @@ export class AcpSession {
         await mountAcpMcpServers(agentCtx, options.mcpServers, options.cwd)
       },
     })
-    return new AcpSession(ctx, handle, modelControl, options.notify, options.notifyV2)
+    return new AcpSession(ctx, handle, modelControl, options.output)
   }
 
   /**
    * Restore a persisted Agent and compose the request's fresh MCP connections.
    * @param ctx - ACP plugin context with Agent, LLM, and persistence services.
-   * @param options - persisted identity, workspace, fallback route, MCP, and notifier.
+   * @param options - persisted identity, workspace, fallback route, MCP, and output.
    * @returns the restored per-session module.
    */
   static async resume(ctx: Context, options: ResumeAcpSessionOptions): Promise<AcpSession> {
@@ -189,7 +203,7 @@ export class AcpSession {
       throw internalError('session/resume did not compose model selection')
     }
     /* v8 ignore stop */
-    return new AcpSession(ctx, handle, modelControl, options.notify, options.notifyV2)
+    return new AcpSession(ctx, handle, modelControl, options.output)
   }
 
   /**
@@ -237,22 +251,7 @@ export class AcpSession {
     if (this.closing !== undefined) return
     void this.modelControl.options()
       .then((configOptions) => {
-        if (this.closing !== undefined) return
-        if (this.notifyV2 !== undefined) {
-          this.enqueueV2(() => [{ sessionUpdate: 'config_option_update', configOptions: configOptionsV2(configOptions) }])
-          return
-        }
-        const previous = this.outputTail
-        this.outputTail = previous
-          .then(() => this.notify({
-            sessionId: this.agent.session.id,
-            update: { sessionUpdate: 'config_option_update', configOptions },
-          }))
-          /* v8 ignore start -- the bridge notifier contains transport failure. */
-          .catch((error: unknown) => {
-            this.ctx.logger.warn(`acp: config-option update failed: ${errorChain(error)}`)
-          })
-        /* v8 ignore stop */
+        if (this.closing === undefined) this.enqueue(() => this.output.configOptions(configOptions))
       })
       /* v8 ignore start -- option discovery contains per-provider failure. */
       .catch((error: unknown) => {
@@ -272,29 +271,11 @@ export class AcpSession {
     }))
   }
 
-  /**
-   * Project command discovery for draft v2.
-   * @returns commands with explicit text-input discriminants.
-   */
-  availableCommandsV2(): v2.AvailableCommand[] {
-    return this.availableCommands().map(({ name, description, input }) => ({
-      name, description,
-      ...input == null ? {} : { input: { type: 'text', hint: input.hint } },
-    }))
-  }
-
   /** Publish a complete replacement command list after registry changes. */
   commandsChanged(): void {
     if (this.closing !== undefined) return
-    const availableCommands = this.availableCommands()
-    if (this.notifyV2 !== undefined) {
-      this.enqueueV2(() => [{ sessionUpdate: 'available_commands_update', availableCommands: this.availableCommandsV2() }])
-    } else {
-      this.outputTail = this.outputTail.then(() => this.notify({
-        sessionId: this.agent.session.id,
-        update: { sessionUpdate: 'available_commands_update', availableCommands },
-      }))
-    }
+    const commands = this.availableCommands()
+    this.enqueue(() => this.output.commands(commands))
   }
 
   /**
@@ -308,14 +289,10 @@ export class AcpSession {
       this.autonomousCancelled = false
     }
     if (this.inflight !== undefined) return
-    if (status === 'running') {
-      this.enqueueV2(() => [{ sessionUpdate: 'state_update', state: 'running' }])
-    }
+    if (status === 'running') this.enqueue(() => this.output.state({ state: 'running' }))
     if (status === 'idle') {
-      const ending = this.autonomousEnding
-      const update = this.autonomousCancelled || ending === undefined ? idleUpdate('cancelled')
-        : ending.kind === 'error' ? idleUpdate('error', ending.error.message) : idleUpdate(turnEndToStopReason(ending))
-      this.enqueueV2(() => [update])
+      const idle = autonomousIdle(this.autonomousCancelled, this.autonomousEnding)
+      this.enqueue(() => this.output.state(idle))
     }
   }
 
@@ -330,7 +307,6 @@ export class AcpSession {
     if (this.command !== undefined) throw invalidParams('a command is already in flight for this session')
     const controller = new AbortController()
     const signal = AbortSignal.any([controller.signal, requestSignal])
-    signal.throwIfAborted()
     const completion = Promise.withResolvers<void>()
     this.command = { controller, done: completion.promise }
     const { id: messageId } = createUserMessage({ content: [{ type: 'text', text: line }], source: { kind: 'user' } })
@@ -346,20 +322,12 @@ export class AcpSession {
         }
         if (execution === undefined) throw invalidParams(`command is no longer available: /${parsed.name}`)
         await this.ctx.sessions.flush(this.agent.session)
-        this.enqueueV2(() => [{ sessionUpdate: 'user_message', messageId, content: [{ type: 'text', text: line }] }])
         const text = execution.result.text ?? ''
-        if (this.notifyV2 !== undefined) {
-          this.enqueueV2(() => [
-            { sessionUpdate: 'agent_message_chunk', messageId: `${messageId}:result`, content: { type: 'text', text } },
-            ...this.inflight === undefined && this.agent.status === 'idle'
-              ? [{ sessionUpdate: 'state_update' as const, state: 'idle' as const, stopReason: 'end_turn' as const }] : [],
-          ])
-        } else {
-          this.outputTail = this.outputTail.then(() => this.notify({
-            sessionId: this.agent.session.id,
-            update: { sessionUpdate: 'agent_message_chunk', messageId: `${messageId}:result`, content: { type: 'text', text } },
-          }))
-        }
+        this.enqueue(async () => {
+          await this.output.commandResult(messageId, line, text)
+          // A command that started no foreground work completes with its result.
+          if (this.inflight === undefined && this.agent.status === 'idle') await this.output.state(idleState('end_turn'))
+        })
         await this.outputTail
         return messageId
       } finally {
@@ -374,7 +342,8 @@ export class AcpSession {
    * @param params - standard ACP prompt request for this session.
    * @param imageEnabled - connection capability advertised at initialization.
    * @param requestSignal - JSON-RPC request cancellation signal.
-   * @param accepted - optional insertion observer; request cancellation stops owning the message after this callback.
+   * @param accepted - optional observer of the message's commit to the conversation;
+   *   request cancellation stops owning the message at that commit.
    * @returns the correlated standard stop reason after ordered updates drain.
    */
   async prompt(
@@ -399,11 +368,17 @@ export class AcpSession {
     const completion = Promise.withResolvers<StopReason>()
     const admission = Promise.withResolvers<void>()
     const admissionController = new AbortController()
+    const onRequestAbort = (): void => { this.cancelPrompt('ACP prompt request cancelled') }
     const inflight: InflightPrompt = {
       resolve: completion.resolve,
       reject: completion.reject,
       messageId: undefined,
       messageQueued: false,
+      committed: false,
+      accept: accepted === undefined ? undefined : (message) => {
+        requestSignal.removeEventListener('abort', onRequestAbort)
+        accepted(message)
+      },
       turn: undefined,
       endReason: undefined,
       admissionDone: admission.promise,
@@ -416,7 +391,6 @@ export class AcpSession {
       agentError: undefined,
     }
     this.inflight = inflight
-    const onRequestAbort = (): void => { this.cancelPrompt('ACP prompt request cancelled') }
     requestSignal.addEventListener('abort', onRequestAbort, { once: true })
     /* v8 ignore next -- the SDK dispatches a live signal, then notifies abort through its listener. */
     if (requestSignal.aborted) onRequestAbort()
@@ -447,10 +421,6 @@ export class AcpSession {
         if (promptSelection !== undefined) this.pendingSelections.set(message.id, promptSelection)
         try {
           this.agent.followup(message)
-          if (accepted !== undefined) {
-            requestSignal.removeEventListener('abort', onRequestAbort)
-            accepted(message)
-          }
         } catch (error: unknown) {
           inflight.messageQueued = false
           this.pendingSelections.delete(message.id)
@@ -485,29 +455,29 @@ export class AcpSession {
   }
 
   /**
-   * Return the inserted message identity while completion travels through v2 state updates.
-   * @param params - admitted prompt fields shared with v1.
+   * Resolve with the message identity once the prompt commits to the conversation;
+   * completion travels through foreground states.
+   * @param params - admitted prompt fields.
    * @param imageEnabled - negotiated image capability.
-   * @param signal - cancellation before insertion only.
-   * @returns the canonical inbox ID before model completion, or a live-only command ID after execution.
+   * @param signal - request cancellation, effective until the commit.
+   * @returns the committed message ID, or a live-only command ID after execution.
    */
-  promptV2(params: PromptRequest, imageEnabled: boolean, signal: AbortSignal): Promise<v2.PromptResponse> {
+  promptAccepted(params: PromptRequest, imageEnabled: boolean, signal: AbortSignal): Promise<string> {
     const command = this.runCommand(params, signal)
     if (command !== undefined) {
-      return command.then(messageId => ({ messageId }), (error: unknown) => {
+      return command.catch((error: unknown) => {
         // A cancelled command echoed nothing, so the request fails like a prompt cancelled before insertion.
         throw error instanceof AcpCommandCancelled ? invalidParams('command cancelled before completion') : error
       })
     }
-    const acceptance = Promise.withResolvers<v2.PromptResponse>()
-    let inserted = false
+    const acceptance = Promise.withResolvers<string>()
+    let committed = false
     void this.prompt(params, imageEnabled, signal, (message) => {
-      inserted = true
-      this.enqueueV2(async () => [await userUpdate(this.ctx, message), { sessionUpdate: 'state_update', state: 'running' }])
-      acceptance.resolve({ messageId: message.id })
+      committed = true
+      acceptance.resolve(message.id)
     }).then(
-      () => { if (!inserted) acceptance.reject(invalidParams('prompt cancelled before insertion')) },
-      (error: unknown) => { if (!inserted) acceptance.reject(error) },
+      () => { if (!committed) acceptance.reject(invalidParams('prompt cancelled before insertion')) },
+      (error: unknown) => { if (!committed) acceptance.reject(error) },
     )
     return acceptance.promise
   }
@@ -515,13 +485,13 @@ export class AcpSession {
   /**
    * Bracket foreground and autonomous permission exchanges with activity states.
    * @param answer - transport exchange; policy remains with the approval service.
-   * @returns the client's answer after the corresponding state transition.
+   * @returns the client's answer after earlier updates and the corresponding state transition.
    */
   async withPermission<T>(answer: () => Promise<T>): Promise<T> {
     const owner = this.inflight
     this.pendingPermissions++
     if (owner?.cancelRequested !== true && !this.autonomousCancelled) {
-      this.enqueueV2(() => [{ sessionUpdate: 'state_update', state: 'requires_action' }])
+      this.enqueue(() => this.output.state({ state: 'requires_action' }))
     }
     await this.outputTail
     try {
@@ -530,55 +500,43 @@ export class AcpSession {
       this.pendingPermissions--
       if (this.inflight === owner && owner?.cancelRequested !== true && !this.autonomousCancelled
         && this.pendingPermissions === 0 && this.closing === undefined) {
-        this.enqueueV2(() => [{ sessionUpdate: 'state_update', state: 'running' }])
+        this.enqueue(() => this.output.state({ state: 'running' }))
         await this.outputTail
       }
     }
   }
 
   /**
-   * Replay retained conversation facts, including every standing-plan replacement.
-   * @param reader - persisted reader owned by the caller.
+   * Replay retained conversation facts ahead of every later live update,
+   * including every standing-plan replacement.
+   * @param open - opens a persisted reader whose events cover `end`; the replay closes it.
+   * @param end - first sequence number delivered live rather than replayed.
    * @param pageSize - maximum events fetched per storage read.
    * @param signal - activation request cancellation.
    * @returns completion after all retained updates have been delivered.
    */
-  async replay(reader: SessionHandle, pageSize: number, signal: AbortSignal): Promise<void> {
-    const end = this.agent.session.seq
+  replay(open: () => Promise<SessionHandle>, end: number, pageSize: number, signal: AbortSignal): Promise<void> {
+    const session = this.agent.session
     const replay = this.outputTail.then(async () => {
-      let planVisible = false
-      for (let offset = 0; offset < end;) {
-        signal.throwIfAborted()
-        const { events } = await reader.read(offset, Math.min(pageSize, end - offset), { signal })
-        if (events.length === 0) throw internalError('session replay is missing persisted events')
-        for (const event of events) {
+      const reader = await open()
+      try {
+        for (let offset = 0; offset < end;) {
           signal.throwIfAborted()
-          if (event.type === 'turn/start' && planVisible) {
-            const entries: [] = []
-            if (this.notifyV2 !== undefined) await this.notifyV2({ sessionId: this.agent.session.id,
-              update: { sessionUpdate: 'plan_update', plan: { type: 'items', planId: 'todos', entries } },
-            })
-            else await this.notify({ sessionId: this.agent.session.id, update: { sessionUpdate: 'plan', entries } })
-            planVisible = false
+          const { events } = await reader.read(offset, Math.min(pageSize, end - offset), { signal })
+          if (events.length === 0) throw internalError('session replay is missing persisted events')
+          for (const event of events) {
+            signal.throwIfAborted()
+            await this.deliver(session, event, true)
           }
-          if (event.type === 'todo/write') planVisible = event.data.todos.length > 0
-          if (this.notifyV2 !== undefined) {
-            for (const update of await eventUpdates(this.ctx, this.agent.session, event)) {
-              await this.notifyV2({ sessionId: this.agent.session.id, update })
-            }
-          } else {
-            for (const update of await replayUpdates(this.ctx, this.agent.session, event)) {
-              await this.notify({ sessionId: this.agent.session.id, update })
-            }
-          }
+          offset += events.length
         }
-        offset += events.length
+      } finally {
+        await reader.close()
       }
-      // The replayed tail is the client's current plan; the next turn start clears it.
-      this.planVisible = planVisible
     })
-    this.outputTail = replay.catch(() => {})
-    await replay
+    // The activation that requested this replay observes its failure and closes the session.
+    this.outputTail = replay.catch((_failureOwnedByActivation: unknown) => {})
+    return replay
   }
 
   /**
@@ -591,17 +549,20 @@ export class AcpSession {
     if (options.plan) {
       /* v8 ignore next -- the shipped profiles and the test harness mount the projection registry. */
       const todos = this.ctx.get('sessionProjections')?.stateOf(this.agent.session, 'todos')
-      if (todos != null) this.sendPlan({ sessionUpdate: 'plan', entries: todos.map(item => ({ ...item, priority: 'medium' })) })
+      if (todos != null) {
+        const entries = planEntries(todos)
+        this.enqueue(() => this.sendPlan(entries))
+      }
     }
     await this.outputTail
   }
 
   /**
-   * Report the idle v2 foreground state of a session that has just been restored.
+   * Report the idle foreground state of a session that has just been restored.
    * @returns completion once the state has been delivered behind restored progress.
    */
   async announceIdle(): Promise<void> {
-    this.enqueueV2(() => [{ sessionUpdate: 'state_update', state: 'idle' }])
+    this.enqueue(() => this.output.state({ state: 'idle' }))
     await this.outputTail
   }
 
@@ -618,24 +579,7 @@ export class AcpSession {
     // autonomous changes and restoration only.
     if (this.command !== undefined) return
     const messageId = `goal:${this.agent.session.id}:${this.agent.session.seq}:${goal?.activation ?? 'cleared'}`
-    if (this.notifyV2 !== undefined) {
-      this.enqueueV2(() => [{ sessionUpdate: 'agent_message_chunk', messageId, content: { type: 'text', text } }])
-    } else {
-      // V1 clients may fold every text chunk into one answer regardless of message id;
-      // the trailing newline keeps a status line separate from adjacent text.
-      this.outputTail = this.outputTail.then(() => this.notify({ sessionId: this.agent.session.id,
-        update: { sessionUpdate: 'agent_message_chunk', messageId, content: { type: 'text', text: `${text}\n` } },
-      }))
-    }
-  }
-
-  private goalText: string | undefined
-  private planVisible = false
-
-  private sendPlan(update: ReturnType<typeof planUpdate>): void {
-    this.planVisible = update.entries.length > 0
-    if (this.notifyV2 !== undefined) this.enqueueV2(() => [{ sessionUpdate: 'plan_update', plan: { type: 'items', planId: 'todos', entries: update.entries } }])
-    else this.outputTail = this.outputTail.then(() => this.notify({ sessionId: this.agent.session.id, update }))
+    this.enqueue(() => this.output.status(messageId, text))
   }
 
   /** Cancel the active prompt, or autonomous work when no ACP prompt exists. */
@@ -655,60 +599,24 @@ export class AcpSession {
    * @param event - committed durable event.
    */
   onSessionEvent(session: Session, event: SessionEvent): void {
-    try {
-      if (event.type === 'todo/write' || event.type === 'turn/start') {
-        if (event.type === 'todo/write' || this.planVisible) this.sendPlan(planUpdate(event))
-        return
-      }
-      if (this.notifyV2 !== undefined) {
-        // The insertion acknowledgement owns the live user echo; replay reads user/message.
-        if (event.type !== 'user/message') this.enqueueV2(() => eventUpdates(this.ctx, session, event))
-        return
-      }
-      if (event.type === 'assistant/message') {
-        const inflight = this.inflight?.turn === event.data.turn ? this.inflight : undefined
-        const previous = this.outputTail
-        const delivery = previous.then(async () => {
-          for (const update of await assistantUpdates(this.ctx, session, event)) {
-            await this.notify({ sessionId: this.agent.session.id, update })
-          }
-        })
-        this.outputTail = delivery.catch((error: unknown) => {
-          const failure = error as Error
-          if (inflight !== undefined) inflight.outputError ??= failure
-          this.ctx.logger.warn(`acp: assistant output conversion failed: ${errorChain(error)}`)
-        })
-      } else if (event.type === 'tool/call') {
-        const previous = this.outputTail
-        this.outputTail = previous
-          .then(() => this.notify({ sessionId: this.agent.session.id, update: toolCallUpdate(event) }))
-          /* v8 ignore start -- the bridge notifier contains transport rejection. */
-          .catch((error: unknown) => {
-            this.ctx.logger.warn(`acp: tool-call update delivery failed: ${errorChain(error)}`)
-          })
-        /* v8 ignore stop */
-      } else if (event.type === 'tool/result') {
-        const previous = this.outputTail
-        this.outputTail = previous
-          .then(async () => this.notify({
-            sessionId: this.agent.session.id,
-            update: await toolResultUpdate(this.ctx, event),
-          }))
-          /* v8 ignore start -- supplemental-content conversion failure is contained and cannot fail Agent work. */
-          .catch((error: unknown) => {
-            this.ctx.logger.warn(`acp: tool-result update delivery failed: ${errorChain(error)}`)
-          })
-        /* v8 ignore stop */
-      }
-    } finally {
-      const inflight = this.inflight
-      if (inflight !== undefined && event.type === 'turn/end' && inflight.turn === event.data.turn) {
-        inflight.endReason = event.data.reason
-      }
-      if (event.type === 'turn/end') {
-        this.autonomousEnding = event.data.reason
-        this.modelControl.releaseTurn(event.data.turn)
-      }
+    const inflight = this.inflight
+    if (inflight !== undefined && !inflight.committed && event.type === 'user/message' && event.data.id === inflight.messageId) {
+      // The prompt's commit is its acceptance; its echo and foreground state follow from this event.
+      inflight.committed = true
+      this.enqueue(async () => {
+        await this.output.event(session, event, false)
+        await this.output.state({ state: 'running' })
+      })
+      inflight.accept?.(event.data)
+    } else {
+      this.enqueue(() => this.deliver(session, event, false))
+    }
+    if (inflight !== undefined && event.type === 'turn/end' && inflight.turn === event.data.turn) {
+      inflight.endReason = event.data.reason
+    }
+    if (event.type === 'turn/end') {
+      this.autonomousEnding = event.data.reason
+      this.modelControl.releaseTurn(event.data.turn)
     }
   }
 
@@ -737,11 +645,6 @@ export class AcpSession {
     if (inflight.turn === turn) return
     inflight.agentError = new Error(errorChain(error))
     this.settleAfterQuiescence(inflight)
-  }
-
-  /** Await every update queued before this call. */
-  drainUpdates(): Promise<void> {
-    return this.outputTail
   }
 
   /**
@@ -798,14 +701,29 @@ export class AcpSession {
     if (this.closing !== undefined) throw invalidParams(`session is closing: ${this.agent.session.id}`)
   }
 
-  private enqueueV2(updates: () => v2.SessionUpdate[] | Promise<v2.SessionUpdate[]>): void {
-    if (this.notifyV2 === undefined) return
+  /** Deliver one live or replayed event, preceded by any standing-plan change it makes. */
+  private async deliver(session: Session, event: SessionEvent, replay: boolean): Promise<void> {
+    if (event.type === 'todo/write') await this.sendPlan(planEntries(event.data.todos))
+    // Each turn starts without a plan, so a visible one is cleared rather than carried over.
+    else if (event.type === 'turn/start' && this.planVisible) await this.sendPlan([])
+    await this.output.event(session, event, replay)
+  }
+
+  /** Replace the client's plan in delivery order, so replay and live updates share one plan state. */
+  private sendPlan(entries: readonly PlanEntry[]): Promise<void> {
+    this.planVisible = entries.length > 0
+    return this.output.plan(entries)
+  }
+
+  /**
+   * Append one delivery to the ordered output chain. A projection failure is
+   * logged and fails the foreground prompt current at enqueue time.
+   */
+  private enqueue(deliver: () => Promise<void>): void {
     const inflight = this.inflight
-    this.outputTail = this.outputTail.then(async () => {
-      for (const update of await updates()) await this.notifyV2?.({ sessionId: this.agent.session.id, update })
-    }).catch((error: unknown) => {
+    this.outputTail = this.outputTail.then(deliver).catch((error: unknown) => {
       if (inflight !== undefined) inflight.outputError ??= new Error(errorChain(error))
-      this.ctx.logger.warn(`acp: v2 update failed: ${errorChain(error)}`)
+      this.ctx.logger.warn(`acp: output conversion failed: ${errorChain(error)}`)
     })
   }
 
@@ -829,42 +747,22 @@ export class AcpSession {
       }
       /* v8 ignore next -- this prompt owns the slot until this exact settlement clears it. */
       if (this.inflight !== inflight) return
-      if (this.notifyV2 !== undefined && inflight.messageQueued) {
-        const end = inflight.endReason
-        const failure = inflight.outputError ?? inflight.agentError ?? (end?.kind === 'error' ? end.error : undefined)
-        const update = inflight.cancelRequested ? idleUpdate('cancelled')
-          : failure !== undefined ? idleUpdate('error', failure.message)
-            : end === undefined ? idleUpdate('cancelled') : idleUpdate(turnEndToStopReason(end))
-        this.enqueueV2(() => [update])
+      const outcome = settlementOf(inflight)
+      // Only a committed prompt reported running; an uncommitted one fails its acceptance instead.
+      if (inflight.committed) {
+        const idle = outcome.kind === 'stopped' ? idleState(outcome.stopReason) : idleState('error', outcome.message)
+        this.enqueue(() => this.output.state(idle))
         await this.outputTail
       }
       this.inflight = undefined
-      if (inflight.cancelRequested) {
-        inflight.resolve('cancelled')
-        return
-      }
-      if (inflight.outputError !== undefined) {
-        inflight.reject(internalError(`assistant output delivery failed: ${inflight.outputError.message}`))
-        return
-      }
-      if (inflight.agentError !== undefined) {
-        inflight.reject(internalError(`turn failed: ${inflight.agentError.message}`))
-        return
-      }
-      const end = inflight.endReason
-      if (end === undefined) {
-        inflight.resolve('cancelled')
-      } else if (end.kind === 'error') {
-        inflight.reject(internalError(`turn failed: ${end.error.message}`))
-      } else {
-        inflight.resolve(turnEndToStopReason(end))
-      }
+      if (outcome.kind === 'stopped') inflight.resolve(outcome.stopReason)
+      else inflight.reject(internalError(outcome.detail))
     })()
       /* v8 ignore start -- admissionDone only resolves; idle/output gates contain their own failures. */
       .catch(async (error: unknown) => {
         if (this.inflight !== inflight) return
-        if (inflight.messageQueued) {
-          this.enqueueV2(() => [idleUpdate('error', errorChain(error))])
+        if (inflight.committed) {
+          this.enqueue(() => this.output.state(idleState('error', errorChain(error))))
           await this.outputTail
         }
         this.inflight = undefined
@@ -872,6 +770,27 @@ export class AcpSession {
       })
     /* v8 ignore stop */
   }
+}
+
+/** How a settled prompt ended: a stop reason, or a failure with its request-error detail. */
+type PromptOutcome =
+  | { kind: 'stopped'; stopReason: StopReason }
+  | { kind: 'failed'; message: string; detail: string }
+
+/** Decide a settled prompt's outcome; cancellation, then delivery, interval, and turn failures take precedence in that order. */
+function settlementOf(inflight: InflightPrompt): PromptOutcome {
+  if (inflight.cancelRequested) return { kind: 'stopped', stopReason: 'cancelled' }
+  if (inflight.outputError !== undefined) {
+    return { kind: 'failed', message: inflight.outputError.message, detail: `output delivery failed: ${inflight.outputError.message}` }
+  }
+  if (inflight.agentError !== undefined) {
+    return { kind: 'failed', message: inflight.agentError.message, detail: `turn failed: ${inflight.agentError.message}` }
+  }
+  const end = inflight.endReason
+  // A message removed before its turn claimed it ended no turn of its own.
+  if (end === undefined) return { kind: 'stopped', stopReason: 'cancelled' }
+  if (end.kind === 'error') return { kind: 'failed', message: end.error.message, detail: `turn failed: ${end.error.message}` }
+  return { kind: 'stopped', stopReason: turnEndToStopReason(end) }
 }
 
 /** Render goal state for clients that support standard assistant text updates. */

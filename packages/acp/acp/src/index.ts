@@ -34,7 +34,6 @@ import {
   type InitializeResponse,
   type ListSessionsRequest,
   type ListSessionsResponse,
-  type LoadSessionRequest,
   type LoadSessionResponse,
   type NewSessionRequest,
   type NewSessionResponse,
@@ -46,7 +45,6 @@ import {
   type SetSessionConfigOptionRequest,
   type SetSessionConfigOptionResponse,
   type SessionConfigOption,
-  type SessionNotification,
   type Stream,
 } from '@agentclientprotocol/sdk'
 import type { ModelSelection } from '@deepseek-ai/dsh-agent'
@@ -57,6 +55,7 @@ import type {} from '@deepseek-ai/dsh-user-approval'
 import { supportsAcpImagePrompts } from './content.ts'
 import { AcpMcpConfigError } from './mcp.ts'
 import { AcpModelConfigError } from './model-control.ts'
+import { v1Output, type AcpOutput } from './output.ts'
 import { AcpSession } from './session.ts'
 import * as v2 from '@agentclientprotocol/sdk/experimental/v2'
 import * as v2Projection from './v2.ts'
@@ -115,9 +114,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
   // injected service during apply rather than reading it lazily in a callback.
   const persistence = ctx.sessionPersistence
   const logger = ctx.logger
-  const sessionListPageSize = resolveSessionListPageSize(config.sessionListPageSize)
-  const protocolV2 = config.protocolV2 ?? true
-  const sessionReplayPageSize = config.sessionReplayPageSize ?? DEFAULT_SESSION_REPLAY_PAGE_SIZE
+  const { sessionListPageSize, protocolV2, sessionReplayPageSize } = resolveConfig(config)
   const sessions = new Map<SessionId, AcpSession>()
   const activating = new Set<SessionId>()
   let closed = false
@@ -143,17 +140,20 @@ export function apply(ctx: Context, config: AcpConfig): void {
     return record
   }
 
-  /** Send one ordered v1 update while containing transport-only failure. */
-  const notify = async (notification: SessionNotification): Promise<void> => {
+  /** Write one ordered update, containing a transport failure that connection teardown handles. */
+  const contained = async (write: () => Promise<void>): Promise<void> => {
     try {
-      await conn.notify(methods.client.session.update, notification)
+      await write()
     /* v8 ignore start -- the ACP SDK contains notification-handler failures; only a transport write failure reaches this guard. */
     } catch (error: unknown) {
       logger.warn(`acp: session/update failed: ${String(error)}`)
     }
     /* v8 ignore stop */
   }
-  const notifyV2 = (notification: v2.UpdateSessionNotification): Promise<void> => connV2.notify('session/update', notification)
+  /** Delivery in the protocol negotiated by this connection. */
+  const output = (sessionId: SessionId): AcpOutput => protocol === 2
+    ? v2Projection.v2Output(ctx, sessionId, notification => contained(() => connV2.notify('session/update', notification)))
+    : v1Output(ctx, sessionId, notification => contained(() => conn.notify(methods.client.session.update, notification)))
 
   ctx.on('session/event', (session, event) => {
     const record = sessions.get(session.header.id)
@@ -194,37 +194,108 @@ export function apply(ctx: Context, config: AcpConfig): void {
     const record = ownedRecord(request.agent)
     if (record === undefined || request.callId === undefined) return next()
     const callId = request.callId
-    if (protocol === 2) {
-      return record.withPermission(async () => {
+    const options = [
+      { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' as const },
+      { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' as const },
+    ]
+    return record.withPermission(async () => {
+      if (protocol === 2) {
         const { outcome } = await connV2.request('session/request_permission', {
           sessionId: record.agent.session.id,
           title: request.toolName,
           ...request.reason === undefined ? {} : { description: request.reason },
           subject: { type: 'tool_call', toolCall: { toolCallId: callId } },
-          options: [
-            { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
-            { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' },
-          ],
+          options,
         }, request.signal === undefined ? undefined : { cancellationSignal: request.signal })
         if (v2.RequestPermissionOutcome.isCancelled(outcome)) return 'cancelled'
         return v2.RequestPermissionOutcome.isSelected(outcome) && outcome.optionId === 'allow-once' ? 'allowed-once' : 'rejected'
-      })
-    }
-    return record.drainUpdates().then(() => {
-      const params: RequestPermissionRequest = {
-        sessionId: record.agent.session.id,
-        toolCall: { toolCallId: callId },
-        options: [
-          { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' },
-          { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' },
-        ],
       }
-      return conn.request(methods.client.session.requestPermission, params)
-    }).then(({ outcome }) => {
+      const params: RequestPermissionRequest = { sessionId: record.agent.session.id, toolCall: { toolCallId: callId }, options }
+      const { outcome } = await conn.request(methods.client.session.requestPermission, params)
       if (outcome.outcome === 'cancelled') return 'cancelled'
       return outcome.optionId === 'allow-once' ? 'allowed-once' : 'rejected'
     })
   })
+
+  /**
+   * Restore a persisted session, optionally replay its history, and publish its progress.
+   * The session stays activating until every restoration update is delivered, so no
+   * request reaches it earlier; a failure closes it and leaves it resumable.
+   * @param params - workspace and MCP mounts of the resume or load request.
+   * @param signal - activation request cancellation.
+   * @param replay - replay retained history before restoring progress.
+   * @returns the restored record and its configuration options.
+   */
+  const activate = async (
+    params: ResumeSessionRequest, signal: AbortSignal, replay: boolean,
+  ): Promise<{ record: AcpSession; configOptions: SessionConfigOption[] }> => {
+    assertOpen()
+    validateWorkspaceParams(params)
+    const sessionId = brandString<SessionId>(params.sessionId)
+    if (sessions.has(sessionId) || activating.has(sessionId) || ctx.sessions.get(sessionId) !== undefined) {
+      throw invalidParams(`session is already active: ${sessionId}`)
+    }
+    activating.add(sessionId)
+    try {
+      const persisted = (await persistence.stat(sessionId, { signal }))?.header
+      if (persisted === undefined || persisted.origin === 'subagent' || persisted.parentSession !== undefined) {
+        throw invalidParams(`session is not resumable: ${sessionId}`)
+      }
+      if (!await sameDirectory(persisted.cwd, params.cwd)) {
+        throw invalidParams(`session cwd does not match: ${params.cwd}`)
+      }
+      let record: AcpSession
+      try {
+        record = await AcpSession.resume(ctx, {
+          sessionId,
+          cwd: params.cwd,
+          mcpServers: params.mcpServers ?? [],
+          agentOptions: agentOptions(config),
+          fallbackSelection: initialSelection(config),
+          signal,
+          output,
+        })
+      } catch (error: unknown) {
+        if (error instanceof AcpMcpConfigError) throw invalidParams(error.message)
+        throw error
+      }
+      /* v8 ignore start -- the persisted header was checked before resume; the factory restores that exact header. */
+      if (!await sameDirectory(record.agent.session.header.cwd, params.cwd)) {
+        await record.close('session/resume cwd mismatch')
+        throw invalidParams(`session cwd does not match: ${params.cwd}`)
+      }
+      /* v8 ignore stop */
+      /* v8 ignore next 4 -- a real stdio close can race an in-flight resume. */
+      if (closed) {
+        await record.close('connection closed during session activation')
+        throw internalError('connection closed during session activation')
+      }
+      sessions.set(sessionId, record)
+      // The client already knows this session id, so v1 discovery precedes the response and any history.
+      if (protocol === 1 && record.availableCommands().length > 0) record.commandsChanged()
+      // Events committed before registration are replayed; later ones are delivered live behind the replay.
+      const replayed = replay
+        ? record.replay(async () => {
+          await ctx.sessions.flush(record.agent.session)
+          return persistence.open(sessionId, 'read', { signal })
+        }, record.agent.session.seq, sessionReplayPageSize, signal)
+        : undefined
+      try {
+        const configOptions = await record.configOptions(signal)
+        await replayed
+        // Replayed history already carries the standing plan; the goal has no durable projection.
+        await record.restoreProgress({ plan: !replay })
+        await record.announceIdle()
+        return { record, configOptions }
+      } catch (error: unknown) {
+        sessions.delete(sessionId)
+        await record.close('session activation failed')
+        throw error
+      }
+    } finally {
+      activating.delete(sessionId)
+    }
+  }
 
   const implementation = {
     async initialize(_params: InitializeRequest): Promise<InitializeResponse> {
@@ -265,8 +336,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
           agentOptions: agentOptions(config),
           fallbackSelection: initialSelection(config),
           signal,
-          notify,
-          notifyV2: protocol === 2 ? notifyV2 : undefined,
+          output,
         })
       } catch (error: unknown) {
         if (error instanceof AcpMcpConfigError) throw invalidParams(error.message)
@@ -293,84 +363,15 @@ export function apply(ctx: Context, config: AcpConfig): void {
     },
 
     async resumeSession(
-      params: ResumeSessionRequest, signal: AbortSignal, restoreProgress = true,
+      params: ResumeSessionRequest, signal: AbortSignal,
     ): Promise<ResumeSessionResponse & { configOptions: SessionConfigOption[] }> {
-      assertOpen()
-      validateWorkspaceParams(params)
-      const sessionId = brandString<SessionId>(params.sessionId)
-      if (sessions.has(sessionId) || activating.has(sessionId) || ctx.sessions.get(sessionId) !== undefined) {
-        throw invalidParams(`session is already active: ${sessionId}`)
-      }
-      activating.add(sessionId)
-      return (async (): Promise<ResumeSessionResponse & { configOptions: SessionConfigOption[] }> => {
-        const persisted = (await persistence.stat(sessionId, { signal }))?.header
-        if (persisted === undefined || persisted.origin === 'subagent' || persisted.parentSession !== undefined) {
-          throw invalidParams(`session is not resumable: ${sessionId}`)
-        }
-        if (!await sameDirectory(persisted.cwd, params.cwd)) {
-          throw invalidParams(`session cwd does not match: ${params.cwd}`)
-        }
-        let record: AcpSession
-        try {
-          record = await AcpSession.resume(ctx, {
-            sessionId,
-            cwd: params.cwd,
-            mcpServers: params.mcpServers ?? [],
-            agentOptions: agentOptions(config),
-            fallbackSelection: initialSelection(config),
-            signal,
-            notify,
-            notifyV2: protocol === 2 ? notifyV2 : undefined,
-          })
-        } catch (error: unknown) {
-          if (error instanceof AcpMcpConfigError) throw invalidParams(error.message)
-          throw error
-        }
-        /* v8 ignore start -- the persisted header was checked before resume; the factory restores that exact header. */
-        if (!await sameDirectory(record.agent.session.header.cwd, params.cwd)) {
-          await record.close('session/resume cwd mismatch')
-          throw invalidParams(`session cwd does not match: ${params.cwd}`)
-        }
-        /* v8 ignore stop */
-        /* v8 ignore next 4 -- a real stdio close can race an in-flight resume. */
-        if (closed) {
-          await record.close('connection closed during session/resume')
-          throw internalError('connection closed during session/resume')
-        }
-        sessions.set(sessionId, record)
-        try {
-          const configOptions = await record.configOptions(signal)
-          // The client already knows this session id, so v1 discovery precedes the response.
-          if (protocol === 1 && record.availableCommands().length > 0) {
-            record.commandsChanged()
-            await record.drainUpdates()
-          }
-          if (restoreProgress) await record.restoreProgress({ plan: true })
-          return { configOptions }
-        } catch (error: unknown) {
-          sessions.delete(sessionId)
-          await record.close('session/resume option discovery failed')
-          throw error
-        }
-      })().finally(() => { activating.delete(sessionId) })
+      const { configOptions } = await activate(params, signal, false)
+      return { configOptions }
     },
 
-    async loadSession(params: LoadSessionRequest, signal: AbortSignal): Promise<LoadSessionResponse> {
-      const result = await implementation.resumeSession(params, signal, false)
-      const sessionId = brandString<SessionId>(params.sessionId)
-      const record = requireSession(sessionId)
-      activating.add(sessionId)
-      try {
-        await ctx.sessions.flush(record.agent.session)
-        const reader = await persistence.open(sessionId, 'read', { signal })
-        try { await record.replay(reader, sessionReplayPageSize, signal) } finally { await reader.close() }
-        await record.restoreProgress({ plan: false })
-        return result
-      } catch (error: unknown) {
-        sessions.delete(sessionId)
-        await record.close('session/load replay failed')
-        throw error
-      } finally { activating.delete(sessionId) }
+    async loadSession(params: ResumeSessionRequest, signal: AbortSignal): Promise<LoadSessionResponse> {
+      const { configOptions } = await activate(params, signal, true)
+      return { configOptions }
     },
 
     async listSessions(params: ListSessionsRequest, signal: AbortSignal): Promise<ListSessionsResponse> {
@@ -498,35 +499,17 @@ export function apply(ctx: Context, config: AcpConfig): void {
     .onRequest('session/new', async ({ params, signal }) => {
       const result = await implementation.newSession({ ...params, mcpServers: v2Projection.mcpServers(params.mcpServers) }, signal)
       return { sessionId: result.sessionId, configOptions: v2Projection.configOptions(result.configOptions),
-        availableCommands: requireSession(brandString<SessionId>(result.sessionId)).availableCommandsV2(),
+        availableCommands: v2Projection.availableCommands(requireSession(brandString<SessionId>(result.sessionId)).availableCommands()),
       }
     })
     .onRequest('session/list', ({ params, signal }) => implementation.listSessions(params, signal))
     .onRequest('session/resume', async ({ params, signal }) => {
       if (params.replayFrom != null && !v2.ReplayFrom.isStart(params.replayFrom)) throw invalidParams('unsupported replay cursor')
-      const result = await implementation.resumeSession(
-        { ...params, mcpServers: v2Projection.mcpServers(params.mcpServers) }, signal, false,
+      const { record, configOptions } = await activate(
+        { ...params, mcpServers: v2Projection.mcpServers(params.mcpServers) }, signal, params.replayFrom != null,
       )
-      const sessionId = brandString<SessionId>(params.sessionId)
-      const record = requireSession(sessionId)
-      activating.add(sessionId)
-      try {
-        const replaying = params.replayFrom != null
-        if (replaying) {
-          await ctx.sessions.flush(record.agent.session)
-          const reader = await persistence.open(sessionId, 'read', { signal })
-          try { await record.replay(reader, sessionReplayPageSize, signal) } finally { await reader.close() }
-        }
-        // Replayed history already carries the standing plan; the goal has no durable projection.
-        await record.restoreProgress({ plan: !replaying })
-        await record.announceIdle()
-      } catch (error: unknown) {
-        sessions.delete(sessionId)
-        await record.close('session/resume replay failed')
-        throw error
-      } finally { activating.delete(sessionId) }
-      return { configOptions: v2Projection.configOptions(result.configOptions),
-        availableCommands: record.availableCommandsV2(),
+      return { configOptions: v2Projection.configOptions(configOptions),
+        availableCommands: v2Projection.availableCommands(record.availableCommands()),
       }
     })
     .onRequest('session/close', ({ params }) => implementation.closeSession(params))
@@ -537,9 +520,9 @@ export function apply(ctx: Context, config: AcpConfig): void {
     })
     .onRequest('session/prompt', ({ params, signal }) => {
       assertOpen()
-      return requireSession(brandString<SessionId>(params.sessionId)).promptV2(
+      return requireSession(brandString<SessionId>(params.sessionId)).promptAccepted(
         { sessionId: params.sessionId, prompt: v2Projection.promptContent(params.prompt) }, imagePromptEnabled, signal,
-      )
+      ).then(messageId => ({ messageId }))
     })
     .onNotification('session/cancel', ({ params }) => implementation.cancel(params))
   const router = v2.agentProtocolRouter().withV1(app)
@@ -623,15 +606,30 @@ interface SessionListCursor {
   sessionId: string
 }
 
-/** Resolve and validate the deployment-owned session page limit. */
-function resolveSessionListPageSize(value: number | undefined): number {
-  const resolved = value ?? DEFAULT_SESSION_LIST_PAGE_SIZE
-  /* v8 ignore start -- Cordis applies the positive-integer Config schema; this protects direct apply callers. */
-  if (!Number.isSafeInteger(resolved) || resolved < 1) {
-    throw new Error('acp: sessionListPageSize must be a positive safe integer')
+/** Deployment choices after defaulting. */
+interface AcpSpec {
+  sessionListPageSize: number
+  protocolV2: boolean
+  sessionReplayPageSize: number
+}
+
+/**
+ * Resolve the deployment choices shared by every session of this connection.
+ * Cordis applies the Config schema; direct `apply` callers receive the same defaults here.
+ * @param config - plugin configuration.
+ * @returns the defaulted, validated choices.
+ */
+function resolveConfig(config: AcpConfig): AcpSpec {
+  const spec = {
+    sessionListPageSize: config.sessionListPageSize ?? DEFAULT_SESSION_LIST_PAGE_SIZE,
+    protocolV2: config.protocolV2 ?? true,
+    sessionReplayPageSize: config.sessionReplayPageSize ?? DEFAULT_SESSION_REPLAY_PAGE_SIZE,
   }
-  /* v8 ignore stop */
-  return resolved
+  for (const key of ['sessionListPageSize', 'sessionReplayPageSize'] as const) {
+    /* v8 ignore next -- Cordis applies the positive-integer Config schema; this protects direct apply callers. */
+    if (!Number.isSafeInteger(spec[key]) || spec[key] < 1) throw new Error(`acp: ${key} must be a positive safe integer`)
+  }
+  return spec
 }
 
 /** Decode an opaque keyset cursor without assigning meaning to client metadata. */
