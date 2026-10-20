@@ -77,7 +77,7 @@ rmSync(tempDir, { recursive: true, force: true })
 
 `init()` 在任何 Win32 失败时抛出——子进程绝不会不受限制地 spawn。执行命令前失败的 runner 会向 stderr 打印 `windows-acl-run: <detail>` 并以 127 退出，seam 的 runner 失败规则将其归类为损坏的沙箱，而非拒绝。清理按设计尽力而为：`dispose()` 会尝试全部临时撤销并把失败聚合为 `AggregateError`。
 
-此后端无法解释的拒绝交给 `assets/` 中随包发布的 `diagnose-windows-sandbox-acl` 技能诊断。当 `dsh-sandbox-local` 使用内置 Windows runner 且技能注册表可用时，`registerAclDiagnosisSkill` 会注册它。注册时提取供外部 PowerShell 使用的资源，ASAR 和 SEA 部署也适用；fiber 释放时注销提供者并删除副本。缺少资源会导致注册失败。
+此后端无法解释的拒绝交给 `assets/` 中随包发布的 `diagnose-windows-sandbox-acl` 技能诊断。当 `dsh-sandbox-local` 使用内置 Windows runner 且技能注册表可用时，`registerAclDiagnosisSkill` 会注册它。注册时提取供外部 PowerShell 使用的资源，ASAR 和 SEA 部署也适用；fiber 释放时注销提供者并删除副本。每个副本的 `%TEMP%\dsh-acl-skill-<pid>-*` 名称记录其所属进程，注册时会删除所属进程已退出的副本，例如进程被强制终止后遗留的副本。缺少资源会导致注册失败。
 
 一次运行同时完成诊断与修复。脚本没有模式开关：它读取请求路径及每一级祖先，为链路上缺少有效 `WRITE_DAC` 或 `WRITE_OWNER` 的目录补上当前用户的完全控制允许 ACE，并从祖先开始在其来源移除显式包允许 ACE，每处改动都通过重新读取来验证。修复保留拒绝条目、所有者、继承和 SACL，并备份每个被修改的 DACL。仅当对象就是 `-AllowRoot` 或严格位于其内部时才会被修改，因此工作区根目录可以自我修复；重解析路径和受管理的应用目录会被拒绝，修复需要有效的 `WRITE_DAC`。修复失败时按相反顺序恢复尝试修改的内容，并以非零状态退出。单条命令、原始操作验证及恢复流程见[内置技能](assets/diagnose-windows-sandbox-acl/SKILL.md)。
 
