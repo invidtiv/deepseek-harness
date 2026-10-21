@@ -127,6 +127,7 @@ describe('default sandbox composition keyless smoke (real cordis.yml via the Loa
     const init = await client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
     expect(init.protocolVersion).toBe(PROTOCOL_VERSION)
     expect(init.agentCapabilities).toEqual({
+      loadSession: true,
       mcpCapabilities: { http: true },
       promptCapabilities: { image: false, audio: false, embeddedContext: false },
       sessionCapabilities: { close: {}, list: {}, resume: {} },

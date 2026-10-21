@@ -9,7 +9,7 @@ import {
   compareOrRefreshGolden, fixtureUserPrompts, launchWebScaffold, webSnapshotMode,
 } from './scaffold.ts'
 
-const fixture = fileURLToPath(new URL('../../../snapshots/web/feedback-command/session.v3.jsonl', import.meta.url))
+const fixture = fileURLToPath(new URL('../../../snapshots/web/feedback-command/session.v4.jsonl', import.meta.url))
 const expected = fileURLToPath(new URL('../../../snapshots/web/environment-session/stream.expected.md', import.meta.url))
 const plugin = fileURLToPath(new URL('../../../packages/experimental/environment-team/cordis.patch.yml', import.meta.url))
 const manifest = fileURLToPath(new URL('../../../packages/experimental/environment-team/package.json', import.meta.url))

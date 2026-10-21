@@ -6,4 +6,4 @@ recording: authored
 header:
   class: web-default
 session:
-  source: ../feedback-command/session.v3.jsonl
+  source: ../feedback-command/session.v4.jsonl

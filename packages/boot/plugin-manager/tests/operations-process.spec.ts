@@ -92,7 +92,7 @@ function fixture(child: string, descendant: string) {
     rmSync(home, { recursive: true, force: true })
   })
   const options: PackageOperationOptions = {
-    command: process.execPath, args: ['-e', child], execution: 'service', outputBytes: 1000,
+    command: process.execPath, args: ['-e', child, '--'], execution: 'service', outputBytes: 1000,
     activateNewBundles: false,
     env: {
       DSH_DESCENDANT_PID_FILE: pidFile, DSH_DESCENDANT_STOP_FILE: stopFile,

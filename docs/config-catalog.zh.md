@@ -18,7 +18,7 @@
 
 - `inject`: `agents` · `llm` · `sessionPersistence` · `sessions`
 - `refs`: `v2` (`@agentclientprotocol/sdk/experimental/v2`)
-- `source`: [`packages/acp/acp/src/index.ts:85`](../packages/acp/acp/src/index.ts)
+- `source`: [`packages/acp/acp/src/index.ts:84`](../packages/acp/acp/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: the provider/model selection used for each ACP-created agent. */
