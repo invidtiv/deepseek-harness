@@ -57,7 +57,6 @@ export class EnvironmentSessionInteractions {
         this.require(capabilities.attachments)
         const file = attachments.get(request.attachmentId)
         this.require(file !== undefined)
-        if (!file) throw new Error('Attachment is not referenced by this Session')
         if (file.part.attachment.bytes > this.config.maxUploadBytes) throw new Error('Download exceeds the configured byte limit')
         let bytes: Uint8Array
         if (file.part.type === 'image') bytes = (await this.service('attachments').readImage(file.part.attachment, signal)).data
@@ -199,7 +198,7 @@ export class EnvironmentSessionInteractions {
     })
   }
 
-  private require(allowed: boolean): void {
+  private require(allowed: boolean): asserts allowed {
     if (!allowed) throw new RemoteError('environment/session-denied', 'This operation is not granted for the destination Session', {})
   }
 

@@ -23,10 +23,11 @@ export function RemoteQuestions({ pending, disabled, answer, approve, t }: Remot
     {pending.reason && <p>{pending.reason}</p>}
     <div className={css.toolbar}><Button disabled={disabled} onClick={() => { approve('allowed-once') }}>{t('allowOnce')}</Button><Button disabled={disabled} onClick={() => { approve('rejected') }}>{t('rejectRequest')}</Button></div>
   </article>
-  const complete = pending.questions.every((question) => {
+  const answers = pending.questions.flatMap((question) => {
     const value = draft[question.id]
-    return value !== undefined && (value.selected.length > 0 || value.custom.trim().length > 0)
+    return value !== undefined && (value.selected.length > 0 || value.custom.trim().length > 0) ? [{ id: question.id, ...value }] : []
   })
+  const complete = answers.length === pending.questions.length
   return <article className={css.interaction}>
     {pending.questions.map((question) => {
       const value = draft[question.id] ?? { selected: [], custom: '' }
@@ -42,9 +43,6 @@ export function RemoteQuestions({ pending, disabled, answer, approve, t }: Remot
         <label>{t('customAnswer')}<Input value={value.custom} onChange={(event) => { setDraft({ ...draft, [question.id]: { selected: question.multiSelect ? value.selected : [], custom: event.target.value } }) }} /></label>
       </fieldset>
     })}
-    <Button disabled={disabled || !complete} onClick={() => { answer({ answers: pending.questions.flatMap((question) => {
-      const value = draft[question.id]
-      return value ? [{ id: question.id, ...value }] : []
-    }) }) }}>{t('submitAnswer')}</Button>
+    <Button disabled={disabled || !complete} onClick={() => { answer({ answers }) }}>{t('submitAnswer')}</Button>
   </article>
 }

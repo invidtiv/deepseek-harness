@@ -149,7 +149,7 @@ export class EnvironmentSessions {
           .filter(item => request.before === undefined || item.updatedAt < request.before.updatedAt ||
             (item.updatedAt === request.before.updatedAt && item.sessionId < request.before.sessionId))
           .sort((left, right) => right.updatedAt - left.updatedAt ||
-            (left.sessionId < right.sessionId ? 1 : left.sessionId > right.sessionId ? -1 : 0))
+            (left.sessionId < right.sessionId ? 1 : -1))
         return { ...scope, kind: 'sessions', sessions: visible.slice(0, this.config.sessionPageSize).map(item => ({ sessionId: item.sessionId, title: typeof item.projections?.values.title === 'string' ? item.projections.values.title : item.sessionId, running: item.running, updatedAt: item.updatedAt })), truncated: visible.length > this.config.sessionPageSize }
       }
       case 'create': {

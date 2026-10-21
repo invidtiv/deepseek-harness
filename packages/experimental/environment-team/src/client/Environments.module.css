@@ -9,21 +9,21 @@
 .page p { color: var(--dsw-alias-label-secondary); line-height: 20px; }
 .selector { display: grid; gap: 8px; margin-bottom: 16px; }
 .page label { display: grid; gap: 8px; }
-.page select { padding: 8px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l4); border-radius: 8px; }
-.row { padding: 12px 0; border-bottom: 1px solid var(--dsw-alias-border-l4); }
+.page select { padding: 8px; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); border: 0.5px solid var(--dsw-alias-border-l4); border-radius: 8px; }
+.row { padding: 12px 0; border-bottom: 0.5px solid var(--dsw-alias-border-l4); }
 .row > div { min-width: 0; display: grid; gap: 8px; }
 .page code { overflow-wrap: anywhere; }
 .path { display: block; padding: 16px 0; }
 .toolbar { justify-content: flex-start; align-items: end; margin-top: 16px; }
 .loading { display: flex; justify-content: center; padding: 32px; }
 .error { min-height: 20px; }
-.messages article { padding: 16px 0; border-bottom: 1px solid var(--dsw-alias-border-l4); }
+.messages article { padding: 16px 0; border-bottom: 0.5px solid var(--dsw-alias-border-l4); }
 .messages pre { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 20px; }
 .composer { margin-top: 24px; }
-.composer textarea { padding: 12px; font: inherit; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); border: 1px solid var(--dsw-alias-border-l4); border-radius: 8px; resize: vertical; }
-.interaction { margin: 16px 0; padding: 16px; border: 1px solid var(--dsw-alias-border-l4); border-radius: 8px; }
+.composer textarea { padding: 12px; font: inherit; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-layer-1); border: 0.5px solid var(--dsw-alias-border-l4); border-radius: 8px; resize: vertical; }
+.interaction { margin: 16px 0; padding: 16px; border: 0.5px solid var(--dsw-alias-border-l4); border-radius: 8px; }
 .interaction pre { white-space: pre-wrap; overflow-wrap: anywhere; }
-.interaction fieldset { margin: 12px 0; padding: 12px; border: 1px solid var(--dsw-alias-border-l4); }
+.interaction fieldset { margin: 12px 0; padding: 12px; border: 0.5px solid var(--dsw-alias-border-l4); }
 .interaction .option { display: flex; align-items: start; margin: 12px 0; }
 .option small { display: block; margin-top: 4px; }
 .terminal { margin-top: 16px; padding: 8px; overflow: auto; color: var(--dsw-alias-label-primary); background: var(--dsw-alias-bg-base); }

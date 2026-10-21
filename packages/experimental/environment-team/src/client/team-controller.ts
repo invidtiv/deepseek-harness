@@ -135,14 +135,11 @@ export class TeamController {
     } finally {
       if (generation === this.generation) {
         this.state.update((value) => { value.loading = false })
-        if (this.delay !== undefined) this.schedule(this.delay, generation)
+        if (this.delay !== undefined) this.timer = setTimeout(() => { this.refresh() }, this.delay)
       }
     }
   }
 
-  private schedule(interval: number, generation: number): void {
-    if (this.active && generation === this.generation) this.timer = setTimeout(() => { this.refresh() }, interval)
-  }
   private invalidate(): void {
     this.generation++; this.abort.abort(); this.abort = new AbortController()
     if (this.timer !== undefined) clearTimeout(this.timer)

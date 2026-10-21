@@ -30,7 +30,7 @@ export function environmentConfigurationEntry(ctx: Context): { entry: Entry; fib
   const entry = ctx.configEditor.entries().find(item => item.options.id === 'environment-team')
   if (!entry?.fiber) throw new Error('Environment teams is not enabled')
   const fiber = entry.fiber
-  const raw = entry.options.config
+  const raw: unknown = entry.options.config
   const resolved: unknown = fiber.config ?? fiber.ctx.waterfall(fiber, 'internal/config', raw, () => raw)
   return { entry, fiber, config: resolveConfig(resolved) }
 }

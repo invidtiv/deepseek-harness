@@ -1,5 +1,6 @@
 /** A single pending replacement snapshot with cancellation-owned source teardown. */
 import type { EnvironmentSessionFrame } from './session-types.ts'
+import { streamWake } from './stream-wake.ts'
 
 /** A replacement stream whose producer can be joined without advancing a suspended consumer. */
 export interface SessionFrameStream {
@@ -20,12 +21,8 @@ export interface SessionFrameStream {
 export function sessionFrameStream(
   open: (signal: AbortSignal) => AsyncIterable<EnvironmentSessionFrame>, signal: AbortSignal,
 ): SessionFrameStream {
-  const abort = new AbortController()
-  const lifetime = AbortSignal.any([signal, abort.signal])
+  const { abort, lifetime, notify, park, release } = streamWake(signal)
   const state: { latest?: EnvironmentSessionFrame; failure?: Error; complete: boolean } = { complete: false }
-  let wake: (() => void) | undefined
-  const notify = () => { const current = wake; wake = undefined; current?.() }
-  lifetime.addEventListener('abort', notify, { once: true })
   const done = (async () => {
     try {
       lifetime.throwIfAborted()
@@ -38,7 +35,7 @@ export function sessionFrameStream(
       if (!lifetime.aborted) state.failure = error instanceof Error ? error : new Error('Session stream failed', { cause: error })
     } finally {
       state.complete = true
-      lifetime.removeEventListener('abort', notify)
+      release()
       notify()
     }
   })()
@@ -52,7 +49,7 @@ export function sessionFrameStream(
         } else if (state.complete) {
           if (state.failure !== undefined) throw state.failure
           return
-        } else await new Promise<void>((resolve) => { wake = resolve })
+        } else await park()
       }
     } finally {
       abort.abort()

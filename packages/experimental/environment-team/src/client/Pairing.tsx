@@ -28,18 +28,17 @@ const statuses = { pending: 'pairingPending', redeeming: 'pairingRedeeming', con
  * @param props - saved configuration, localized copy and operator actions.
  * @returns invitation form and redacted invitation inventory.
  */
-export function Pairing(props: PairingActions & PropsLocale<'environmentTeams'> & { configuration: EnvironmentConfiguration; changed(): void }) {
+export function Pairing(props: PairingActions & PropsLocale<'environmentTeams'> & { configuration: EnvironmentConfiguration; changed: () => void }) {
   const { t } = props
   const generatedId = useRef<PairingInvitationId | undefined>(undefined)
   const consumed = useRef<Set<string>>(new Set())
   const changed = useRef(props.changed)
   changed.current = props.changed
   const [mode, setMode] = useState<'generate' | 'enter'>('generate')
-  const [expiresAt, setExpiresAt] = useState<number>()
   const [copied, setCopied] = useState(false)
   const [now, setNow] = useState(Date.now())
   const [incoming, setIncoming] = useState('')
-  const [outgoing, setOutgoing] = useState('')
+  const [outgoing, setOutgoing] = useState<{ code: string; expiresAt: number }>()
   const [items, setItems] = useState<PairingInvitationMetadata[]>()
   const [attempts, setAttempts] = useState<PairingAttemptMetadata[]>()
   const [readFailed, setReadFailed] = useState(false)
@@ -53,32 +52,35 @@ export function Pairing(props: PairingActions & PropsLocale<'environmentTeams'> 
     let active = true
     void Promise.all([props.pairingList(), props.pairingAttempts()]).then(([value, pending]) => {
       if (active) {
-        const newlyConnected = value.some(item => item.status === 'consumed' && !consumed.current.has(item.id) && item.target && !props.configuration.config.peers.some(peer => peer.environmentId === item.target?.environmentId))
+        const newlyConnected = value.some((item) => {
+          const target = item.target
+          return item.status === 'consumed' && !consumed.current.has(item.id) && target !== undefined && !props.configuration.config.peers.some(peer => peer.environmentId === target.environmentId)
+        })
         consumed.current = new Set(value.filter(item => item.status === 'consumed').map(item => item.id))
         setItems(value); setAttempts(pending); setReadFailed(false)
-        if (value.some(item => item.id === generatedId.current && item.status !== 'pending' && item.status !== 'redeeming')) setOutgoing('')
+        if (value.some(item => item.id === generatedId.current && item.status !== 'pending' && item.status !== 'redeeming')) setOutgoing(undefined)
         if (newlyConnected) changed.current()
       }
     }, () => { if (active) setReadFailed(true) })
     return () => { active = false }
   }, [generation, props.pairingList, props.pairingAttempts, props.configuration.config.peers])
   useEffect(() => {
-    if (!outgoing || expiresAt === undefined) return
+    if (!outgoing) return
     const timer = setInterval(() => {
       const time = Date.now()
       setNow(time); setGeneration(value => value + 1)
-      if (time >= expiresAt) clearInterval(timer)
+      if (time >= outgoing.expiresAt) clearInterval(timer)
     }, props.configuration.config.sessionSyncIntervalMs)
     return () => { clearInterval(timer) }
-  }, [outgoing, expiresAt, props.configuration.config.sessionSyncIntervalMs])
+  }, [outgoing, props.configuration.config.sessionSyncIntervalMs])
   const run = async (operation: () => Promise<void>) => {
     setBusy(true)
     try { await operation(); setGeneration(value => value + 1); props.notify('pairingChanged') }
     catch { props.notify('pairingFailed') }
     finally { setBusy(false) }
   }
-  const copy = async () => {
-    try { await navigator.clipboard.writeText(outgoing); setCopied(true) }
+  const copy = async (code: string) => {
+    try { await navigator.clipboard.writeText(code); setCopied(true) }
     catch { props.notify('pairingFailed') }
   }
   const create = () => {
@@ -86,8 +88,8 @@ export function Pairing(props: PairingActions & PropsLocale<'environmentTeams'> 
       const invitation = await props.pairingCreate(grants)
       generatedId.current = invitation.id
       const bytes = new TextEncoder().encode(JSON.stringify(invitation))
-      setOutgoing(`dsh-pair:${btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join('')).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')}`)
-      setExpiresAt(invitation.expiresAt); setNow(Date.now()); setCopied(false)
+      setOutgoing({ code: `dsh-pair:${btoa(Array.from(bytes, byte => String.fromCharCode(byte)).join('')).replaceAll('+', '-').replaceAll('/', '_').replace(/=+$/, '')}`, expiresAt: invitation.expiresAt })
+      setNow(Date.now()); setCopied(false)
     })
   }
   return <section className={css.pairing}>
@@ -112,10 +114,10 @@ export function Pairing(props: PairingActions & PropsLocale<'environmentTeams'> 
         <p>{t('pairingLifetime')}: {props.configuration.config.invitationLifetimeMs / 60000} {t('pairingMinutes')}</p>
         <div><Button onClick={create}>{t('pairingCreate')}</Button></div>
         {outgoing && <>
-          <label className={css.field}>{t('pairingOutput')}<textarea className={css.transfer} readOnly value={outgoing} /></label>
-          {expiresAt !== undefined && now >= expiresAt && <p role="status">{t('pairingExpired')}</p>}
-          <p>{t('pairingExpiresAt')}: {expiresAt === undefined ? '' : new Date(expiresAt).toLocaleString()}</p>
-          <div className={css.actions}><Button disabled={expiresAt !== undefined && now >= expiresAt} onClick={() => { void copy() }}>{t(copied ? 'copiedRemote' : 'pairingCopy')}</Button><Button onClick={() => { setOutgoing(''); setExpiresAt(undefined) }}>{t('pairingHide')}</Button></div>
+          <label className={css.field}>{t('pairingOutput')}<textarea className={css.transfer} readOnly value={outgoing.code} /></label>
+          {now >= outgoing.expiresAt && <p role="status">{t('pairingExpired')}</p>}
+          <p>{t('pairingExpiresAt')}: {new Date(outgoing.expiresAt).toLocaleString()}</p>
+          <div className={css.actions}><Button disabled={now >= outgoing.expiresAt} onClick={() => { void copy(outgoing.code) }}>{t(copied ? 'copiedRemote' : 'pairingCopy')}</Button><Button onClick={() => { setOutgoing(undefined) }}>{t('pairingHide')}</Button></div>
         </>}
       </> : <>
         <label className={css.field}>{t('pairingInput')}<textarea className={css.transfer} value={incoming} onChange={(event) => { setIncoming(event.target.value) }} /></label>

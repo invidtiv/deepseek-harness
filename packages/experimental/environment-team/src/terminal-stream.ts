@@ -1,6 +1,7 @@
 /** Ordered terminal output with a bounded viewer queue and independently joinable teardown. */
 import { RemoteError } from '@deepseek-ai/dsh-typert-protocol'
 import type { EnvironmentTerminalFrame } from './interaction-types.ts'
+import { streamWake } from './stream-wake.ts'
 
 /** A single viewer's terminal stream; ending it never stops the terminal process. */
 export interface TerminalFrameStream {
@@ -18,13 +19,9 @@ export interface TerminalFrameStream {
 export function terminalFrameStream(
   open: (signal: AbortSignal) => AsyncIterable<EnvironmentTerminalFrame>, signal: AbortSignal, maxBytes: number,
 ): TerminalFrameStream {
-  const abort = new AbortController()
-  const lifetime = AbortSignal.any([signal, abort.signal])
+  const { abort, lifetime, notify, park, release } = streamWake(signal)
   const queue: { frame: EnvironmentTerminalFrame; bytes: number }[] = []
   const state: { bytes: number; complete: boolean; failure?: Error } = { bytes: 0, complete: false }
-  let wake: (() => void) | undefined
-  const notify = () => { const current = wake; wake = undefined; current?.() }
-  lifetime.addEventListener('abort', notify, { once: true })
   const done = (async () => {
     try {
       lifetime.throwIfAborted()
@@ -39,7 +36,7 @@ export function terminalFrameStream(
       if (!lifetime.aborted) state.failure = error instanceof Error ? error : new Error('Terminal stream failed', { cause: error })
     } finally {
       state.complete = true
-      lifetime.removeEventListener('abort', notify)
+      release()
       notify()
     }
   })()
@@ -51,7 +48,7 @@ export function terminalFrameStream(
         else if (state.complete) {
           if (state.failure !== undefined) throw state.failure
           return
-        } else await new Promise<void>((resolve) => { wake = resolve })
+        } else await park()
       }
     } finally { abort.abort(); await done; queue.length = 0; state.bytes = 0 }
   })()

@@ -29,8 +29,8 @@ export function RemoteTerminal(props: RemoteTerminalProps) {
   const [failed, setFailed] = useState(false)
   current.current = props
   useLayoutEffect(() => {
-    const node = element.current
-    if (!node) return
+    // oxlint-disable-next-line typescript/no-non-null-assertion -- React attaches the element before layout effects run.
+    const node = element.current!
     let disposed = false
     setFailed(false)
     let cleanup: (() => void) | undefined
