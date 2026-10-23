@@ -2,6 +2,7 @@
 import { realpath } from 'node:fs/promises'
 import { isAbsolute, relative, sep } from 'node:path'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-session-query'
 import type { SessionController } from '@deepseek-ai/dsh-api-session-controller'
 import type { PromptContentPart } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { Workspace } from '@deepseek-ai/dsh-workspace'
@@ -79,13 +80,15 @@ export class EnvironmentSessions {
     const request = sessionRequestSchema.parse(input)
     const controller = this.ctx.get('sessionController')
     if (!controller) throw new Error('ordinary session operations are unavailable')
+    const query = this.ctx.get('sessionQuery')
+    if (!query) throw new Error('ordinary session reads are unavailable')
     const execute = async (): Promise<SessionResult> => {
       signal.throwIfAborted()
       const workspace = await this.authorize(peer, request)
       signal.throwIfAborted()
       if (request.action === 'prompt' || request.action === 'cancel') {
-        const snapshot = await controller.inspect(request.sessionId, signal)
-        if (snapshot.meta.origin === 'subagent' || snapshot.meta.parentSession !== undefined || snapshot.meta.cwd === undefined || await realpath(snapshot.meta.cwd) !== await realpath(workspace.path)) throw new Error('session does not belong to the workspace')
+        using snapshot = await query.observeSession(request.sessionId, { signal })
+        if (snapshot.header.origin === 'subagent' || snapshot.header.parentSession !== undefined || snapshot.header.cwd === undefined || await realpath(snapshot.header.cwd) !== await realpath(workspace.path)) throw new Error('session does not belong to the workspace')
         if (request.action === 'prompt') {
           const attached = (request.attachments?.length ?? 0) > 0 || (request.images?.length ?? 0) > 0
           if (attached && peer !== this.id && !this.config.peers.find(item => item.environmentId === peer)?.attachmentAccess) throw new Error('attachment access is not granted')
@@ -141,6 +144,8 @@ export class EnvironmentSessions {
   private async execute(
     controller: SessionController, workspace: Workspace, request: SessionRequest, signal: AbortSignal,
   ): Promise<SessionResult> {
+    const query = this.ctx.get('sessionQuery')
+    if (!query) throw new Error('ordinary session reads are unavailable')
     const scope = { environmentId: this.id, workspaceId: workspace.id }
     switch (request.action) {
       case 'list': {
@@ -159,8 +164,8 @@ export class EnvironmentSessions {
         return { ...scope, kind: 'created', sessionId: created.sessionId }
       }
       case 'read': {
-        const snapshot = await controller.inspect(request.sessionId, signal)
-        if (snapshot.meta.origin === 'subagent' || snapshot.meta.parentSession !== undefined || snapshot.meta.cwd === undefined || await realpath(snapshot.meta.cwd) !== await realpath(workspace.path)) throw new Error('session does not belong to the workspace')
+        using snapshot = await query.observeSession(request.sessionId, { signal })
+        if (snapshot.header.origin === 'subagent' || snapshot.header.parentSession !== undefined || snapshot.header.cwd === undefined || await realpath(snapshot.header.cwd) !== await realpath(workspace.path)) throw new Error('session does not belong to the workspace')
         const messages: EnvironmentSessionMessage[] = []
         for (const event of snapshot.events) {
           if (request.beforeSeq !== undefined && event.seq >= request.beforeSeq) continue

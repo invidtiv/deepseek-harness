@@ -1,3 +1,4 @@
+import { executeToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 /** Independent real HTTP hosts exercise peer authorization and durable team ownership. */
 import { createConnection } from 'node:net'
 import { once } from 'node:events'
@@ -23,6 +24,7 @@ import Workspace from '@deepseek-ai/dsh-workspace'
 import Projections from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
+import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import * as Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import WebServer from '@deepseek-ai/dsh-host-webserver'
 import Storage from '@deepseek-ai/dsh-storage'
@@ -67,14 +69,14 @@ async function host() {
   await ctx.plugin(Loader)
   Object.assign(ctx.loader.builtins, {
     include: Include, llm: LlmRuntime, sessions: SessionStore, projections: Projections,
-    prompt: SystemPrompt, tools: Tools, agents: AgentRegistry, loop: AgentLoop,
+    prompt: SystemPrompt, tools: Tools, executor: NativeExecutor, agents: AgentRegistry, loop: AgentLoop,
     persistence: Persistence, storage: Storage, json: JsonStorage,
     domain: StorageDomain, web: WebServer, environment: Plugin, presets: AgentPresets,
     preset: AgentPreset, workspace: Workspace, credentials: Credentials,
   })
   const configPath = join(root, 'cordis.yml')
   await writeFile(configPath, JSON.stringify([
-    ...['llm', 'sessions', 'projections', 'prompt', 'tools', 'agents', 'storage'].map(name => ({ name: `cordis:${name}` })),
+    ...['llm', 'sessions', 'projections', 'prompt', 'tools', 'executor', 'agents', 'storage'].map(name => ({ name: `cordis:${name}` })),
     { name: 'cordis:persistence', config: { root: join(root, 'sessions') } },
     { name: 'cordis:json', config: { root: join(root, 'storage') } },
     { name: 'cordis:domain', config: { backend: 'json' } },
@@ -139,7 +141,7 @@ function pair(left: Host, right: Host) {
 }
 
 async function execute(host: Host, agent: Agent, args: object, call: string = randomUUID()) {
-  const result = await host.ctx.tools.execute({ callId: ToolCallId(call), name: 'environment_team', arguments: args, agent, signal })
+  const result = await executeToolFixture(host.ctx, { callId: ToolCallId(call), name: 'environment_team', arguments: args, agent, signal })
   const text = result.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('')
   return { result, text }
 }
@@ -354,12 +356,12 @@ describe('deployment and admission limits', () => {
     const b = await host()
     const key = pair(a, b)
     await mount(a, { ...a.config, maxBytes: 500 })
-    const list = await a.ctx.tools.execute({ callId: ToolCallId('list'), name: 'environment_list', arguments: {}, signal })
+    const list = await executeToolFixture(a.ctx, { callId: ToolCallId('list'), name: 'environment_list', arguments: {}, signal })
     const text = JSON.stringify(list.content)
     expect(text).toContain(b.id)
     expect(text).not.toContain(process.env[key])
     expect(text).not.toContain(a.cwd.replaceAll('\\', '\\\\'))
-    const absent = await a.ctx.tools.execute({ callId: ToolCallId('absent'), name: 'environment_team', arguments: { action: 'list' }, signal })
+    const absent = await executeToolFixture(a.ctx, { callId: ToolCallId('absent'), name: 'environment_team', arguments: { action: 'list' }, signal })
     expect(JSON.stringify(absent.content)).toContain('requires an Agent')
     expect((await fetch(`${a.url}${DESCRIPTOR_PATH}`, { method: 'POST' })).status).toBe(405)
     expect((await fetch(`${a.url}${PEER_PATH}`)).status).toBe(401)
@@ -626,7 +628,7 @@ it('keeps ordinary user input outside delivery receipts and rejects a disposed c
   const handle = await a.ctx.agents.create({ sessionId: SessionId(randomUUID()), meta: { cwd: a.cwd }, agentOptions: { provider: 'mock', model: 'mock' } })
   handle.agent.steer({ id: MessageId(randomUUID()), role: 'user', source: { kind: 'user' }, content: [{ type: 'text', text: 'ordinary input' }] })
   await handle.agent.whenIdle()
-  expect(a.ctx.sessionProjections.stateOf(handle.agent.session, 'environmentTeamReceipts')).toEqual([])
+  expect(a.ctx.sessionProjections.checkpoint(handle.agent.session).environmentTeamReceipts).toMatchObject({ val: [] })
   await handle.dispose()
   const request = requestSchema.parse({ kind: 'command', environmentId: a.id, teamId: 'team', actor: handle.agent.id, operationId: 'op', command: { action: 'list' } })
   if (request.kind !== 'command') throw new Error('expected command')
@@ -659,17 +661,17 @@ it('requires recorded receipt acceptance and recovers without delivering twice',
   const input = requestSchema.parse({ kind: 'deliver', environmentId: b.id,
     assignment: { coordinator: a.id, teamId: 'team', member: { environmentId: b.id, sessionId: randomUUID(), name: 'worker', workspace: 'project' } },
     message: { id: 'op', sender: 'lead', target: 'worker', text: 'work' } })
-  const stateOf = b.ctx.sessionProjections.stateOf.bind(b.ctx.sessionProjections)
-  const projection = vi.spyOn(b.ctx.sessionProjections, 'stateOf').mockImplementation((session, key) =>
-    key === 'environmentTeamReceipts' ? undefined : stateOf(session, key))
-  await expect(runtime.receive(a.id, input)).rejects.toThrow('projection is unavailable')
-  let reads = 0
-  projection.mockImplementation((session, key) => {
-    if (key === 'environmentTeamReceipts' && ++reads === 2) return undefined
-    return stateOf(session, key)
+  const create = b.ctx.agents.create.bind(b.ctx.agents)
+  let restoreSteer: (() => void) | undefined
+  const admission = vi.spyOn(b.ctx.agents, 'create').mockImplementation(async (...args) => {
+    const handle = await create(...args)
+    const steer = vi.spyOn(handle.agent, 'steer').mockImplementation(() => {})
+    restoreSteer = () => { steer.mockRestore() }
+    return handle
   })
   await expect(runtime.receive(a.id, input)).rejects.toThrow('acceptance was not recorded')
-  projection.mockRestore()
+  restoreSteer?.()
+  admission.mockRestore()
   await expect(runtime.receive(a.id, input)).resolves.toContain('accepted')
   const worker = b.ctx.agents.list()[0]!
   await worker.whenIdle()

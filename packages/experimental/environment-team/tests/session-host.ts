@@ -16,6 +16,7 @@ import Workspace from '@deepseek-ai/dsh-workspace'
 import Projections from '@deepseek-ai/dsh-session-projection'
 import SystemPrompt from '@deepseek-ai/dsh-system-prompt'
 import Tools from '@deepseek-ai/dsh-tools'
+import * as NativeExecutor from '@deepseek-ai/dsh-tool-executor-native'
 import * as Persistence from '@deepseek-ai/dsh-session-persistence-jsonl'
 import Storage from '@deepseek-ai/dsh-storage'
 import * as JsonStorage from '@deepseek-ai/dsh-storage-json'
@@ -41,13 +42,13 @@ export async function sessionHost(prepare?: (ctx: Context, root: string) => Prom
     await ctx.plugin(Loader)
     Object.assign(ctx.loader.builtins, {
       include: Include, llm: LlmRuntime, sessions: SessionStore, projections: Projections,
-      prompt: SystemPrompt, tools: Tools, agents: AgentRegistry, loop: AgentLoop,
+      prompt: SystemPrompt, tools: Tools, executor: NativeExecutor, agents: AgentRegistry, loop: AgentLoop,
       persistence: Persistence, storage: Storage, json: JsonStorage, domain: StorageDomain,
       presets: AgentPresets, preset: AgentPreset, workspace: Workspace, web: WebServer,
     })
     const configPath = join(root, 'cordis.yml')
     await writeFile(configPath, JSON.stringify([
-      ...['llm', 'sessions', 'projections', 'prompt', 'tools', 'agents', 'storage'].map(name => ({ name: `cordis:${name}` })),
+      ...['llm', 'sessions', 'projections', 'prompt', 'tools', 'executor', 'agents', 'storage'].map(name => ({ name: `cordis:${name}` })),
       { name: 'cordis:persistence', config: { root: join(root, 'sessions') } },
       { name: 'cordis:json', config: { root: join(root, 'storage') } },
       { name: 'cordis:domain', config: { backend: 'json' } },
@@ -65,7 +66,7 @@ export async function sessionHost(prepare?: (ctx: Context, root: string) => Prom
     await prepare?.(ctx, root)
     await ctx.plugin({
       inject: ['sessions', 'agents', 'llm', 'workspaceRegistry', 'sessionProjections', 'sessionPersistence', ...(prepare ? ['typert', 'attachments', 'fileUploads'] : [])],
-      apply(scope) { createSessionTestController(scope, { cwd, defaultModelSelection: () => ({ provider: 'mock', model: 'mock' }) }) },
+      async apply(scope) { await createSessionTestController(scope, { cwd, defaultModelSelection: () => ({ provider: 'mock', model: 'mock' }) }) },
     })
     const controller = ctx.sessionController
     const id = await loadIdentity(join(root, 'identity'))

@@ -37,7 +37,7 @@ it('creates remotely and converges two clients on one persisted prompt after a c
     expect(view).toMatchObject({ kind: 'snapshot', running: false, messages: [{ role: 'user', text: 'message from another machine' }, { role: 'assistant', text: 'destination reply' }] })
   }, { timeout: 5000 })
   expect(await send(second, read)).toEqual(await local.run(destination.id, read, signal))
-  const inspected = await destination.controller.inspect(created.sessionId)
+  using inspected = await destination.ctx.sessionQuery.observeSession(created.sessionId)
   expect(inspected.events.filter(event => event.type === 'user/message')).toHaveLength(1)
   const browser = await fetch(`${destination.url}${PEER_PATH}`, { method: 'POST', headers: { authorization: `Bearer ${token}`, origin: caller.url, 'content-type': 'application/json' }, body: JSON.stringify({ kind: 'session', environmentId: destination.id, request: read }) })
   expect(browser.status).toBe(401)

@@ -72,6 +72,16 @@ describe('unique object-name prefix search', () => {
 })
 
 describe('maintained repository reference policy', () => {
+  it('accepts uv artifact byte counts while retaining commit checks in other fields', () => {
+    const bytes = ['634', '4383'].join('')
+    const commits = new Set([bytes])
+    expect(findRepositoryReferences('python/sdk/uv.lock', `{ size = ${bytes}, hash = "sha256:abc" }`, commits)).toEqual([])
+    expect(findRepositoryReferences('python/sdk/uv.lock', `{ size = ${bytes}, rev = "${bytes}" }`, commits)).toEqual([
+      { file: 'python/sdk/uv.lock', line: 1, kind: 'commit-hash' },
+    ])
+    expect(findRepositoryReferences('docs/example.md', `size = ${bytes},`, commits)).toHaveLength(1)
+  })
+
   it('permits only the independent kit repository and its source URLs', () => {
     for (const suffix of ['', '.git', '/tree/main/packages/entry']) {
       expect(findRepositoryReferences('package.json', `${organizationUrl}/libreoffice-kit${suffix}`, new Set())).toEqual([])

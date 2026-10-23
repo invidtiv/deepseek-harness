@@ -1,6 +1,7 @@
 /** Explicitly authorized access to a destination Session's files, interactions and terminals. */
 import { realpath } from 'node:fs/promises'
 import type { Context } from '@deepseek-ai/cordis'
+import type {} from '@deepseek-ai/dsh-session-query'
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
 import type { SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-client-file-upload'
@@ -182,10 +183,12 @@ export class EnvironmentSessionInteractions {
     const workspace = await new EnvironmentSessions(this.ctx, this.id, this.config).authorize(peer, { action: 'read', workspaceId: request.workspaceId, sessionId: request.sessionId })
     const controller = this.ctx.get('sessionController')
     if (!controller) throw new Error('Session controller is unavailable')
-    const inspection = await controller.inspect(request.sessionId, signal)
-    if (inspection.meta.origin === 'subagent' || inspection.meta.parentSession !== undefined || inspection.meta.cwd === undefined || await realpath(inspection.meta.cwd) !== await realpath(workspace.path)) throw new RemoteError('environment/session-denied', 'Session does not belong to this workspace', {})
+    const query = this.ctx.get('sessionQuery')
+    if (!query) throw new Error('Session reads are unavailable')
+    using inspection = await query.observeSession(request.sessionId, { signal })
+    if (inspection.header.origin === 'subagent' || inspection.header.parentSession !== undefined || inspection.header.cwd === undefined || await realpath(inspection.header.cwd) !== await realpath(workspace.path)) throw new RemoteError('environment/session-denied', 'Session does not belong to this workspace', {})
     signal.throwIfAborted()
-    return inspection
+    return { events: inspection.events }
   }
 
   private async agent(sessionId: EnvironmentInteractionRequest['sessionId'], signal: AbortSignal) {

@@ -1,10 +1,7 @@
 /** Opt-in distributed teams between independently owned Harness Web environments. */
-import { z } from 'zod'
 import { stat } from 'node:fs/promises'
 import lockfile from 'proper-lockfile'
 import type { Context } from '@deepseek-ai/cordis'
-import { brandString } from '@deepseek-ai/dsh-brand'
-import type { MessageId } from '@deepseek-ai/dsh-llm'
 import type {} from '@deepseek-ai/dsh-host-webserver'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 import type {} from '@deepseek-ai/dsh-session-projection'
@@ -40,18 +37,8 @@ export async function apply(ctx: Context, input: Config): Promise<void> {
   const release = await lockfile.lock(config.stateDirectory)
   const opening = EnvironmentTeams.open(ctx, identity, config, (id, request, signal) => transport.call(id, request, signal))
   ctx.effect(() => {
-    const disposeProjection = ctx.sessionProjections.register({
-      key: 'environmentTeamReceipts', stateVersion: 1,
-      stateSchema: z.array(z.string().transform(value => brandString<MessageId>(value))).readonly(),
-      init: (): readonly MessageId[] => [],
-      apply(state: readonly MessageId[], event) {
-        if (event.type !== 'agent/inbox/spliced' || event.data.inserted.length === 0) return state
-        const received = event.data.inserted.filter(message => message.id.startsWith('envteam:')).map(message => message.id)
-        return received.length === 0 ? state : [...new Set([...state, ...received])]
-      },
-    })
     return async () => {
-      try { await (await opening).close() } finally { disposeProjection(); await release() }
+      try { await (await opening).close() } finally { await release() }
     }
   }, 'environmentTeam.runtime')
   const runtime = await opening

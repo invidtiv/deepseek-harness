@@ -98,7 +98,7 @@ it('admits images as model-visible images and restricts their download to the ow
   host.config.maxUploadBytes = 1048576
   await host.sessions.run(host.peer, request, signal)
   await expect.poll(async () => host.sessions.run(host.peer, { ...host.address, action: 'read' }, signal)).toMatchObject({ running: false })
-  const saved = await host.controller.inspect(host.address.sessionId, signal)
+  using saved = await host.ctx.sessionQuery.observeSession(host.address.sessionId, { signal })
   expect(saved.events.find(event => event.type === 'user/message')?.data).toMatchObject({ content: [{ type: 'text' }, { type: 'image', attachment: { mediaType: 'image/png', name: 'pixel.png' } }] })
   const snapshot = await host.interactions.run(host.peer, { ...host.address, action: 'snapshot' }, signal)
   if (snapshot.kind !== 'snapshot' || !snapshot.attachments[0]) throw new Error('Expected image attachment')

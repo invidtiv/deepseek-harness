@@ -11,6 +11,7 @@ import type { Agent, AgentHandle } from '@deepseek-ai/dsh-agent'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import { brandString } from '@deepseek-ai/dsh-brand'
 import type { MessageId, UserMessage } from '@deepseek-ai/dsh-llm'
+import type { ProjectionHandle } from '@deepseek-ai/dsh-session-projection'
 import { SessionId } from '@deepseek-ai/dsh-session'
 import { defineDomain, type Domain } from '@deepseek-ai/dsh-storage-domain'
 import { z } from 'zod'
@@ -56,6 +57,7 @@ export class EnvironmentTeams {
     private readonly config: ResolvedConfig,
     private readonly domain: Domain<typeof domainSpec>,
     private readonly call: PeerCall,
+    private readonly receipts: ProjectionHandle<readonly MessageId[]>,
   ) {
     this.workspaceSessions = new EnvironmentSessions(ctx, environmentId, config)
   }
@@ -87,7 +89,22 @@ export class EnvironmentTeams {
         throw new Error('stored team assignments belong to a different environment')
       }
     }
-    return new EnvironmentTeams(ctx, id, config, domain, call)
+    try {
+      const receipts = await ctx.sessionProjections.register({
+        key: 'environmentTeamReceipts', stateVersion: 1,
+        stateSchema: z.array(z.string().transform(value => brandString<MessageId>(value))).readonly(),
+        init: (): readonly MessageId[] => [],
+        apply(state: readonly MessageId[], event) {
+          if (event.type !== 'agent/inbox/spliced' || event.data.inserted.length === 0) return state
+          const received = event.data.inserted.filter(message => message.id.startsWith('envteam:')).map(message => message.id)
+          return received.length === 0 ? state : [...new Set([...state, ...received])]
+        },
+      })
+      return new EnvironmentTeams(ctx, id, config, domain, call, receipts)
+    } catch (error) {
+      await domain.close()
+      throw error
+    }
   }
 
   /**
@@ -281,7 +298,7 @@ export class EnvironmentTeams {
       if (errors.length > 0) throw new AggregateError(errors, 'distributed members failed to dispose')
     } finally {
       this.handles.clear()
-      await this.domain.close()
+      try { await this.domain.close() } finally { await this.receipts.dispose() }
     }
   }
 
@@ -441,8 +458,8 @@ export class EnvironmentTeams {
         const stored = await this.ctx.sessionPersistence.stat(SessionId(member.sessionId))
         if (stored && stored.header.cwd !== cwd) throw new Error('stored member workspace differs from the configured directory')
         const setup = async (agentCtx: Context, memberAgent: Agent): Promise<void> => {
-          const preset = this.ctx.sessionProjections.stateOf(memberAgent.session, 'agentPreset')
-          if (preset === null || preset === undefined) throw new Error('stored member lacks its agent preset')
+          const preset = this.ctx.agentPresets.presetForSession(memberAgent.session)
+          if (preset === null) throw new Error('stored member lacks its agent preset')
           await this.ctx.agentPresets.mount(agentCtx, preset)
           if (!stored) {
             setSandboxMode(memberAgent.session, this.config.sandboxMode)
@@ -462,8 +479,7 @@ export class EnvironmentTeams {
       if (agent.session.header.cwd !== cwd) throw new Error('live member workspace differs from the configured directory')
       await (await this.ctx.workspaceRegistry.create(cwd)).attachSession(agent.id)
       const id = brandString<MessageId>(`envteam:${createHash('sha256').update(JSON.stringify([assignment.coordinator, assignment.teamId, message.sender, message.id])).digest('hex')}`)
-      const accepted = this.ctx.sessionProjections.stateOf(agent.session, 'environmentTeamReceipts')
-      if (!accepted) throw new Error('distributed delivery receipt projection is unavailable')
+      const accepted = this.receipts.stateOf(agent.session)
       if (!accepted.includes(id)) {
         const input: UserMessage = {
           id, role: 'user',
@@ -473,15 +489,8 @@ export class EnvironmentTeams {
         agent.steer(input)
       }
       await this.ctx.sessions.flush(agent.session)
-      if (!this.ctx.sessionProjections.stateOf(agent.session, 'environmentTeamReceipts')?.includes(id)) throw new Error('message acceptance was not recorded')
+      if (!this.receipts.stateOf(agent.session).includes(id)) throw new Error('message acceptance was not recorded')
       return JSON.stringify({ delivery: 'accepted' })
     })
-  }
-}
-
-declare module '@deepseek-ai/dsh-session-projection/types' {
-  interface SessionProjectionStateMap {
-    /** Message identities accepted by this Session, including subsequently canceled input. */
-    environmentTeamReceipts: readonly MessageId[]
   }
 }

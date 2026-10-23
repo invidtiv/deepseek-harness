@@ -1,7 +1,7 @@
 {
   "name": "@deepseek-ai/dsh-experimental-environment-team",
   "description": "Authenticated distributed teams across independent Harness environments",
-  "version": "0.2.1-rc.2",
+  "version": "0.2.1-rc.3",
   "type": "module",
   "license": "MIT",
   "publishConfig": {
@@ -95,7 +95,8 @@
     "@deepseek-ai/dsh-client-file-upload": "workspace:*",
     "@deepseek-ai/dsh-user-questions": "workspace:*",
     "@deepseek-ai/dsh-attachment": "workspace:*",
-    "@deepseek-ai/dsh-client-connection": "workspace:*"
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
+    "@deepseek-ai/dsh-session-query": "workspace:*"
   },
   "devDependencies": {
     "@deepseek-ai/dsh-util-crypto": "workspace:*",
@@ -149,7 +150,10 @@
     "@deepseek-ai/dsh-attachment-local": "workspace:*",
     "@deepseek-ai/dsh-commands": "workspace:*",
     "@deepseek-ai/dsh-client-connection": "workspace:*",
-    "@deepseek-ai/dsh-typert-registry": "workspace:*"
+    "@deepseek-ai/dsh-typert-registry": "workspace:*",
+    "@deepseek-ai/dsh-session-query": "workspace:*",
+    "@deepseek-ai/dsh-tool-executor-native": "workspace:*",
+    "@deepseek-ai/dsh-tool-testkit": "workspace:*"
   },
   "dsh": {
     "bundle": {

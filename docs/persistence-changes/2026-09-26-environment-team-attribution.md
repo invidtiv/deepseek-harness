@@ -27,20 +27,20 @@ id: 2026-09-26-environment-team-attribution
 baseline: false
 changes:
   - root: "event:agent/inbox/spliced"
-    previous: "2026-10-13-user-rpc-principal"
-    after: "c834011a4cdbda4f342f2a14029b38cf296c1fbd8922fde8e03df79ba36478c2"
+    previous: "2026-10-22-action-card-status"
+    after: "e66079027e80dc64a5c5a1556f5ef9d982d37399732fa6c2245927792bb8a4c7"
     decision: same-version
   - root: "event:developer/message"
-    previous: "2026-10-13-user-rpc-principal"
-    after: "13c2796e04b0a340077628f9481a202965fd8755d9ece118098a9c7d27bae5e1"
+    previous: "2026-10-22-action-card-status"
+    after: "0c043382c61437f49f4c4510b8368a1999c4aaf0c7d9139b8afc2a967094482a"
     decision: same-version
   - root: "event:session/title-llm-request"
-    previous: "2026-10-13-user-rpc-principal"
-    after: "db34d2ef2b79d27bf3cb0d3b2f0d7600ab3dd11defd57a8a808e799d202a26c8"
+    previous: "2026-10-22-action-card-status"
+    after: "d7db2c1630f951674be269d31e49b1af8300bb2a7afe21b4df8163165908a0c2"
     decision: same-version
   - root: "event:user/message"
-    previous: "2026-10-13-user-rpc-principal"
-    after: "1d9ce0a346cab80af75360121634b1f5407215f72c1a71ae99a3eabe9ce336b3"
+    previous: "2026-10-22-action-card-status"
+    after: "47aab872407e07767b58dfa1301e5439bff3155e483e64369a50c798e506845f"
     decision: same-version
 ```
 
