@@ -36,7 +36,7 @@ function isMaintained(file: string): boolean {
  * @param file - Repository-relative path used in diagnostics and exclusions.
  * @param source - File text or a symlink's stored target.
  * @param commits - Lowercase, unambiguous full or abbreviated commit identifiers.
- * @returns One finding per line and reference kind; digests and other Git object types are accepted.
+ * @returns One finding per line and reference kind; artifact byte counts, digests, and other Git object types are accepted.
  */
 export function findRepositoryReferences(
   file: string,
@@ -49,7 +49,13 @@ export function findRepositoryReferences(
     if (organizationUrl.test(canonicalReferenceText(line).replace(kitRepositoryUrl, ''))) {
       references.push({ file, line: index + 1, kind: 'organization-url' })
     }
-    if ([...line.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase()))) {
+    // TOML artifact byte counts are integers, even when their digits name a Git object.
+    // Preserve quoted text so revision strings and URLs remain subject to the check.
+    const referenceText = file.endsWith('.lock')
+      ? line.replace(/"(?:\\.|[^"\\])*"|'[^']*'|([{,]\s*size\s*=\s*)\d+(?=\s*[,}])/g,
+        (match, sizePrefix: string | undefined) => sizePrefix ?? match)
+      : line
+    if ([...referenceText.matchAll(commitCandidate)].some(match => commits.has(match[0].toLowerCase()))) {
       references.push({ file, line: index + 1, kind: 'commit-hash' })
     }
   }
