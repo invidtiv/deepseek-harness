@@ -1,6 +1,7 @@
 version: 1
 scenario: cancel
 profile: acp
+platform: posix
 composition: acp-default
 recording: authored
 header:

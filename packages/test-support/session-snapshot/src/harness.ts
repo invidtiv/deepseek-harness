@@ -248,7 +248,7 @@ export function snapshotSpillRoot(
  * @returns The captured stdout/stderr, session id, generated cwd, and harvested logs.
  */
 export async function runScenario(input: InputScript, opts: RunOptions): Promise<RunResult> {
-  const cwd = await mkdtemp(join(opts.workspaceParent ?? tmpdir(), 'acp-snap-cwd-'))
+  const cwd = (await mkdtemp(join(opts.workspaceParent ?? tmpdir(), 'acp-snap-cwd-'))).replaceAll('\\', '/')
   const cwdAliases = [...new Set([realpathSync(cwd), realpathSync.native(cwd)])]
   const sessionsRoot = await mkdtemp(join(tmpdir(), 'acp-snap-sessions-'))
   let spillRoot: string | undefined

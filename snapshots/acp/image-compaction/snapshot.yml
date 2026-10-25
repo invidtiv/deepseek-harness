@@ -1,6 +1,7 @@
 version: 1
 scenario: image-compaction
 profile: acp
+platform: posix
 composition: image-compaction
 recording: authored
 header:

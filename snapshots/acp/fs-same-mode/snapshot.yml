@@ -1,6 +1,7 @@
 version: 1
 scenario: fs-same-mode
 profile: acp
+platform: posix
 composition: acp-default
 recording: authored
 header:

@@ -1,6 +1,7 @@
 version: 1
 scenario: escalation-rejected
 profile: acp
+platform: posix
 composition: acp-default
 recording: live
 header:
