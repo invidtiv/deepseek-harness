@@ -23,6 +23,8 @@ import {
   type CloseSessionResponse,
   type InitializeRequest,
   type InitializeResponse,
+  type LoadSessionRequest,
+  type LoadSessionResponse,
   type ListSessionsRequest,
   type ListSessionsResponse,
   type NewSessionRequest,
@@ -83,6 +85,7 @@ export interface AcpTestClient {
   initialize: (params: InitializeRequest) => Promise<InitializeResponse>
   newSession: (params: NewSessionRequest) => Promise<NewSessionResponse>
   listSessions: (params: ListSessionsRequest) => Promise<ListSessionsResponse>
+  loadSession: (params: LoadSessionRequest) => Promise<LoadSessionResponse>
   resumeSession: (params: ResumeSessionRequest) => Promise<ResumeSessionResponse>
   closeSession: (params: CloseSessionRequest) => Promise<CloseSessionResponse>
   setSessionConfigOption: (params: SetSessionConfigOptionRequest) => Promise<SetSessionConfigOptionResponse>
@@ -231,6 +234,7 @@ export function launchAcpTestAgent(options: AcpTestLaunchOptions): LaunchedAcpTe
     /* v8 ignore next -- exercised by the real-process ACP control-surface conformance e2e. */
     listSessions: params => context.request(methods.agent.session.list, params),
     /* v8 ignore next -- exercised by the real-process ACP control-surface conformance e2e. */
+    loadSession: params => context.request(methods.agent.session.load, params),
     resumeSession: params => context.request(methods.agent.session.resume, params),
     /* v8 ignore next -- exercised by the real-process ACP control-surface conformance e2e. */
     closeSession: params => context.request(methods.agent.session.close, params),

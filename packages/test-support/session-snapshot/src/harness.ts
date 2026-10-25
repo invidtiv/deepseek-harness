@@ -88,6 +88,8 @@ export const REPLAY_CREDENTIAL_ENV: Readonly<Record<string, string>> = { DEEPSEE
 export type InputStep =
   | { op: 'initialize' }
   | { op: 'newSession' }
+  | { op: 'closeSession' }
+  | { op: 'loadSession' }
   | { op: 'newSessionExpectError'; additionalDirectories?: string[] }
   | { op: 'prompt'; text: string }
   | { op: 'promptContent'; content: AcpContentBlock[] }
@@ -438,6 +440,12 @@ async function runStep(
       setSessionId(sessionId)
       return
     }
+    case 'closeSession':
+      await client.closeSession({ sessionId: getSessionId() ?? (() => { throw new Error('snapshot-harness: no session to activate') })() })
+      return
+    case 'loadSession':
+      await client.loadSession({ sessionId: getSessionId() ?? (() => { throw new Error('snapshot-harness: no session to activate') })(), cwd, mcpServers: [] })
+      return
     case 'newSessionExpectError': {
       // The bridge rejects a session/new that widens the workspace scope
       // (non-empty additionalDirectories / mcpServers — unimplemented). The SDK

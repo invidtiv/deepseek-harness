@@ -15,8 +15,8 @@ Each package entry labels its data with three identifiers: `inject` lists the se
 ## `@deepseek-ai/dsh-acp`
 
 - `inject`: `agents` · `llm` · `sessionPersistence` · `sessions`
-- `refs`: `Stream` (`@agentclientprotocol/sdk`)
-- `source`: [`packages/acp/acp/src/index.ts:74`](../packages/acp/acp/src/index.ts)
+- `refs`: `v2` (`@agentclientprotocol/sdk/experimental/v2`)
+- `source`: [`packages/acp/acp/src/index.ts:83`](../packages/acp/acp/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: the provider/model selection used for each ACP-created agent. */
@@ -27,8 +27,12 @@ export interface AcpConfig {
   model?: string
   /** Maximum summaries returned by one session/list page. */
   sessionListPageSize?: number
+  /** Negotiate draft ACP v2 alongside stable v1. */
+  protocolV2?: boolean
+  /** Maximum persisted events read per transcript replay page. */
+  sessionReplayPageSize?: number
   /** Runtime-only transport override; production uses stdio. */
-  stream?: Stream
+  stream?: v2.Stream
 }
 ```
 <!-- END GENERATED config-catalog:@deepseek-ai/dsh-acp -->

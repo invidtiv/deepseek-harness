@@ -10,7 +10,7 @@ import { SESSION_FORMAT_VERSION, SessionId, SessionLogOffset, SessionSeq } from 
 import type { SessionHeader } from '@deepseek-ai/dsh-session'
 import { SessionPersistenceRevision, type SessionPersistenceSnapshot } from '@deepseek-ai/dsh-session-persistence'
 import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
-import { makeBridgeHarness, textResponse, type BridgeHarness } from './harness.ts'
+import { ACP_PACKAGE_VERSION, makeBridgeHarness, textResponse, type BridgeHarness } from './harness.ts'
 import { startHttpMcpFixture } from '../../../mcp/mcp-client/tests/http-fixture.ts'
 
 /** Wrap a bare header as the snapshot shape `SessionPersistence.list` now returns. */
@@ -48,8 +48,9 @@ describe('automation-only ACP bridge', () => {
 
     expect(response).toEqual({
       protocolVersion: PROTOCOL_VERSION,
-      agentInfo: { name: 'deepseek-harness-acp', version: '0.0.1' },
+      agentInfo: { name: 'deepseek-harness-acp', version: ACP_PACKAGE_VERSION },
       agentCapabilities: {
+        loadSession: true,
         mcpCapabilities: { http: true },
         promptCapabilities: { image: false, audio: false, embeddedContext: false },
         sessionCapabilities: { close: {}, list: {}, resume: {} },
@@ -69,8 +70,8 @@ describe('automation-only ACP bridge', () => {
     expect(noStore.agentCapabilities?.promptCapabilities?.image).toBe(false)
   })
 
-  it('negotiates an unsupported version and accepts the required no-op authentication call', async () => {
-    harness = await makeBridgeHarness()
+  it('retains legacy negotiation and no-op authentication in a v1-only deployment', async () => {
+    harness = await makeBridgeHarness({ config: { protocolV2: false } })
     const response = await harness.client.initialize({ protocolVersion: 0, clientCapabilities: {} })
     expect(response.protocolVersion).toBe(PROTOCOL_VERSION)
     await expect(harness.client.authenticate({ methodId: 'unused' })).resolves.toEqual({})

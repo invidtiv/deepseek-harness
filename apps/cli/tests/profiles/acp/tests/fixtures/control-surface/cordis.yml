@@ -19,3 +19,7 @@
 - insert:
     - id: control-surface-llm
       name: './control-surface-llm.ts'
+
+- id: approval
+  config:
+    policy: ask

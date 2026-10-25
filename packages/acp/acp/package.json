@@ -29,23 +29,37 @@
   ],
   "license": "MIT",
   "dependencies": {
-    "@agentclientprotocol/sdk": "1.4.0",
+    "@agentclientprotocol/sdk": "1.7.0",
     "@deepseek-ai/dsh-brand": "workspace:*",
+    "@deepseek-ai/dsh-util-values": "workspace:*",
     "@deepseek-ai/schemastery": "workspace:~"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:~",
     "@deepseek-ai/dsh-agent": "workspace:*",
     "@deepseek-ai/dsh-attachment": "workspace:*",
+    "@deepseek-ai/dsh-commands": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-mcp-client": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
     "@deepseek-ai/dsh-session-persistence": "workspace:*",
     "@deepseek-ai/dsh-token-meter": "workspace:*",
-    "@deepseek-ai/dsh-user-approval": "workspace:*"
+    "@deepseek-ai/dsh-user-approval": "workspace:*",
+    "@deepseek-ai/dsh-goal": "workspace:*",
+    "@deepseek-ai/dsh-tool-todo": "workspace:*",
+    "@deepseek-ai/dsh-session-projection": "workspace:*"
   },
   "peerDependenciesMeta": {
     "@deepseek-ai/dsh-token-meter": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-goal": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-tool-todo": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-session-projection": {
       "optional": true
     }
   },
@@ -55,6 +69,10 @@
     "@deepseek-ai/dsh-agent-loop": "workspace:*",
     "@deepseek-ai/dsh-agent-loop-testkit": "workspace:*",
     "@deepseek-ai/dsh-attachment": "workspace:*",
+    "@deepseek-ai/dsh-command-goal": "workspace:*",
+    "@deepseek-ai/dsh-commands": "workspace:*",
+    "@deepseek-ai/dsh-goal": "workspace:*",
+    "@deepseek-ai/dsh-goal-round-driver": "workspace:*",
     "@deepseek-ai/dsh-llm": "workspace:*",
     "@deepseek-ai/dsh-mcp-client": "workspace:*",
     "@deepseek-ai/dsh-session": "workspace:*",
@@ -65,6 +83,7 @@
     "@deepseek-ai/dsh-token-meter": "workspace:*",
     "@deepseek-ai/dsh-tool-testkit": "workspace:*",
     "@deepseek-ai/dsh-tools": "workspace:*",
-    "@deepseek-ai/dsh-user-approval": "workspace:*"
+    "@deepseek-ai/dsh-user-approval": "workspace:*",
+    "@deepseek-ai/dsh-tool-todo": "workspace:*"
   }
 }

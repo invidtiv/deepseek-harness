@@ -40,6 +40,21 @@
     },
     {
       "path": "../../interaction/user-approval"
+    },
+    {
+      "path": "../../interaction/commands"
+    },
+    {
+      "path": "../../goal/goal"
+    },
+    {
+      "path": "../../todo/tool-todo"
+    },
+    {
+      "path": "../../session/session-projection"
+    },
+    {
+      "path": "../../util/values"
     }
   ]
 }

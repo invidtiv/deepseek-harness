@@ -1,0 +1,17 @@
+{"type":"session","version":4,"id":"{{session:1}}","createdAt":0,"cwd":"{{cwd}}","isSeeded":false,"delegationDepth":0}
+{"type":"permission/preset","data":{"preset":"danger-full-access"}}
+{"type":"sandbox/mode","data":{"mode":"danger-full-access"}}
+{"type":"approval/policy","data":{"policy":"never"}}
+{"type":"command/run","data":{"commandId":"{{command:1}}","name":"goal","args":" ship the task","source":{"kind":"user"}}}
+{"type":"goal/change","data":{"kind":"goal/change","version":1,"operation":"create","goal":{"id":"{{id:1}}","revision":1,"objective":"ship the task","phase":"active","maxGoalRounds":256},"roundsStarted":0,"createdAt":1792316298969,"updatedAt":1792316298969}}
+{"type":"command/done","data":{"commandId":"{{command:1}}","kind":"success","text":"Goal created\nStatus: active\nObjective: ship the task\nRounds: 0/256\nActivation: armed\n\nCommands: /goal edit <objective>, /goal pause, /goal clear"}}
+{"type":"command/run","data":{"commandId":"{{command:2}}","name":"goal","args":" pause","source":{"kind":"user"}}}
+{"type":"goal/change","data":{"kind":"goal/change","version":1,"operation":"pause","goal":{"id":"{{id:1}}","revision":2,"objective":"ship the task","phase":"paused","maxGoalRounds":256},"roundsStarted":0,"createdAt":1792316298969,"updatedAt":1792316298977}}
+{"type":"command/done","data":{"commandId":"{{command:2}}","kind":"success","text":"Goal paused\nStatus: paused\nObjective: ship the task\nRounds: 0/256\nActivation: disarmed\n\nCommands: /goal edit <objective>, /goal resume, /goal clear"}}
+{"type":"command/run","data":{"commandId":"{{command:3}}","name":"fixture-plan","args":"","source":{"kind":"user"}}}
+{"type":"todo/write","data":{"todos":[{"content":"Implement ACP progress","status":"in_progress"}]}}
+{"type":"command/done","data":{"commandId":"{{command:3}}","kind":"success","text":"Plan recorded."}}
+{"type":"session/end-seed","data":{}}
+{"type":"command/run","data":{"commandId":"{{command:4}}","name":"goal","args":" clear","source":{"kind":"user"}}}
+{"type":"goal/change","data":{"kind":"goal/change","version":1,"operation":"clear","cleared":{"id":"{{id:1}}","revision":3},"clearedAt":1792316299017}}
+{"type":"command/done","data":{"commandId":"{{command:4}}","kind":"success","text":"Goal cleared."}}

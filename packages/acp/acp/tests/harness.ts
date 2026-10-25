@@ -2,6 +2,7 @@
 
 import { Context } from '@deepseek-ai/cordis'
 import { createHash } from 'node:crypto'
+import { readFileSync } from 'node:fs'
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -187,6 +188,7 @@ interface BridgeClient {
   authenticate: NonNullable<AcpAgent['authenticate']>
   newSession: NonNullable<AcpAgent['newSession']>
   listSessions: NonNullable<AcpAgent['listSessions']>
+  loadSession: NonNullable<AcpAgent['loadSession']>
   resumeSession: NonNullable<AcpAgent['resumeSession']>
   closeSession: NonNullable<AcpAgent['closeSession']>
   setSessionConfigOption: NonNullable<AcpAgent['setSessionConfigOption']>
@@ -225,6 +227,7 @@ export async function makeBridgeHarness(options: {
   imageCapable?: boolean
   attachments?: boolean
   persistenceRoot?: string
+  connectClient?: (stream: Stream) => void
 } = {}): Promise<BridgeHarness> {
   const adapter = new MockAdapter(options.script ?? [], options.imageCapable === true)
   const ctx = new Context()
@@ -292,6 +295,10 @@ export async function makeBridgeHarness(options: {
     inject: [...AcpPlugin.inject],
     apply: (inner: Context) => { AcpPlugin.apply(inner, config) },
   })
+  if (options.connectClient !== undefined) {
+    options.connectClient(clientStream)
+    return harness
+  }
   const clientConnection = clientApp.connect(clientStream)
   const client = clientConnection.agent
   harness.client = {
@@ -299,6 +306,7 @@ export async function makeBridgeHarness(options: {
     authenticate: params => client.request(methods.agent.authenticate, params),
     newSession: params => client.request(methods.agent.session.new, params),
     listSessions: params => client.request(methods.agent.session.list, params),
+    loadSession: params => client.request(methods.agent.session.load, params),
     resumeSession: params => client.request(methods.agent.session.resume, params),
     closeSession: params => client.request(methods.agent.session.close, params),
     setSessionConfigOption: params => client.request(methods.agent.session.setConfigOption, params),
@@ -307,3 +315,6 @@ export async function makeBridgeHarness(options: {
   }
   return harness
 }
+
+/** The version this package advertises on both protocol handshakes. */
+export const ACP_PACKAGE_VERSION = (JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { version: string }).version

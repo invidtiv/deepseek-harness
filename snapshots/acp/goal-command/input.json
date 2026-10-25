@@ -1,0 +1,8 @@
+{
+  "steps": [
+    { "op": "initialize" },
+    { "op": "newSession" },
+    { "op": "prompt", "text": "/goal" },
+    { "op": "prompt", "text": "/goal pause" }
+  ]
+}

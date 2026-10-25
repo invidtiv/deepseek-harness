@@ -21,13 +21,14 @@ import { assertSnapshotCorpusPolicy } from './session-snapshot-corpus-policy.ts'
 
 const repoRoot = resolve(import.meta.dirname, '..')
 const corpusRoot = join(repoRoot, 'snapshots')
-const profiles = ['acp', 'sdk', 'session', 'web'] as const
+const profiles = ['acp', 'acp-v2', 'sdk', 'session', 'web'] as const
 const snapshotAdapters = [
   'apps/web/tests/code-language.snapshot.ts',
   'apps/web/tests/message-feedback-protocol.snapshot.ts',
   'apps/web/tests/minimal-preset.snapshot.ts',
   'apps/web/tests/preset-migration.snapshot.ts',
   'apps/web/tests/subagent-fork-schedule.snapshot.ts',
+  'snapshots/acp-v2/v2.snapshot.ts',
   'snapshots/acp/acp.snapshot.ts',
   'snapshots/sdk/sdk.snapshot.ts',
   'snapshots/session/headless.snapshot.ts',
@@ -59,7 +60,7 @@ async function scenarios(): Promise<Scenario[]> {
       if (profile === 'sdk') {
         expect(['sdk', 'sdk-minimal'], `${profile}/${entry.name}: profile`).toContain(manifest.profile)
       } else {
-        expect(manifest.profile, `${profile}/${entry.name}: profile`).toBe(profile === 'session' ? 'headless' : profile)
+        expect(manifest.profile, `${profile}/${entry.name}: profile`).toBe(profile === 'session' ? 'headless' : profile === 'acp-v2' ? 'acp' : profile)
       }
       expect(manifest.composition, `${profile}/${entry.name}: composition`).toBeTypeOf('string')
       expect(manifest.recording, `${profile}/${entry.name}: recording`).toMatch(/^(live|authored)$/)
@@ -153,7 +154,7 @@ it('keeps every recorded session owned, pinned, redacted, and header-scrubbed', 
     }
     expect(existsSync(join(dir, 'input.json')), `${key}: executable input metadata is ACP-only`)
       .toBe(scenario.profile === 'acp')
-    if (scenario.profile !== 'acp') {
+    if (scenario.profile !== 'acp' && scenario.profile !== 'acp-v2') {
       expect(existsSync(join(dir, 'stdout.expected.jsonl')), `${key}: ACP transcript outside ACP`).toBe(false)
     }
 

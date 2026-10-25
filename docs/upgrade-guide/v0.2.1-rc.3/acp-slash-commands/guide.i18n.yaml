@@ -1,0 +1,16 @@
+# Bilingual-pair consistency record for guide.md (docs/i18n/README.md): per heading
+# section, a hash of its English and Chinese blocks outside code blocks and generated regions.
+# After editing either side, bring the other along and re-record with:
+#   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.1-rc.3/acp-slash-commands/guide.md
+/:
+  en: cb3a33f8c33a6253
+  zh: 0e16f554323a86e6
+/acp-slash-commands:
+  en: 78b505f62091bbf4
+  zh: ce083838b0c3f7fb
+/acp-slash-commands/change:
+  en: 012a11735520e5da
+  zh: 136549bada4367e9
+/acp-slash-commands/migration:
+  en: 8408bbcde9da8ff3
+  zh: 2b552e193a7a6c36

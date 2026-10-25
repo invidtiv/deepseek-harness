@@ -9,8 +9,8 @@
   en: 5e36bdb5bef5842c
   zh: 486621193ef243a8
 /deepseek-ai-dsh-acp/summary:
-  en: 59aff9dea7a075b1
-  zh: c0f5734c5fd09126
+  en: 715f7722923feb4c
+  zh: 3905f7957c917043
 /deepseek-ai-dsh-acp/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
@@ -18,32 +18,41 @@
   en: 014a5573a8c05663
   zh: e45302786655eea5
 /deepseek-ai-dsh-acp/use-this-package/when-to-choose-it:
-  en: c3f5f144daf83157
-  zh: a65a64842fd35bef
+  en: bf2f2cba6830285e
+  zh: ce6349b45347fc13
 /deepseek-ai-dsh-acp/use-this-package/minimal-configuration:
-  en: 320139cc5ebcf34a
-  zh: 89beb58d9a0511ba
+  en: abb76b690e9967fe
+  zh: bd35401008724d54
 /deepseek-ai-dsh-acp/use-this-package/start-a-server:
   en: 4ed8e37834267edb
   zh: a32d5dedb4e8e919
 /deepseek-ai-dsh-acp/use-this-package/protocol-contract:
-  en: 195315c12edf895f
-  zh: de307288858a8ece
+  en: 4b51119cae3938f8
+  zh: a32bc7da37d20120
+/deepseek-ai-dsh-acp/use-this-package/slash-commands:
+  en: f69f1927bcb49b58
+  zh: 2799f51f1cd641ce
+/deepseek-ai-dsh-acp/use-this-package/goal-status-and-task-plans:
+  en: 3bb5795669559359
+  zh: 61b6d3b4ecd96f9a
+/deepseek-ai-dsh-acp/use-this-package/draft-acp-v2:
+  en: 40274e4b80597211
+  zh: 8455f5cbddbb2fcc
 /deepseek-ai-dsh-acp/understand-the-implementation:
   en: ea8afe89dbdd1934
   zh: 6567979f92f34afd
 /deepseek-ai-dsh-acp/understand-the-implementation/design-philosophy:
-  en: ad90a93d87b6caa4
-  zh: d7e90af3ea7a678c
+  en: f3cb5d124e006f37
+  zh: 2eb148e7ebeee0f3
 /deepseek-ai-dsh-acp/understand-the-implementation/source-map:
-  en: 9f85ae4ecdb5d022
-  zh: dc2b911360768b9e
+  en: f2bd646a25f9b503
+  zh: 9d3047f3c4c3e5ac
 /deepseek-ai-dsh-acp/understand-the-implementation/admission-and-prompt-settlement:
-  en: 6485d449b5945b4a
-  zh: 90e56a9b410c9c42
+  en: 9ba16a52312c097a
+  zh: e7d9d8230453aaac
 /deepseek-ai-dsh-acp/understand-the-implementation/teardown-and-connection-ownership:
-  en: 7e2be6a9e211d4d6
-  zh: 3ba8482d3231b9d0
+  en: 3e73bc9fe533ff91
+  zh: 05e143adcfce007d
 /deepseek-ai-dsh-acp/further-exploration:
   en: 8238535f032b31c9
   zh: c97975bfaf6eac4f
@@ -75,8 +84,8 @@
   en: 83120763a07c4b72
   zh: 6a1a181dc4da869d
 /deepseek-ai-dsh-acp/known-limitations-and-deferred-work:
-  en: da83c6d3b9604f74
-  zh: d93d6f6d418bebdc
+  en: 246f0fa90922ecea
+  zh: a8f53115ac342e8c
 /deepseek-ai-dsh-acp/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 3bb0c20c93f16f98

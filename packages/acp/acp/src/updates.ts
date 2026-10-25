@@ -1,10 +1,15 @@
 /** Standard ACP updates derived from committed DSH session events. */
 
 import type { Context } from '@deepseek-ai/cordis'
-import type { SessionUpdate, ToolCallContent } from '@agentclientprotocol/sdk'
+import type { PlanEntry, SessionUpdate, ToolCall, ToolCallContent, ToolCallUpdate } from '@agentclientprotocol/sdk'
 import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-token-meter'
+import type {} from '@deepseek-ai/dsh-goal'
+import type {} from '@deepseek-ai/dsh-tool-todo'
 import { assistantBlockToAcp } from './content.ts'
+
+/** The standard updates one committed assistant message can produce. */
+export type AssistantUpdate = Extract<SessionUpdate, { sessionUpdate: 'agent_message_chunk' | 'agent_thought_chunk' | 'usage_update' }>
 
 /**
  * Convert one committed assistant message and its context usage in block order.
@@ -17,8 +22,8 @@ export async function assistantUpdates(
   ctx: Context,
   session: Session,
   event: SessionEvent<'assistant/message'>,
-): Promise<SessionUpdate[]> {
-  const updates: SessionUpdate[] = []
+): Promise<AssistantUpdate[]> {
+  const updates: AssistantUpdate[] = []
   for (const block of event.data.message.content) {
     if (block.type === 'reasoning') {
       if (block.text.length > 0) {
@@ -49,7 +54,7 @@ export async function assistantUpdates(
  * @param event - committed DSH tool-call event.
  * @returns the standard generic tool-call update.
  */
-export function toolCallUpdate(event: SessionEvent<'tool/call'>): SessionUpdate {
+export function toolCallUpdate(event: SessionEvent<'tool/call'>): Pick<ToolCall, 'toolCallId' | 'title' | 'kind' | 'status' | 'rawInput'> & { sessionUpdate: 'tool_call' } {
   return {
     sessionUpdate: 'tool_call',
     toolCallId: event.data.callId,
@@ -69,9 +74,9 @@ export function toolCallUpdate(event: SessionEvent<'tool/call'>): SessionUpdate 
 export async function toolResultUpdate(
   ctx: Context,
   event: SessionEvent<'tool/result'>,
-): Promise<SessionUpdate> {
+): Promise<Omit<ToolCallUpdate, 'content'> & { sessionUpdate: 'tool_call_update'; content: Extract<ToolCallContent, { type: 'content' }>[] }> {
   const message = event.data.message
-  const content: ToolCallContent[] = []
+  const content: Extract<ToolCallContent, { type: 'content' }>[] = []
   for (const block of message.content) {
     const converted = await assistantBlockToAcp(ctx, block)
     if (converted !== undefined) content.push({ type: 'content' as const, content: converted })
@@ -89,7 +94,7 @@ function usageUpdate(
   ctx: Context,
   session: Session,
   event: SessionEvent<'assistant/message'>,
-): SessionUpdate | undefined {
+): Extract<AssistantUpdate, { sessionUpdate: 'usage_update' }> | undefined {
   if (event.data.usage === undefined) return undefined
   const size = session.requestContext()?.contextWindow
   const meter = ctx.get('tokenMeter')
@@ -107,5 +112,42 @@ function parseToolArguments(value: string): unknown {
     return JSON.parse(value) as unknown
   } catch (_invalidModelJson) {
     return value
+  }
+}
+
+/**
+ * Project a standing task list into ACP's complete plan entries.
+ * @param todos - the complete committed task list; empty clears the plan.
+ * @returns standard entries with the default priority.
+ */
+export function planEntries(todos: readonly Omit<PlanEntry, 'priority'>[]): PlanEntry[] {
+  return todos.map(item => ({ ...item, priority: 'medium' as const }))
+}
+
+/**
+ * Project one committed conversation fact into stable ACP updates.
+ * @param ctx - attachment and usage services.
+ * @param session - authoritative session.
+ * @param event - committed event to project.
+ * @param replay - history replay; live delivery omits the user's own prompts, which the client sent.
+ * @returns ordered updates; task lists and non-conversation events have no transcript output.
+ */
+export async function eventUpdates(ctx: Context, session: Session, event: SessionEvent, replay: boolean): Promise<SessionUpdate[]> {
+  switch (event.type) {
+    case 'user/message': {
+      if (!replay || event.data.source.kind !== 'user') return []
+      const updates: SessionUpdate[] = []
+      for (const block of event.data.content) {
+        const content = await assistantBlockToAcp(ctx, block)
+        if (content !== undefined) updates.push({ sessionUpdate: 'user_message_chunk', messageId: event.data.id, content })
+      }
+      return updates
+    }
+    case 'assistant/message': return assistantUpdates(ctx, session, event)
+    case 'tool/call': return [toolCallUpdate(event)]
+    case 'tool/result': return [await toolResultUpdate(ctx, event)]
+    default:
+      // Session events are merge-extensible; only conversation facts have transcript output.
+      return []
   }
 }

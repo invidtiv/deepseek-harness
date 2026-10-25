@@ -52,6 +52,7 @@ describe('standard ACP v1 control surface', () => {
         clientCapabilities: { _meta: { ignored: true } },
       })
       expect(initialized.agentCapabilities).toEqual({
+        loadSession: true,
         mcpCapabilities: { http: true },
         promptCapabilities: { image: false, audio: false, embeddedContext: false },
         sessionCapabilities: { close: {}, list: {}, resume: {} },
@@ -76,6 +77,7 @@ describe('standard ACP v1 control surface', () => {
         prompt: [{ type: 'text', text: 'exercise the attached server' }],
       })).resolves.toEqual({ stopReason: 'end_turn' })
       expect(first.updates.map(update => update.sessionUpdate)).toEqual([
+        'available_commands_update',
         'agent_thought_chunk',
         'usage_update',
         'tool_call',
@@ -89,6 +91,11 @@ describe('standard ACP v1 control surface', () => {
       }))
       const message = first.updates.find(update => update.sessionUpdate === 'agent_message_chunk')
       expect(message !== undefined && 'messageId' in message && typeof message.messageId === 'string').toBe(true)
+      await first.client.prompt({ sessionId: created.sessionId, prompt: [{ type: 'text', text: '/goal' }] })
+      const goalResult = first.updates.at(-1)
+      expect(goalResult?.sessionUpdate).toBe('agent_message_chunk')
+      expect(goalResult?.sessionUpdate === 'agent_message_chunk' && goalResult.content.type === 'text'
+        ? goalResult.content.text : undefined).toContain('No goal is currently set')
       await first.client.closeSession({ sessionId: created.sessionId })
       await first.close()
       first = undefined
