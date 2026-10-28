@@ -3,7 +3,7 @@
  *
  * The bridge exposes persistent harness sessions to trusted programmatic
  * clients. It carries standard configuration, MCP mounts, prompt content,
- * semantic tool updates, cancellation, one-shot permission decisions, plan
+ * semantic tool updates, cancellation, scoped permission decisions, plan
  * controls, and negotiated human input.
  *
  * @module @deepseek-ai/dsh-acp
@@ -56,6 +56,7 @@ import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 // Side-effect type import: declaration-merges the approval waterfall answered below.
 import type {} from '@deepseek-ai/dsh-user-approval'
+import type {} from '@deepseek-ai/dsh-sandbox-policy'
 import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
 import { questionSchema, questionAnswer, questionResponse } from './questions.ts'
 import { supportsAcpImagePrompts } from './content.ts'
@@ -125,6 +126,7 @@ export async function apply(ctx: Context, config: AcpConfig): Promise<void> {
   const { sessionListPageSize, protocolV2, sessionReplayPageSize } = resolveConfig(config)
   const sessions = new Map<SessionId, AcpSession>()
   const activating = new Set<SessionId>()
+  const sessionGrants = new WeakMap<AcpSession, Set<string>>()
   let closed = false
   let imagePromptEnabled = false
   let formElicitationEnabled = false
@@ -166,7 +168,10 @@ export async function apply(ctx: Context, config: AcpConfig): Promise<void> {
 
   ctx.on('session/event', (session, event) => {
     const record = sessions.get(session.header.id)
-    if (record?.ownsSession(session) === true) record.onSessionEvent(session, event)
+    if (record?.ownsSession(session) === true) {
+      if (event.type === 'approval/policy' || event.type === 'sandbox/mode' || event.type === 'working-directory/change') sessionGrants.delete(record)
+      record.onSessionEvent(session, event)
+    }
   })
 
   ctx.on('agent/inbox/claimed', ({ agent, message, turn }) => {
@@ -200,35 +205,50 @@ export async function apply(ctx: Context, config: AcpConfig): Promise<void> {
     for (const record of sessions.values()) record.topologyChanged()
   })
 
-  // Permission requests are a machine policy channel for ACP clients such as
-  // dsh-subagent-acp. The bridge offers one-shot choices only and never infers a
-  // durable grant from an unknown client response.
+  // Session grants authorize exact repeated invocations only; every use still passes
+  // through the approval service and its durable one-shot audit outcome.
   ctx.on('approval/request', (request, next) => {
     const record = ownedRecord(request.agent)
     if (record === undefined || request.callId === undefined) return next()
     const callId = request.callId
     const toolCall = toolsProjection.permissionToolCall(record.agent, callId, request.toolName)
+    const grantKey = (): string | undefined => {
+      const invocation = toolsProjection.permissionGrantKey(record.agent, callId, request.toolName)
+      return invocation === undefined ? undefined : JSON.stringify([
+        invocation, request.reason,
+        record.agent.ctx.get('sandboxPolicy')?.resolve({ session: record.agent.session }),
+        record.agent.ctx.get('approval')?.overrideOf(record.agent.session),
+      ])
+    }
+    const key = grantKey()
+    const grants = sessionGrants.get(record) ?? new Set<string>()
+    sessionGrants.set(record, grants)
+    if (request.signal?.aborted === true) return Promise.resolve('cancelled' as const)
+    if (key !== undefined && grants.has(key)) return Promise.resolve('allowed-once' as const)
     const options = [
       { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' as const },
+      ...key === undefined ? [] : [{ optionId: 'allow-session', name: 'Allow this exact operation for this session', kind: 'allow_always' as const }],
       { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' as const },
     ]
     return record.withPermission(() => questionResponse(async () => {
-      if (protocol === 2) {
-        const { outcome } = await connV2.request<'session/request_permission'>('session/request_permission', {
+      const { outcome } = protocol === 2
+        ? await connV2.request<'session/request_permission'>('session/request_permission', {
           sessionId: record.agent.session.id,
           title: toolCall.title,
           ...request.reason === undefined ? {} : { description: request.reason },
-          subject: { type: 'tool_call', toolCall: v2Projection.projectToolCall(toolCall) },
-          options,
+          subject: { type: 'tool_call', toolCall: v2Projection.projectToolCall(toolCall) }, options,
         }, request.signal === undefined ? undefined : { cancellationSignal: request.signal })
-        if (v2.RequestPermissionOutcome.isCancelled(outcome)) return 'cancelled'
-        return v2.RequestPermissionOutcome.isSelected(outcome) && outcome.optionId === 'allow-once' ? 'allowed-once' : 'rejected'
-      }
-      const params: RequestPermissionRequest = { sessionId: record.agent.session.id, toolCall, options }
-      const { outcome } = await conn.request<'session/request_permission'>(methods.client.session.requestPermission, params,
-        request.signal === undefined ? undefined : { cancellationSignal: request.signal })
+        : await conn.request<RequestPermissionResponse>(methods.client.session.requestPermission,
+          { sessionId: record.agent.session.id, toolCall, options } satisfies RequestPermissionRequest,
+          request.signal === undefined ? undefined : { cancellationSignal: request.signal })
+      if (request.signal?.aborted === true || closed || ownedRecord(request.agent) !== record) return 'cancelled'
       if (outcome.outcome === 'cancelled') return 'cancelled'
-      return outcome.optionId === 'allow-once' ? 'allowed-once' : 'rejected'
+      if (outcome.outcome !== 'selected') return 'rejected'
+      if (outcome.optionId === 'allow-once') return 'allowed-once'
+      if (outcome.optionId !== 'allow-session' || key === undefined || grantKey() !== key || sessionGrants.get(record) !== grants) return 'rejected'
+      grants.add(key)
+      sessionGrants.set(record, grants)
+      return 'allowed-once'
     }, request.signal))
   })
 
@@ -237,7 +257,7 @@ export async function apply(ctx: Context, config: AcpConfig): Promise<void> {
     if (record === undefined) return next()
     const question = request.questions.length === 1 ? request.questions[0] : undefined
     const review = question?.intent?.kind === 'plan-review' ? question.intent : undefined
-    if (question !== undefined && review?.callId !== undefined) {
+    if (question !== undefined && review?.callId !== undefined && !formElicitationEnabled) {
       const callId = review.callId
       return record.withPermission(async () => {
         const toolCall = {
@@ -538,6 +558,7 @@ export async function apply(ctx: Context, config: AcpConfig): Promise<void> {
       assertOpen()
       const sessionId = brandString<SessionId>(params.sessionId)
       const record = requireSession(sessionId)
+      sessionGrants.delete(record)
       try {
         await record.close('ACP session closed')
       } catch (error: unknown) {
@@ -611,21 +632,26 @@ export async function apply(ctx: Context, config: AcpConfig): Promise<void> {
     })
     .onRequest('session/new', async ({ params, signal }) => {
       const result = await implementation.newSession({ ...params, mcpServers: v2Projection.mcpServers(params.mcpServers) }, signal)
+      const record = requireSession(brandString<SessionId>(result.sessionId))
+      if (record.availableCommands().length > 0) setImmediate(() => { record.commandsChanged() })
       return { sessionId: result.sessionId, configOptions: v2Projection.configOptions(result.configOptions),
-        availableCommands: v2Projection.availableCommands(requireSession(brandString<SessionId>(result.sessionId)).availableCommands()),
+        availableCommands: v2Projection.availableCommands(record.availableCommands()),
       }
     })
     .onRequest('session/list', ({ params, signal }) => implementation.listSessions(params, signal))
     .onRequest('session/fork', async ({ params, signal }) => {
       const result = await implementation.forkSession({ ...params, mcpServers: v2Projection.mcpServers(params.mcpServers) }, signal)
+      const record = requireSession(brandString<SessionId>(result.sessionId))
+      if (record.availableCommands().length > 0) setImmediate(() => { record.commandsChanged() })
       return { sessionId: result.sessionId, configOptions: v2Projection.configOptions(result.configOptions ?? []),
-        availableCommands: v2Projection.availableCommands(requireSession(brandString<SessionId>(result.sessionId)).availableCommands()) }
+        availableCommands: v2Projection.availableCommands(record.availableCommands()) }
     })
     .onRequest('session/resume', async ({ params, signal }) => {
       if (params.replayFrom != null && !v2.ReplayFrom.isStart(params.replayFrom)) throw invalidParams('unsupported replay cursor')
       const { record, configOptions } = await activate(
         { ...params, mcpServers: v2Projection.mcpServers(params.mcpServers) }, signal, params.replayFrom != null,
       )
+      if (record.availableCommands().length > 0) setImmediate(() => { record.commandsChanged() })
       return { configOptions: v2Projection.configOptions(configOptions),
         availableCommands: v2Projection.availableCommands(record.availableCommands()),
       }

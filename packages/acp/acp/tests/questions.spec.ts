@@ -20,10 +20,11 @@ const approval: AskUserQuestionItem = {
 }
 
 it('uses positional keys and retains multi-select choices, descriptions, and custom answers', () => {
-  expect(questionSchema([choices])).toMatchObject({ properties: { q0: { type: 'array', items: { enum: ['Read', 'Write'] }, description: 'Read: Read files\nWrite' }, q0_text: { type: 'string' } } })
-  expect(questionAnswer([choices], { q0: ['Read', 'Write'], q0_text: 'Also inspect metadata' })).toEqual({ answers: [{ id: '__proto__', selected: ['Read', 'Write'], custom: 'Also inspect metadata' }] })
-  expect(questionSchema([{ id: 'text', question: 'Describe it' }])).toMatchObject({ required: ['q0_text'] })
-  expect(questionAnswer([{ id: 'text', question: 'Describe it' }], { q0_text: 'Details' })).toEqual({ answers: [{ id: 'text', selected: [], custom: 'Details' }] })
+  expect(questionSchema([choices])).toMatchObject({ properties: { q0: { type: 'string' } } })
+  expect(questionSchema([choices]).properties.q0?.description).toContain('Read: Read files\nWrite')
+  expect(questionAnswer([choices], { q0: 'Read\nWrite\nAlso inspect metadata' })).toEqual({ answers: [{ id: '__proto__', selected: ['Read', 'Write'], custom: 'Also inspect metadata' }] })
+  expect(questionSchema([{ id: 'text', question: 'Describe it' }])).toMatchObject({ required: ['q0'] })
+  expect(questionAnswer([{ id: 'text', question: 'Describe it' }], { q0: 'Details' })).toEqual({ answers: [{ id: 'text', selected: [], custom: 'Details' }] })
 })
 
 it('requires one offered approval action and never offers custom access grants', () => {
@@ -35,8 +36,8 @@ it('requires one offered approval action and never offers custom access grants',
   }
 })
 
-it('rejects malformed, empty, duplicate, unoffered and wrong-cardinality answers', () => {
-  for (const content of [null, [], 'answer', {}, { q0: [1] }, { q0: ['Read', 'Read'] }, { q0: ['Delete'] }, { q0_text: false }, { q0_text: ' ' }]) {
+it('rejects malformed and empty scalar answers', () => {
+  for (const content of [null, [], 'answer', {}, { q0: [1] }, { q0: ['Read', 'Read'] }, { q0: ['Delete'] }, { q0: false }, { q0: ' ' }]) {
     expect(() => questionAnswer([choices], content)).toThrow()
   }
   expect(() => questionAnswer([{ ...choices, multiSelect: false }], { q0: ['Read', 'Write'] })).toThrow(/invalid answer/)
@@ -48,7 +49,7 @@ afterEach(async () => { await harness?.dispose() })
 describe.each([1, 2] as const)('ACP v%s user questions', (version) => {
   async function connected(
     form: boolean,
-    respond: (signal: AbortSignal) => FormResponse | Promise<FormResponse> = () => ({ action: 'accept', content: { q0: ['Read'], q0_text: 'Custom' } })) {
+    respond: (signal: AbortSignal) => FormResponse | Promise<FormResponse> = () => ({ action: 'accept', content: { q0: 'Read\nCustom' } })) {
     let client: v2.ClientContext | undefined
     const forms: unknown[] = []
     const permissions: unknown[] = []
@@ -122,11 +123,11 @@ describe.each([1, 2] as const)('ACP v%s user questions', (version) => {
     await entered.promise
     control.abort(new Error('cancel unresponsive form'))
     await rejected
-    reply.resolve({ action: 'accept', content: { q0: ['Write'] } })
+    reply.resolve({ action: 'accept', content: { q0: 'Write' } })
     await expect(answer).rejects.toMatchObject({ code: 'ASK_ABORTED' })
   })
 
-  it('rejects an accepted answer with labels the client was not offered', async () => {
+  it('rejects an accepted answer that does not match the advertised scalar schema', async () => {
     const { agent } = await connected(true, () => ({ action: 'accept', content: { q0: ['Delete'] } }))
     await expect(harness!.ctx.userQuestions.ask({ agent, questions: [choices] })).rejects.toMatchObject({ code: 'BAD_ANSWER' })
   })
@@ -137,6 +138,16 @@ describe.each([1, 2] as const)('ACP v%s user questions', (version) => {
     harness!.ctx.on('user-questions/request', () => Promise.resolve({ answers: [{ id: choices.id, selected: ['Write'] }] }))
     await expect(harness!.ctx.userQuestions.ask({ agent, questions: [choices] })).resolves.toEqual({ answers: [{ id: choices.id, selected: ['Write'] }] })
     expect(forms).toEqual([])
+  })
+
+  it('uses a fixed-choice form for plan review when forms are negotiated', async () => {
+    const { agent, forms, permissions } = await connected(true, () => ({ action: 'accept', content: { q0: 'Build' } }))
+    const question: AskUserQuestionItem = { id: 'plan', question: 'Approve this plan?', detail: 'Inspect then implement', options: [{ label: 'Build' }, { label: 'Keep planning' }], intent: { kind: 'plan-review', approve: 'Build', callId: ToolCallId('plan-form') } }
+    await expect(harness!.ctx.userQuestions.ask({ agent, questions: [question] })).resolves.toEqual({ answers: [{ id: 'plan', selected: ['Build'] }] })
+    expect(forms).toHaveLength(1)
+    expect(permissions).toEqual([])
+    expect(questionSchema([question]).properties.q0?.enum).toEqual(['Build', 'Keep planning'])
+    expect(() => questionAnswer([question], { q0: 'Allow everything' })).toThrow(/invalid answer/)
   })
 
   it('uses a plan-review permission even without forms and preserves allow or decline', async () => {

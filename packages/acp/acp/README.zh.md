@@ -91,7 +91,7 @@ kind: "package-reference"
 | `session/prompt` | 有序文本、资源链接与受支持图片，每个会话一次一个提示词；根 Agent 与后代完成且有序更新交付后才结算。 |
 | `session/cancel` / `$/cancel_request` | 提示词所拥有的取消路径；没有进行中的 ACP 提示词时取消自主工作，未知会话 id 则为空操作。 |
 | `session/update` | 按会话串行交付已提交消息、工具呈现、配置、用量与 `session_info_update` 标题。 |
-| `session/request_permission` | 带一次性允许／拒绝选项的权限提示；你的客户端可以自动回答。 |
+| `session/request_permission` | 提供单次决定及已验证调用的限定范围会话授权的权限提示；客户端可以自动回答。 |
 
 `session/fork` 从已提交的源快照创建独立持久 Agent，继承记录中的模型与计划选择，同时挂载新的 MCP 连接。活跃源会话必须空闲，且没有正在进行的提示词、命令或权限交换。子会话不继承运行中的进程或待处理输入。列表与恢复允许普通 fork，包括带 `parentSession` 的历史日志；仍排除 `origin: subagent`。
 
@@ -99,17 +99,17 @@ kind: "package-reference"
 
 即使前一轮已经完成，追加 `turn/start` 或 `turn/end` 失败仍会使提示词请求失败。
 
-会话配置从实时 LLM 目录提供按提供方分组的模型与推理强度选项。模型变更从下一个模型步骤生效；已准备的步骤和重试保留已捕获的选择。每个图片提示词在存储附件前校验当前模型，因此切换到视觉模型无需新建连接。切换到纯文本模型后，后续图片提交会明确失败。MCP 声明授权其命令、环境、URL 与 header；初始连接或发现失败会回滚尚未发布的 Agent。
+会话配置提供来自实时 LLM 目录的、按提供者分组的模型与推理强度选项。已选提供者分组与模型排在首位，使限制显示数量的客户端保留当前路由；完整目录仍可用。模型变更在下一个模型步骤生效；已准备的步骤与重试保留其捕获的选择。每个图像提示词在存储附件前校验当前模型，因此切换到视觉模型无需建立新连接。切换到纯文本模型后，后续图像提交会明确失败。MCP 声明授权其命令、环境、URL 与请求头；初始连接或发现失败会回滚尚未发布的 Agent。
 
 ### 工具呈现与人工决策
 
-已注册工具的呈现器提供标准工具名、种类、绝对位置、文件差异与 shell 退出状态。权限请求复用该呈现和原始输入，让客户端应用操作策略。未知工具保留 `other` 与原始参数。权限只提供一次性允许／拒绝选项；批准一条命令不会授权该工具之后的所有调用。
+已注册的工具展示器提供标准工具名称、类别、绝对位置、文件差异与 shell 退出状态。权限请求复用该展示与原始输入，使客户端能应用操作策略。未知工具保留 `other` 与原始参数。已验证的调用提供单次允许、拒绝及会话批准。会话授权仅复用完全相同的工具、参数字节、工作目录、原因及解析后的权限策略；目录或策略变更会清空授权。授权只保存在内存中，属于一个活动 ACP 会话，不会被分叉继承或在关闭后恢复。每次使用仍经过批准服务并记录 `allowed-once` 审计结果；`never` 策略仍拒绝操作。
 
-组装计划模式时，`collaboration_mode` 选择器提供 `plan` 与 `build`。轮次进行中发生的变更从下一次已接纳步骤开始生效。此选择改变计划指导，不改变沙箱权限。`exit_plan_mode` 通过一次性权限审阅展示计划；批准后由计划服务退出计划模式。
+组合计划模式后，`collaboration_mode` 选择器提供 `plan` 与 `build`。开放轮次中的变更在其下一个接受的步骤生效。此选择改变规划指导，不改变沙箱权限。协商表单后，`exit_plan_mode` 使用固定选项表单审核计划；否则使用受客户端批准策略约束的单次权限请求。批准通过计划服务退出计划模式。
 
-协商表单 elicitation 的客户端可通过 `elicitation/create` 回答人工问题，包括多选和可选自定义文本。当问题和工具服务可用时，桥接层会在已协商的会话中挂载 `ask_user_question`，并保留已有工具注册。固定审批问题只接受已提供的选项。计划审阅使用权限通道。宿主问题期限会取消待处理交换；迟到答案被忽略，不支持的客户端不会收到未公布的表单请求。
+协商表单 elicitation 的客户端可通过 `elicitation/create` 回答人工问题。每个问题使用一个必填字符串字段：描述中列出选项，多选时每行输入一个选项标签，其他文本作为自定义回答。固定批准与计划审核问题则使用字符串枚举，只接受提供的选项。问题与工具服务可用时，桥接在协商的会话中挂载 `ask_user_question`，并保留已有注册。主机问题期限会取消待处理交换；迟到回答被忽略，不支持的客户端不会收到未协商的表单请求。
 
-草案 v2 通过 `tool_call_content_chunk` 流式传输保留的 shell 作业输出。传输背压期间，每个作业只保留一个待发送的有界环形缓冲快照；数据缺口会明确报告，不会静默拼接。最终工具结果以权威内容替换预览。V1、没有作业服务的部署，以及 `promoteOnTimeout: false` 的前台 shell 路径仅在完成时交付输出。
+草案 v2 通过 `tool_call_content_chunk` 流式传输保留的 shell 作业输出。传输背压期间，每个作业只保留一个待发送的有界环形缓冲快照；数据缺口会明确报告，不会静默拼接。最终工具结果以权威内容替换预览。仅带终端元数据的结果还会将文本放入 `rawOutput.output`，供优先显示原始输出的客户端使用。V1、没有作业服务的部署，以及 `promoteOnTimeout: false` 的前台 shell 路径仅在完成时交付输出。
 
 <a id="slash-commands"></a>
 
@@ -117,7 +117,7 @@ kind: "package-reference"
 
 在 `session/prompt` 中以文本发送已注册的斜杠命令，例如 `/goal finish the task`、`/goal`、`/goal edit revised objective`、`/goal pause`、`/goal resume` 或 `/goal clear`。桥接层直接执行接收 Agent 的命令注册表；命令输入和输出不进入模型历史。随附配置包含目标服务与自动轮次驱动器，因此创建或恢复目标会启动工作。命令仅接受文本；附带图片或资源链接会在执行前被拒绝。未识别的斜杠命令仍作为普通模型提示词处理。
 
-V1 通过 `available_commands_update` 公布完整命令列表：在 `session/new` 响应之后、在 `session/load` 或 `session/resume` 响应之前发送，因此客户端总是先知道会话 ID；v2 在这些响应中返回 `availableCommands`。注册表变更会替换列表。命令结果使用标准助手文本更新。V1 在命令结果交付后返回 `end_turn`，不等待自动目标轮次。V2 使用仅在实时连接中有效的用户消息 ID 回显命令并返回该 ID；该回显及其直接结果不会重放。命令注册表持久化自身生命周期事件，目标服务持久化已接受的变更。
+V1 在 `session/new` 响应之后、`session/load` 或 `session/resume` 响应之前通过 `available_commands_update` 公布完整命令列表，使客户端先获得会话 ID；v2 返回 `availableCommands` 并在各响应后发布命令列表。注册表变更会替换列表。命令结果使用标准助手文本更新。V1 在命令结果交付后返回 `end_turn`，不等待自动目标轮次。V2 返回仅用于实时交付的命令消息 ID，不回显提交的用户文本；直接结果不会回放。命令注册表持久化其生命周期事件，目标服务持久化已接受的变更。
 
 命令可以在前台提示词或自动轮次执行期间查看、暂停或编辑目标。每个会话同时只接受一个命令，命令执行期间拒绝普通提示词。自动轮次独立于命令确认发布 v2 活动状态。`session/cancel` 通过现有取消路径停止正在执行的目标工作，并中止正在运行的命令，该命令随后像被取消的提示词一样结算：v1 返回 `cancelled`，v2 拒绝该请求且不回显；关闭会话会先取消并排空命令，再释放 Agent。没有命令注册表的自定义组装不会公布命令。
 
@@ -133,9 +133,9 @@ ACP 默认启用 v2 协商；仅在只部署 v1 时设置 `protocolV2: false`。
 
 配置档补丁会替换目标行的整个 `config`。当 ACP 负责初始模型选择时，须在 `protocolV2` 旁同时填写 `provider` 和 `model`；仅包含开关的覆盖层会移除该选择。
 
-v2 提示词在其轮次将消息提交到对话后返回规范 Harness 用户 `messageId`，无需等待模型完成；排在其他工作之后的提示词尚未被接受，在提交前被取消或移除的提示词会让请求失败且不回显。服务器回显已提交的用户消息，然后发送 `running`。权限交换报告 `requires_action`，所有未完成回答到达后恢复 `running`。完成时报告 `idle` 与停止原因，包括 `cancelled` 或 `error`；失败的轮次还会在 `_meta.error` 中携带失败消息，而不是作为转录文本。`$/cancel_request` 可在提交前取消提示词；接受后使用 `session/cancel`。每个会话仍只允许一个前台提示词。
+v2 提示词在其轮次将消息提交到对话后返回规范 Harness 用户 `messageId`，无需等待模型完成；排在其他工作之后的提示词尚未被接受，在提交前被取消或移除的提示词会让请求失败且不回显。服务器报告 `running`，不回显提交的提示词。权限交换报告 `requires_action`，所有未完成回答到达后恢复 `running`。完成时报告 `idle` 与停止原因，包括 `cancelled` 或 `error`；失败的轮次先发送可见的 `Turn failed: ...` 诊断，并在 `_meta.error` 中携带失败信息。将所有未取消的空闲状态视为完成的客户端仍可能显示完成标记；诊断保留失败详情。`$/cancel_request` 可在提交前取消提示词；接受后使用 `session/cancel`。每个会话仍只允许一个前台提示词。
 
-已提交的 assistant 文本与 thought 使用带稳定 ID 的消息分块；工具调用使用 `tool_call_update` upsert。用户与 assistant ID 保留 Harness 标识；thought ID 在 assistant ID 后添加确定性的 `:thought` 后缀。模型选择器使用 `configId` 与 `groupId`。恢复会发布已恢复的目标状态与现行计划，然后发布当前空闲状态；`replayFrom: { type: "start" }` 会先通过分页存储读取回放保留的用户编写消息、assistant 消息、工具事实与计划替换。实时交付与回放回显相同的已提交用户编写消息；注入的模型上下文不会成为用户回显。
+已提交的 assistant 文本与 thought 使用带稳定 ID 的消息分块；工具调用使用 `tool_call_update` upsert。用户与 assistant ID 保留 Harness 标识；thought ID 在 assistant ID 后添加确定性的 `:thought` 后缀。模型选择器使用 `configId` 与 `groupId`。恢复会发布已恢复的目标状态与现行计划，然后发布当前空闲状态；`replayFrom: { type: "start" }` 会先通过分页存储读取回放保留的用户编写消息、assistant 消息、工具事实与计划替换。回放保留已提交的用户编写消息；实时交付不回显当前提交的提示词，避免重复用户气泡。注入的模型上下文不会成为用户回显。
 
 [v2 迁移指南](https://agentclientprotocol.com/protocol/v2/migration)与[基础 schema](https://github.com/agentclientprotocol/agent-client-protocol/blob/main/schema/v2/schema.json)定义草案协议格式。显示终端与附加工作区根目录没有 ACP 投影；v2 协商不意味着支持这些功能。[T3 互操作测试](../../../apps/cli/tests/profiles/acp/tests/t3-interop.e2e.ts) 使用 `DSH_T3_CODE_ROOT` 指定的检出目录运行通用 ACP runtime；未配置时会跳过。T3 的 `prompt()` 等待 idle，因此发送另一个提示词前须取消运行中的目标。
 

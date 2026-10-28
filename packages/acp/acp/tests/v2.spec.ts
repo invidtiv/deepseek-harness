@@ -76,11 +76,8 @@ describe('negotiated ACP v2', () => {
     const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
     const { messageId } = await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'hello' }] })
     expect(messageId).toEqual(expect.any(String))
-    await expect.poll(() => updates.map(item => item.update.sessionUpdate)).toContain('user_message')
-    expect(updates.slice(0, 2).map(item => item.update)).toEqual([
-      { sessionUpdate: 'user_message', messageId, content: [{ type: 'text', text: 'hello' }] },
-      { sessionUpdate: 'state_update', state: 'running' },
-    ])
+    await expect.poll(() => lastState(sessionId)).toMatchObject({ state: 'running' })
+    expect(updates.some(item => item.update.sessionUpdate === 'user_message')).toBe(false)
     await expect.poll(() => harness.adapter.requests.length).toBe(1)
     const agent = harness.ctx.agents.get(SessionId(sessionId))!
     expect(agent.session.snapshotEvents().find(event => event.type === 'user/message')?.data).toMatchObject({ id: messageId })
@@ -107,14 +104,16 @@ describe('negotiated ACP v2', () => {
     expect(updates.at(-1)?.update).toEqual({ sessionUpdate: 'state_update', state: 'idle' })
   })
 
-  it('reports post-acceptance failures through idle without leaking provider partials', async () => {
+  it('displays post-acceptance failure before idle without leaking provider partials', async () => {
     await setup({ script: [errorResponse('provider failed')] })
     const { sessionId } = await client.request('session/new', { cwd: process.cwd() })
     expect(await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'hello' }] })).toHaveProperty('messageId')
     await idle(sessionId, 'error')
     expect(idleDetail(sessionId)).toContain('"_meta":{"error":"')
     expect(idleDetail(sessionId)).toContain('provider failed')
-    expect(updates.some(item => item.update.sessionUpdate === 'agent_message_chunk')).toBe(false)
+    expect(updates.at(-2)?.update.sessionUpdate).toBe('agent_message_chunk')
+    expect(JSON.stringify(updates.at(-2)?.update)).toContain('Turn failed:')
+    expect(JSON.stringify(updates.at(-2)?.update)).toContain('provider failed')
   })
 
   it('carries permissions as subjects and brackets the request with foreground states', async () => {
@@ -157,7 +156,8 @@ describe('negotiated ACP v2', () => {
     const image = { type: 'image' as const, data: 'aGk=', mimeType: 'image/png' }
     await client.request('session/prompt', { sessionId, prompt: [image] })
     await idle(sessionId, 'end_turn')
-    expect(updates[0]?.update).toMatchObject({ sessionUpdate: 'user_message', content: [image] })
+    expect(updates.some(item => item.update.sessionUpdate === 'user_message')).toBe(false)
+    expect(harness.ctx.agents.get(SessionId(sessionId))!.session.snapshotEvents().some(event => event.type === 'user/message' && event.data.content.some(block => block.type === 'image'))).toBe(true)
   })
 
   it('allows an explicit v1-only deployment', async () => {
@@ -394,7 +394,8 @@ describe('negotiated ACP v2', () => {
     await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'show it' }] })
     await idle(sessionId, 'error')
     expect(idleDetail(sessionId)).toContain('attachment')
-    expect(updates.some(item => item.update.sessionUpdate === 'agent_message_chunk')).toBe(false)
+    expect(updates.at(-2)?.update.sessionUpdate).toBe('agent_message_chunk')
+    expect(JSON.stringify(updates.at(-2)?.update)).toContain('attachment')
   })
 
   it('contains a failed autonomous update outside any prompt', async () => {

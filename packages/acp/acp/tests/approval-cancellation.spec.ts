@@ -53,7 +53,7 @@ it.each([1, 2] as const)('releases a cancelled v%s approval before an unresponsi
     if (version === 2) await expect.poll(() => idle).toBe(true)
     const child = await fork(sessionId)
     expect(child.sessionId).not.toBe(sessionId)
-    answer.resolve({ outcome: { outcome: 'selected', optionId: 'allow-once' } })
+    answer.resolve({ outcome: { outcome: 'selected', optionId: 'allow-session' } })
     await expect(request).resolves.toBe('cancelled')
   } finally {
     control.abort()

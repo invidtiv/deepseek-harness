@@ -12,7 +12,7 @@ import { expect, it } from 'vitest'
 const t3Root = process.env.DSH_T3_CODE_ROOT
 const repoRoot = fileURLToPath(new URL('../../../../../../', import.meta.url))
 
-it.skipIf(t3Root === undefined)('T3 generic ACP runtime launches dsh and runs tools, goal permissions, pause/resume, cancellation and history loading', async () => {
+it.skipIf(t3Root === undefined)('T3 generic ACP runtime launches dsh and discovers models and commands, runs tools, goal permissions, pause/resume, cancellation and history loading', async () => {
   const cwd = await mkdtemp(join(tmpdir(), 'dsh-t3-acp-'))
   try {
     const patch = materializeProfilePatch(fileURLToPath(new URL('./fixtures/control-surface/cordis.yml', import.meta.url)), cwd, 'acp', cwd, 0)
@@ -28,8 +28,11 @@ it.skipIf(t3Root === undefined)('T3 generic ACP runtime launches dsh and runs to
       mcpServers: [{ name: 'fixture', command: process.execPath, args: [join(repoRoot, 'packages/mcp/mcp-client/tests/fixture-server.ts')], env: [] }],
     }))
     const probe = fileURLToPath(new URL('./fixtures/t3-client.mjs', import.meta.url))
-    const result = await promisify(execFile)(process.execPath, ['--import', import.meta.resolve('tsx/esm'), probe, t3Root!, optionsFile], { timeout: 35_000 })
-    expect(JSON.parse(result.stdout)).toMatchObject({ protocolVersion: 2, goals: true, permissions: 2, loaded: true })
+    const result = await promisify(execFile)(process.execPath,
+      ['--import', import.meta.resolve('tsx/esm'), probe, t3Root!, optionsFile], { timeout: 35_000 })
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      protocolVersion: 2, models: true, commands: true, goals: true, permissions: 2, loaded: true,
+    })
   } finally {
     await rm(cwd, { recursive: true, force: true })
   }

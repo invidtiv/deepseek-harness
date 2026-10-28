@@ -16,16 +16,22 @@ const NodeServices = await load('@effect/platform-node/NodeServices')
 // The runtime moved from apps/server into the provider-acp workspace package (T3 Code ed0f7b908b2e).
 // Its package exports are ESM-only, so createRequire.resolve cannot select them.
 const Runtime = await import(pathToFileURL(join(root, 'packages/provider-acp/src/server/AcpSessionRuntime.ts')).href)
+const Registry = await import(pathToFileURL(join(root, 'packages/provider-acp-registry/src/server/probe.ts')).href)
 const options = JSON.parse(await readFile(optionsFile, 'utf8'))
 
 await Effect.runPromise(Effect.gen(function* () {
   const runtime = yield* Runtime.make(options)
   const events = []
+  const notifications = []
   const waiters = new Set()
   const waitFor = predicate => Effect.promise(() => new Promise(resolve => {
     const check = () => { if (predicate()) { waiters.delete(check); resolve() } }
     waiters.add(check)
     check()
+  }))
+  yield* runtime.handleSessionUpdate(notification => Effect.sync(() => {
+    notifications.push(notification.update)
+    for (const check of waiters) check()
   }))
   let permissions = 0
   yield* runtime.handleRequestPermission(() => {
@@ -41,12 +47,19 @@ await Effect.runPromise(Effect.gen(function* () {
   }), Effect.forkChild)
   const started = yield* runtime.start()
   assert.equal(started.initializeResult.protocolVersion, 2)
+  const configuration = Registry.normalizeAcpRegistryLiveConfiguration(yield* runtime.getConfigOptions)
+  assert.equal(configuration.currentModelId, JSON.stringify(['control-fixture', 'alpha']))
+  assert(configuration.models.some(model => model.id === JSON.stringify(['control-fixture', 'beta'])))
+  yield* waitFor(() => notifications.some(update => update.sessionUpdate === 'available_commands_update'))
+  const commands = Registry.normalizeAcpRegistryCommands(notifications.findLast(update => update.sessionUpdate === 'available_commands_update').availableCommands)
+  assert(commands.slashCommands.some(command => command.name === 'goal'))
   yield* runtime.prompt({ prompt: [{ type: 'text', text: 'exercise the attached server' }] })
   yield* runtime.drainEvents
   yield* waitFor(() => events.some(event => event._tag === 'ContentDelta' && event.text.includes('model=alpha; tool=5')))
   yield* runtime.drainEvents
   assert(events.some(event => event._tag === 'ContentDelta' && event.text.includes('model=alpha; tool=5')))
   assert(events.some(event => event._tag === 'ToolCallUpdated'))
+  assert(!notifications.some(update => update.sessionUpdate === 'user_message_chunk' || update.sessionUpdate === 'user_message'))
   const command = text => runtime.prompt({ prompt: [{ type: 'text', text }] })
   const goalRun = yield* command('/goal finish the interoperability task').pipe(Effect.forkChild)
   yield* waitFor(() => permissions === 1)
@@ -67,8 +80,28 @@ await Effect.runPromise(Effect.gen(function* () {
   const loaded = yield* runtime.loadSession(sessionId)
   assert.equal(loaded.sessionId, sessionId)
   yield* runtime.drainEvents
+  assert(notifications.some(update => update.sessionUpdate === 'user_message_chunk' || update.sessionUpdate === 'user_message'), 'History loading must retain user messages')
   yield* command('/goal clear')
+  const failureStart = notifications.length
+  yield* command('report the interoperability failure')
+  yield* runtime.drainEvents
+  const failureUpdates = notifications.slice(failureStart)
+  const diagnosticIndex = failureUpdates.findIndex(update => update.sessionUpdate === 'agent_message_chunk' && update.content.text?.includes('Interop fixture failure'))
+  const idleIndex = failureUpdates.findIndex(update => update.sessionUpdate === 'state_update' && update.state === 'idle')
+  assert(diagnosticIndex >= 0, 'Failed turns must emit a visible diagnostic')
+  assert(idleIndex > diagnosticIndex, 'The failure diagnostic must precede idle')
   yield* runtime.closeSession(sessionId)
-  process.stdout.write(JSON.stringify({ goals: true, permissions, loaded: true, protocolVersion: started.initializeResult.protocolVersion, events: [...new Set(events.map(event => event._tag))] }) + '\n')
+  const commandUpdates = () => notifications.filter(update => update.sessionUpdate === 'available_commands_update').length
+  const beforeResume = commandUpdates()
+  const resumed = yield* runtime.resumeSession(sessionId)
+  assert.equal(resumed.sessionId, sessionId)
+  yield* waitFor(() => commandUpdates() > beforeResume)
+  const beforeFork = commandUpdates()
+  const forked = yield* runtime.forkSession(sessionId)
+  assert.notEqual(forked.sessionId, sessionId)
+  yield* waitFor(() => commandUpdates() > beforeFork)
+  yield* runtime.closeSession(forked.sessionId)
+  yield* runtime.closeSession(sessionId)
+  process.stdout.write(JSON.stringify({ models: true, commands: true, goals: true, permissions, loaded: true, protocolVersion: started.initializeResult.protocolVersion, events: [...new Set(events.map(event => event._tag))] }) + '\n')
 // Leave time for scoped child-process teardown before execFile's outer deadline.
 }).pipe(Effect.timeout('25 seconds'), Effect.scoped, Effect.provide(NodeServices.layer)))

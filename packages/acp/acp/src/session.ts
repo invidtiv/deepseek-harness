@@ -658,12 +658,9 @@ export class AcpSession {
     }
     const inflight = this.inflight
     if (inflight !== undefined && !inflight.committed && event.type === 'user/message' && event.data.id === inflight.messageId) {
-      // The prompt's commit is its acceptance; its echo and foreground state follow from this event.
+      // The submitting client already owns this message; replay still includes its committed text.
       inflight.committed = true
-      this.enqueue(async () => {
-        await this.output.event(session, event, false)
-        await this.output.state({ state: 'running' })
-      })
+      this.enqueue(() => this.output.state({ state: 'running' }))
       inflight.accept?.(event.data)
     } else {
       this.enqueue(() => this.deliver(session, event, false))

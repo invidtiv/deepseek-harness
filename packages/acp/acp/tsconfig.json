@@ -79,6 +79,9 @@
     },
     {
       "path": "../../interaction/tool-ask-user"
+    },
+    {
+      "path": "../../sandbox/sandbox-policy"
     }
   ]
 }

@@ -16,7 +16,7 @@ import { eventUpdates } from './updates.ts'
 /** Why foreground work went idle; `error` reports a failed turn without failing a request. */
 export type IdleReason = StopReason | 'error'
 
-/** Foreground activity of one session; failure detail never travels as transcript text. */
+/** Foreground activity of one session; v2 also displays failure detail as a diagnostic message. */
 export type ForegroundState =
   | { state: 'running' }
   | { state: 'requires_action' }

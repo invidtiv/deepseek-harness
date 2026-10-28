@@ -58,8 +58,10 @@ describe.each([1, 2] as const)('ACP v%s commands', (version) => {
 
   it('advertises commands and executes goal controls without a model request', async () => {
     const created = await setup()
-    if (version === 2) expect(created).toMatchObject({ availableCommands: [{ name: 'goal', input: { type: 'text' } }] })
-    else {
+    if (version === 2) {
+      expect(created).toMatchObject({ availableCommands: [{ name: 'goal', input: { type: 'text' } }] })
+      await expect.poll(() => updates.some(({ update }) => update.sessionUpdate === 'available_commands_update')).toBe(true)
+    } else {
       // V1 discovery follows the session/new response that names the session.
       expect(harness.updates).toEqual([])
       await expect.poll(() => harness.updates).toContainEqual(expect.objectContaining({ sessionUpdate: 'available_commands_update' }))
@@ -67,9 +69,7 @@ describe.each([1, 2] as const)('ACP v%s commands', (version) => {
     const { sessionId } = created
     for (const line of ['/goal', '/goal finish the task', '/goal edit finish the revised task', '/goal pause', '/goal resume', '/goal clear']) {
       const result = await prompt(sessionId, line)
-      if ('messageId' in result) expect(updates).toContainEqual({ sessionId, update: {
-        sessionUpdate: 'user_message', messageId: result.messageId, content: [{ type: 'text', text: line }],
-      } })
+      if ('messageId' in result) expect(updates.some(({ update }) => update.sessionUpdate === 'user_message')).toBe(false)
       else expect(result).toEqual({ stopReason: 'end_turn' })
     }
     expect(output().join('\n')).toContain('Goal paused')

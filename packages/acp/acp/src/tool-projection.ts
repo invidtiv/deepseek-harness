@@ -38,6 +38,19 @@ export class AcpToolProjection {
     return new AcpToolProjection(await ctx.sessionProjections.register(definition))
   }
   /**
+   * Identify a repeatable pending invocation without granting by tool name alone.
+   * @param agent - owner of the pending invocation.
+   * @param callId - exact pending invocation.
+   * @param toolName - name reported by the approval requester.
+   * @returns exact arguments and effective directory, or undefined for an unverified call.
+   */
+  permissionGrantKey(agent: Agent, callId: string, toolName: string): string | undefined {
+    const state = this.handle.stateOf(agent.session)
+    const call = state.calls[callId]
+    return call?.name === toolName && state.cwd !== null
+      ? JSON.stringify([call.name, call.arguments, state.cwd]) : undefined
+  }
+  /**
    * Describe exactly the pending invocation; missing calls remain unclassified.
    * @param agent - requesting agent and scoped tool registry.
    * @param callId - exact pending invocation.
@@ -114,6 +127,11 @@ export function projectResult(ctx: Context, call: Call | undefined, event: Sessi
     ...event.data.meta === undefined ? {} : { meta: event.data.meta },
   })
   if (view === undefined) return {}
+  // A metadata-only rawOutput hides content in clients that prefer structured output.
+  if (view.card === 'terminal' && view.output === undefined) {
+    const output = message.content.flatMap(block => block.type === 'text' ? [block.text] : []).join('\n')
+    return resultFields({ ...view, output }, call.cwd)
+  }
   return resultFields(view, call.cwd)
 }
 /** Map presentation variants, never tool names or opaque tool metadata. */

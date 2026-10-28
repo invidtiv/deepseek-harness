@@ -86,6 +86,23 @@ describe('ACP model configuration control', () => {
 
   })
 
+  it('puts the selected route first without truncating or ungrouping a large catalog', async () => {
+    const providers = ['first', 'selected', 'last']
+    const models = Array.from({ length: 70 }, (_, index) => `model-${index}`)
+    const { control } = await createControl(llmRuntime({
+      listProviders: () => providers.map(id => ({ id, name: id })),
+      listModels: provider => Promise.resolve(models.map(id => ({ provider, id, name: id }))),
+    }), { provider: 'selected', model: 'model-69' })
+    const options = await control.options()
+    expect(options[0]).toMatchObject({
+      currentValue: '["selected","model-69"]',
+      options: ['selected', 'first', 'last'].map(provider => ({
+        group: provider, name: provider,
+        options: (provider === 'selected' ? ['model-69', ...models.slice(0, 69)] : models)
+          .map(id => ({ name: id, value: JSON.stringify([provider, id]) })),
+      })),
+    })
+  })
   it('keeps the selected route when its provider catalog is temporarily unavailable', async () => {
     const listModels = vi.fn(() => Promise.reject(new Error('catalog unavailable')))
     const { control } = await createControl(llmRuntime({ listModels }), { provider: 'mock', model: 'mock' })

@@ -9,7 +9,7 @@ import { launchV2Profile } from '../../apps/cli/tests/profiles/acp/tests/v2-harn
 
 const corpus = fileURLToPath(new URL('../acp/', import.meta.url))
 
-it('v2 acceptance, user echo and cancellation preserve the recorded Session', async () => {
+it('v2 acceptance without a prompt echo and cancellation preserve the recorded Session', async () => {
   const cwd = (await mkdtemp(join(tmpdir(), 'acp-v2-snapshot-'))).replaceAll('\\', '/')
   const sessionsRoot = join(cwd, '.sessions')
   const fixture = latestPersistedSessionPaths((await readdir(join(corpus, 'cancel'))).map(path => join(corpus, 'cancel', path)))[0]!

@@ -21,7 +21,8 @@ function invocation(name: string): StreamChunk[] {
 }
 
 describe.each([1, 2] as const)('ACP v%s registered tool presentation', (version) => {
-  it.each(['edit', 'execute'] as const)('projects %s cards identically on paginated replay', async (kind) => {
+  it.each(['edit', 'execute', 'metadata-only', 'empty-output'] as const)('projects %s cards identically on paginated replay', async (mode) => {
+    const kind = mode === 'edit' ? 'edit' : 'execute'
     const notifications: v2.SessionUpdate[] = []
     let client: v2.ClientContext | undefined
     harness = await makeBridgeHarness({
@@ -41,7 +42,7 @@ describe.each([1, 2] as const)('ACP v%s registered tool presentation', (version)
         expect(result.meta).toEqual({ marker: 'committed' })
         return kind === 'edit'
           ? { card: 'diff', diffs: [{ path: 'sample.txt', oldText: 'before', newText: 'after' }] }
-          : { card: 'terminal', output: 'marker', exitCode: 0 }
+          : { card: 'terminal', ...mode === 'metadata-only' ? {} : { output: mode === 'empty-output' ? '' : 'marker' }, exitCode: 0 }
       },
     }))
     if (client === undefined) await harness.client.initialize({ protocolVersion: 1 })
@@ -62,7 +63,10 @@ describe.each([1, 2] as const)('ACP v%s registered tool presentation', (version)
     const calls = updates.filter(update => update.sessionUpdate === 'tool_call' || update.sessionUpdate === 'tool_call_update')
     expect(calls).toHaveLength(2)
     expect(calls[0]).toMatchObject({ name: 'custom', kind, rawInput: { file: 'sample.txt' } })
-    if (kind === 'execute') expect(calls[1]).toMatchObject({ rawOutput: { output: 'marker', exitCode: 0 } })
+    if (kind === 'execute') {
+      const output = mode === 'metadata-only' ? 'finished' : mode === 'empty-output' ? '' : 'marker'
+      expect(calls[1]).toMatchObject({ rawOutput: { output, exitCode: 0 } })
+    }
     else {
       expect(calls[0]).toHaveProperty('locations.0.path', join(process.cwd(), 'sample.txt'))
       expect(calls[1]).toMatchObject({ content: [expect.objectContaining({ type: 'diff' })] })

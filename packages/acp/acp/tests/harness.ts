@@ -207,7 +207,7 @@ export interface BridgeHarness {
   sessionUpdates: { sessionId: string; update: CapturedUpdate }[]
   permissionRequests: RequestPermissionRequest[]
   persistenceRoot: string
-  onPermission: (request: RequestPermissionRequest) => RequestPermissionResponse
+  onPermission: (request: RequestPermissionRequest) => RequestPermissionResponse | Promise<RequestPermissionResponse>
   onElicitation: (request: CreateElicitationRequest, signal: AbortSignal) => CreateElicitationResponse | Promise<CreateElicitationResponse>
   onSessionUpdateError: (() => void) | undefined
   registerCatalogProvider: (provider: string) => () => void

@@ -22,14 +22,14 @@ it('accepts a multi-select human answer and replays the committed result without
   try {
     launched = launchAcpTestAgent({ agent, cwd, env, createElicitation: async (params) => {
       requests.push(params)
-      return { action: 'accept', content: { q0: ['Unit tests', 'Build'], q0_text: 'Include lint' } }
+      return { action: 'accept', content: { q0: 'Unit tests\nBuild\nInclude lint' } }
     } })
     await launched.spawned
     await launched.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: { elicitation: { form: {} } } })
     const { sessionId } = await launched.client.newSession({ cwd, mcpServers: [] })
     await expect(launched.client.prompt({ sessionId, prompt: [{ type: 'text', text: 'Ask which checks to run' }] })).resolves.toEqual({ stopReason: 'end_turn' })
     expect(requests).toHaveLength(1)
-    expect(requests[0]).toMatchObject({ mode: 'form', sessionId, message: 'Which checks?', requestedSchema: { properties: { q0: { type: 'array', items: { enum: ['Unit tests', 'Build'] } } } } })
+    expect(requests[0]).toMatchObject({ mode: 'form', sessionId, message: 'Which checks?', requestedSchema: { properties: { q0: { type: 'string' } } } })
     const expected = JSON.stringify({ answers: [{ id: 'tasks', selected: ['Unit tests', 'Build'], custom: 'Include lint' }] })
     const result = launched.updates.find(update => update.sessionUpdate === 'tool_call_update' && update.toolCallId === 'human-choice')
     expect(result).toMatchObject({ status: 'completed', content: [{ type: 'content', content: { type: 'text', text: expected } }] })

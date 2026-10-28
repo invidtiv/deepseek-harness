@@ -26,7 +26,7 @@ describe('ACP machine permission policy', () => {
     return { agent, toolName: 'bash', callId: ToolCallId('call-9'), ...overrides }
   }
 
-  it('maps the two advertised one-shot choices', async () => {
+  it('maps one-shot decisions while advertising exact-operation session grants', async () => {
     harness = await makeBridgeHarness()
     harness.onPermission = () => {
       expect(harness?.sessionUpdates.at(-1)?.update).toMatchObject({
@@ -42,6 +42,7 @@ describe('ACP machine permission policy', () => {
       toolCall: { toolCallId: 'call-9' },
       options: [
         { optionId: 'allow-once', kind: 'allow_once' },
+        { optionId: 'allow-session', kind: 'allow_always' },
         { optionId: 'reject-once', kind: 'reject_once' },
       ],
     })

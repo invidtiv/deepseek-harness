@@ -1,5 +1,6 @@
 /** Draft ACP v2 projections; no v2 objects escape the ACP package. */
 
+import { randomUUID } from 'node:crypto'
 import { createTwoFilesPatch } from 'diff'
 import type { ToolCallUpdate } from '@agentclientprotocol/sdk'
 import type { Context } from '@deepseek-ai/cordis'
@@ -169,19 +170,22 @@ export function v2Output(
     configOptions: options => send({ sessionUpdate: 'config_option_update', configOptions: configOptions(options) }),
     commands: commands => send({ sessionUpdate: 'available_commands_update', availableCommands: availableCommands(commands) }),
     status: (messageId, text) => send({ sessionUpdate: 'agent_message_chunk', messageId, content: { type: 'text', text } }),
-    async commandResult(messageId, line, text) {
-      await send({ sessionUpdate: 'user_message', messageId, content: [{ type: 'text', text: line }] })
+    async commandResult(messageId, _line, text) {
       await send({ sessionUpdate: 'agent_message_chunk', messageId: `${messageId}:result`, content: { type: 'text', text } })
     },
-    state(state) {
+    async state(state) {
       switch (state.state) {
         case 'running': return send({ sessionUpdate: 'state_update', state: 'running' })
         case 'requires_action': return send({ sessionUpdate: 'state_update', state: 'requires_action' })
-        case 'idle': return send({
-          sessionUpdate: 'state_update', state: 'idle',
-          ...state.stopReason === undefined ? {} : { stopReason: state.stopReason },
-          ...state.error === undefined ? {} : { _meta: { error: state.error } },
-        })
+        case 'idle':
+          if (state.stopReason === 'error') {
+            await send({ sessionUpdate: 'agent_message_chunk', messageId: `error:${randomUUID()}`, content: { type: 'text', text: `Turn failed: ${state.error ?? 'The agent could not complete this turn.'}` } })
+          }
+          return send({
+            sessionUpdate: 'state_update', state: 'idle',
+            ...state.stopReason === undefined ? {} : { stopReason: state.stopReason },
+            ...state.error === undefined ? {} : { _meta: { error: state.error } },
+          })
         /* v8 ignore next -- ForegroundState is a closed same-process union. */
         default: return assertNever(state)
       }

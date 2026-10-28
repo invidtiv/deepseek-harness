@@ -3,14 +3,14 @@
 # After editing either side, bring the other along and re-record with:
 #   pnpm run verify-translation-pairing --write docs/upgrade-guide/v0.2.2-alpha.2/acp-tool-projection/guide.md
 /:
-  en: edcdb8d0cbdac41f
-  zh: 6b07770aad6ebb48
-/acp-tool-presentation-dependencies:
-  en: 266883939f626264
-  zh: 9936e8378d61750c
-/acp-tool-presentation-dependencies/change:
-  en: 3c4c3ad6c6b4c2bb
-  zh: d78e6b07f1a4c91a
-/acp-tool-presentation-dependencies/migration:
-  en: 80904cebbb834e16
-  zh: 15a87442572d9757
+  en: 41a0325f8fd09255
+  zh: b02a532ec6638af3
+/acp-bridge-interoperability:
+  en: 1b3c10b9e3974efd
+  zh: 85668b832f24f108
+/acp-bridge-interoperability/change:
+  en: eec4feef6092d1b1
+  zh: aa30ea7255c90e0d
+/acp-bridge-interoperability/migration:
+  en: 80d06e535fa17b3f
+  zh: 40f104a8d3995103

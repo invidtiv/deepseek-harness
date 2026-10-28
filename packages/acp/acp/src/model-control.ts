@@ -142,6 +142,11 @@ export class AcpModelControl {
       }
       group.options.unshift({ value: currentValue, name: resolved.model })
     }
+    // Keep the active route visible when clients display only a prefix of the catalog.
+    groups.sort((a, b) => Number(b.group === resolved.provider) - Number(a.group === resolved.provider))
+    for (const group of groups) {
+      group.options.sort((a, b) => Number(b.value === currentValue) - Number(a.value === currentValue))
+    }
     const options: SessionConfigOption[] = [{
       id: MODEL_CONFIG_ID,
       name: 'Model',

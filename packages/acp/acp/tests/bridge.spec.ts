@@ -628,7 +628,7 @@ describe('automation-only ACP bridge', () => {
       const model = update.configOptions.find(option => option.id === 'model')
       if (model?.type !== 'select') throw new Error('expected model options')
       const groups = model.options.filter(option => 'group' in option)
-      expect(groups.map(group => group.group)).toEqual(['other', 'mock'])
+      expect(groups.map(group => group.group)).toEqual(['mock', 'other'])
       expect(model.currentValue).toBe('["mock","mock"]')
     })
     expect(harness.sessionUpdates.at(-1)?.sessionId).toBe(created.sessionId)

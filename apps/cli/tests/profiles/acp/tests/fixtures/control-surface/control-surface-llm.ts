@@ -69,6 +69,7 @@ class ControlSurfaceAdapter extends LlmAdapter {
       .flatMap(block => block.type === 'text' ? [block.text] : [])
       .join('')
     const hasToolResult = current.some(message => message.role === 'tool')
+    if (userText === 'report the interoperability failure') throw new Error('Interop fixture failure')
     if (!hasToolResult) {
       const callId = ToolCallId(userText.includes('cancel') ? 'control-cancel-add' : 'control-add')
       yield { type: 'block-start', index: 0, blockType: 'reasoning' }
