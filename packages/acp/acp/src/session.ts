@@ -1,5 +1,7 @@
 /** One standard ACP session's Agent, configuration, prompt, update, and teardown lifecycle. */
 
+import * as ToolAskUser from '@deepseek-ai/dsh-tool-ask-user'
+import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { parseCommand } from '@deepseek-ai/dsh-commands'
 import type { Context } from '@deepseek-ai/cordis'
 import {
@@ -15,13 +17,15 @@ import {
 import type { Agent, AgentHandle, AgentOptions, AgentStatus } from '@deepseek-ai/dsh-agent'
 import { installModelSelection } from '@deepseek-ai/dsh-agent'
 import { createUserMessage, errorChain, type MessageId, type UserMessage } from '@deepseek-ai/dsh-llm'
-import { type Session, type SessionEvent, type SessionId, type TurnEndReason } from '@deepseek-ai/dsh-session'
+import { buildForkSeed, SessionLogOffset, type Session, type SessionEvent, type SessionId, type TurnEndReason } from '@deepseek-ai/dsh-session'
 import { AcpContentError, admitAcpPrompt } from './content.ts'
 import { turnEndToStopReason } from './codec.ts'
 import { mountAcpMcpServers } from './mcp.ts'
-import { AcpModelControl } from './model-control.ts'
+import { AcpJobOutput } from './job-output.ts'
+import { AcpModelControl, AcpModelConfigError } from './model-control.ts'
 import type { AcpOutput, ForegroundState, IdleReason } from './output.ts'
 import { planEntries } from './updates.ts'
+import type {} from '@deepseek-ai/dsh-plan-mode'
 import type { GoalView } from '@deepseek-ai/dsh-goal'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'
@@ -37,6 +41,8 @@ interface SubagentLifecycle {
 /** Inputs shared by fresh and resumed ACP session construction. */
 interface AcpSessionBuildOptions {
   cwd: string
+  /** Whether this connection negotiated human form elicitation. */
+  formElicitation: boolean
   mcpServers: readonly McpServer[]
   agentOptions: AgentOptions
   signal: AbortSignal
@@ -52,6 +58,11 @@ export interface CreateAcpSessionOptions extends AcpSessionBuildOptions {
 /** Persisted ACP session construction inputs. */
 export interface ResumeAcpSessionOptions extends AcpSessionBuildOptions {
   sessionId: SessionId
+}
+
+/** Fork construction receives a fixed, committed source prefix; no live resources are shared. */
+export interface ForkAcpSessionOptions extends CreateAcpSessionOptions {
+  sourceEvents: readonly SessionEvent[]
 }
 
 interface InflightPrompt {
@@ -93,6 +104,11 @@ function internalError(detail: string): RequestError {
  */
 async function composeAgent(agentCtx: Context, options: AcpSessionBuildOptions): Promise<void> {
   installModelSelection(agentCtx)
+  const tools = agentCtx.get('tools')
+  if (options.formElicitation && tools !== undefined && agentCtx.get('userQuestions') !== undefined
+    && tools.get('ask_user_question', scopeOf(agentCtx)) === undefined) {
+    await agentCtx.plugin(ToolAskUser)
+  }
   await mountAcpMcpServers(agentCtx, options.mcpServers, options.cwd)
 }
 
@@ -133,6 +149,7 @@ export class AcpSession {
   private command: { controller: AbortController; done: Promise<void> } | undefined
   private goalText: string | undefined
   private planVisible = false
+  private jobOutput: AcpJobOutput | undefined
 
   private constructor(
     private readonly ctx: Context,
@@ -143,6 +160,15 @@ export class AcpSession {
     this.modelControl = new AcpModelControl(ctx.llm, handle.agent.model)
     this.output = output(handle.agent.session.id)
     this.disposeAgent = () => handle.dispose()
+    handle.agent.ctx.inject(['jobs'], (jobCtx) => {
+      const observer = new AcpJobOutput(jobCtx.jobs, this.agent.session.id,
+        (deliver) => { this.enqueue(deliver) }, (callId, text) => this.output.toolOutput(callId, text))
+      this.jobOutput = observer
+      jobCtx.effect(() => () => {
+        observer.dispose()
+        if (this.jobOutput === observer) this.jobOutput = undefined
+      }, 'acp.job-output')
+    })
   }
 
   private readonly disposeAgent: () => Promise<void>
@@ -183,6 +209,36 @@ export class AcpSession {
   }
 
   /**
+   * Publish an independent Agent seeded from committed source events.
+   * @param ctx - ACP context owning the new Agent lifecycle.
+   * @param options - new identity, fresh MCP connections, and fixed source history.
+   * @returns the independently owned fork session.
+   */
+  static async fork(ctx: Context, options: ForkAcpSessionOptions): Promise<AcpSession> {
+    const boundary = options.sourceEvents.at(-1)?.seq
+    const seed = boundary === undefined ? [] : buildForkSeed(options.sourceEvents, boundary)
+    const handle = await ctx.agents.create({
+      sessionId: options.sessionId,
+      seed,
+      inheritedEventCount: SessionLogOffset(options.sourceEvents.length),
+      meta: { cwd: options.cwd, isSeeded: true },
+      agentOptions: options.agentOptions,
+      signal: options.signal,
+      setup: agentCtx => composeAgent(agentCtx, options),
+    })
+    return new AcpSession(ctx, handle, options.output)
+  }
+
+  /** Reject forks while this session has foreground or autonomous work in flight. */
+  assertForkable(): void {
+    this.assertActive()
+    if (this.inflight !== undefined || this.command !== undefined || this.agent.status !== 'idle'
+      || this.pendingPermissions > 0 || this.ctx.agents.turnBoundaryOf(this.agent.session).openTurnStartSeq !== null) {
+      throw invalidParams('cannot fork a session with work in flight')
+    }
+  }
+
+  /**
    * Whether this module owns an exact Agent reference.
    * @param agent - Agent observed on a scoped runtime event.
    * @returns true only for this session's owned Agent.
@@ -201,13 +257,23 @@ export class AcpSession {
   }
 
   /**
-   * Return the complete standard model configuration state.
+   * Return the model configuration and composed collaboration controls.
    * @param signal - optional request cancellation.
-   * @returns provider-grouped model and exact-model reasoning options.
+   * @returns provider-grouped models, reasoning, and available collaboration modes.
    */
-  configOptions(signal?: AbortSignal): Promise<SessionConfigOption[]> {
+  async configOptions(signal?: AbortSignal): Promise<SessionConfigOption[]> {
     this.assertActive()
-    return this.modelControl.options(signal)
+    const options = await this.modelControl.options(signal)
+    const planMode = this.agent.ctx.get('planMode')
+    if (planMode !== undefined) {
+      const state = planMode.get(this.agent)
+      options.push({
+        id: 'collaboration_mode', name: 'Collaboration mode', category: 'mode', type: 'select',
+        currentValue: (state.pending ?? state.active) ? 'plan' : 'build',
+        options: [{ value: 'build', name: 'Build' }, { value: 'plan', name: 'Plan' }],
+      })
+    }
+    return options
   }
 
   /**
@@ -217,15 +283,24 @@ export class AcpSession {
    * @param signal - optional request cancellation.
    * @returns the complete resulting option state.
    */
-  setConfig(configId: string, value: unknown, signal?: AbortSignal): Promise<SessionConfigOption[]> {
+  async setConfig(configId: string, value: unknown, signal?: AbortSignal): Promise<SessionConfigOption[]> {
     this.assertActive()
-    return this.modelControl.set(configId, value, signal)
+    if (configId === 'collaboration_mode') {
+      const planMode = this.agent.ctx.get('planMode')
+      if (planMode === undefined) throw new AcpModelConfigError('plan mode is unavailable in this deployment')
+      if (value !== 'plan' && value !== 'build') throw new AcpModelConfigError('collaboration_mode requires plan or build')
+      signal?.throwIfAborted()
+      planMode.set(this.agent, value === 'plan')
+    } else {
+      await this.modelControl.set(configId, value, signal)
+    }
+    return this.configOptions(signal)
   }
 
   /** Resolve topology state off-chain, then serialize its notification without blocking execution updates. */
   topologyChanged(): void {
     if (this.closing !== undefined) return
-    void this.modelControl.options()
+    void this.configOptions()
       .then((configOptions) => {
         if (this.closing === undefined) this.enqueue(() => this.output.configOptions(configOptions))
       })
@@ -574,6 +649,9 @@ export class AcpSession {
    * @param event - committed durable event.
    */
   onSessionEvent(session: Session, event: SessionEvent): void {
+    if (event.type === 'plan/mode') this.topologyChanged()
+    if (event.type === 'job/registered') this.jobOutput?.register(event.data)
+    if (event.type === 'tool/result') this.jobOutput?.complete(event.data.message.toolCallId)
     if (event.type === 'turn/start' && this.inflight?.turn !== undefined) {
       this.inflight.turn = event.data.turn
       this.inflight.endReason = undefined
@@ -645,6 +723,7 @@ export class AcpSession {
    */
   close(detail: string): Promise<void> {
     if (this.closing !== undefined) return this.closing
+    this.jobOutput?.dispose()
     this.closing = (async () => {
       const failures: unknown[] = []
       const inflight = this.inflight

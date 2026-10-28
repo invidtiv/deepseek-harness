@@ -14,7 +14,8 @@ const Deferred = await load('effect/Deferred')
 const Fiber = await load('effect/Fiber')
 const NodeServices = await load('@effect/platform-node/NodeServices')
 // The runtime moved from apps/server into the provider-acp workspace package (T3 Code ed0f7b908b2e).
-const Runtime = await load('@t3tools/provider-acp/server/AcpSessionRuntime')
+// Its package exports are ESM-only, so createRequire.resolve cannot select them.
+const Runtime = await import(pathToFileURL(join(root, 'packages/provider-acp/src/server/AcpSessionRuntime.ts')).href)
 const options = JSON.parse(await readFile(optionsFile, 'utf8'))
 
 await Effect.runPromise(Effect.gen(function* () {

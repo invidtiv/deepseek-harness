@@ -54,8 +54,8 @@ describe('standard ACP v1 control surface', () => {
       expect(initialized.agentCapabilities).toEqual({
         loadSession: true,
         mcpCapabilities: { http: true },
-        promptCapabilities: { image: false, audio: false, embeddedContext: false },
-        sessionCapabilities: { close: {}, list: {}, resume: {} },
+        promptCapabilities: { image: true, audio: false, embeddedContext: false },
+        sessionCapabilities: { close: {}, list: {}, resume: {}, fork: {} },
       })
       expect('_meta' in initialized).toBe(false)
       const created = await first.client.newSession({ cwd, mcpServers })
@@ -78,6 +78,7 @@ describe('standard ACP v1 control surface', () => {
       })).resolves.toEqual({ stopReason: 'end_turn' })
       expect(first.updates.map(update => update.sessionUpdate)).toEqual([
         'available_commands_update',
+        'session_info_update',
         'agent_thought_chunk',
         'usage_update',
         'tool_call',
@@ -123,4 +124,31 @@ describe('standard ACP v1 control surface', () => {
       await rm(cwd, { recursive: true, force: true })
     }
   }, 30_000)
+
+  it('persists independent plan selections on forked sessions through the shipped profile', async () => {
+    const cwd = await mkdtemp(join(tmpdir(), 'dsh-acp-fork-'))
+    const env = { DSH_CONFORMANCE_PERSISTENCE_ROOT: join(cwd, '.sessions'), DSH_TELEMETRY_DISABLED: '1' }
+    const launched = launchAcpTestAgent({ agent, cwd, env })
+    try {
+      await launched.spawned
+      await launched.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
+      const source = await launched.client.newSession({ cwd, mcpServers: [] })
+      expect(source.configOptions).toContainEqual(expect.objectContaining({ id: 'collaboration_mode', currentValue: 'build' }))
+      await launched.client.setSessionConfigOption({ sessionId: source.sessionId, configId: 'collaboration_mode', value: 'plan' })
+      const fork = await launched.client.forkSession({ sessionId: source.sessionId, cwd, mcpServers: [] })
+      expect(fork.sessionId).not.toBe(source.sessionId)
+      expect(fork.configOptions).toContainEqual(expect.objectContaining({ id: 'collaboration_mode', currentValue: 'plan' }))
+      await launched.client.setSessionConfigOption({ sessionId: fork.sessionId, configId: 'collaboration_mode', value: 'build' })
+      await launched.client.closeSession({ sessionId: source.sessionId })
+      await launched.client.closeSession({ sessionId: fork.sessionId })
+      const resumedSource = await launched.client.resumeSession({ sessionId: source.sessionId, cwd, mcpServers: [] })
+      const resumedFork = await launched.client.resumeSession({ sessionId: fork.sessionId, cwd, mcpServers: [] })
+      expect(resumedSource.configOptions).toContainEqual(expect.objectContaining({ id: 'collaboration_mode', currentValue: 'plan' }))
+      expect(resumedFork.configOptions).toContainEqual(expect.objectContaining({ id: 'collaboration_mode', currentValue: 'build' }))
+    } finally {
+      await launched.close()
+      await rm(cwd, { recursive: true, force: true })
+    }
+  }, 30_000)
+
 })

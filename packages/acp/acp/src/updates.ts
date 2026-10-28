@@ -6,6 +6,8 @@ import type { Session, SessionEvent } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-token-meter'
 import type {} from '@deepseek-ai/dsh-goal'
 import type {} from '@deepseek-ai/dsh-tool-todo'
+import type {} from '@deepseek-ai/dsh-session-title'
+import { AcpToolCursor, projectCall, projectResult } from './tool-projection.ts'
 import { assistantBlockToAcp } from './content.ts'
 
 /** The standard updates one committed assistant message can produce. */
@@ -50,31 +52,34 @@ export async function assistantUpdates(
 }
 
 /**
- * Start one generic ACP tool lifecycle from the durable call fact.
+ * Start one ACP tool lifecycle using the registered provider presentation.
  * @param event - committed DSH tool-call event.
- * @returns the standard generic tool-call update.
+ * @param ctx - scoped tool registry; omitted when only generic presentation is available.
+ * @param call - invocation and directory at the output cursor.
+ * @returns the standard tool-call update.
  */
-export function toolCallUpdate(event: SessionEvent<'tool/call'>): Pick<ToolCall, 'toolCallId' | 'title' | 'kind' | 'status' | 'rawInput'> & { sessionUpdate: 'tool_call' } {
+export function toolCallUpdate(event: SessionEvent<'tool/call'>, ctx?: Context, call?: ReturnType<AcpToolCursor['accept']>): ToolCall & { sessionUpdate: 'tool_call' } {
   return {
     sessionUpdate: 'tool_call',
-    toolCallId: event.data.callId,
-    title: event.data.name,
-    kind: 'other',
-    status: 'in_progress',
-    rawInput: parseToolArguments(event.data.arguments),
+    ...ctx === undefined ? {
+      toolCallId: event.data.callId, name: event.data.name, title: event.data.name,
+      kind: 'other', status: 'in_progress', rawInput: parseToolArguments(event.data.arguments),
+    } : projectCall(ctx, event.data.callId, call ?? { name: event.data.name, arguments: event.data.arguments, cwd: null }),
   }
 }
 
 /**
- * Finish one generic ACP tool lifecycle from its committed model-facing result.
+ * Finish one ACP tool lifecycle from its committed result and presentation metadata.
  * @param ctx - bridge context carrying the attachment store.
  * @param event - committed DSH tool-result event.
+ * @param call - original invocation at the output cursor.
  * @returns the standard completed or failed tool-call update.
  */
 export async function toolResultUpdate(
   ctx: Context,
   event: SessionEvent<'tool/result'>,
-): Promise<Omit<ToolCallUpdate, 'content'> & { sessionUpdate: 'tool_call_update'; content: Extract<ToolCallContent, { type: 'content' }>[] }> {
+  call?: ReturnType<AcpToolCursor['accept']>,
+): Promise<ToolCallUpdate & { sessionUpdate: 'tool_call_update' }> {
   const message = event.data.message
   const content: Extract<ToolCallContent, { type: 'content' }>[] = []
   for (const block of message.content) {
@@ -86,6 +91,7 @@ export async function toolResultUpdate(
     toolCallId: message.toolCallId,
     status: message.isError === true ? 'failed' : 'completed',
     content,
+    ...projectResult(ctx, call, event),
   }
 }
 
@@ -130,9 +136,14 @@ export function planEntries(todos: readonly Omit<PlanEntry, 'priority'>[]): Plan
  * @param session - authoritative session.
  * @param event - committed event to project.
  * @param replay - history replay; live delivery omits the user's own prompts, which the client sent.
+ * @param cursor - ordered tool-call cursor shared across live delivery or replay pages.
  * @returns ordered updates; task lists and non-conversation events have no transcript output.
  */
-export async function eventUpdates(ctx: Context, session: Session, event: SessionEvent, replay: boolean): Promise<SessionUpdate[]> {
+export async function eventUpdates(
+  ctx: Context, session: Session, event: SessionEvent, replay: boolean, cursor?: AcpToolCursor,
+): Promise<SessionUpdate[]> {
+  const call = cursor?.accept(session, event)
+  const toolContext = ctx.get('agents')?.get(session.id)?.ctx ?? ctx
   switch (event.type) {
     case 'user/message': {
       if (!replay || event.data.source.kind !== 'user') return []
@@ -144,8 +155,9 @@ export async function eventUpdates(ctx: Context, session: Session, event: Sessio
       return updates
     }
     case 'assistant/message': return assistantUpdates(ctx, session, event)
-    case 'tool/call': return [toolCallUpdate(event)]
-    case 'tool/result': return [await toolResultUpdate(ctx, event)]
+    case 'session/title': return [{ sessionUpdate: 'session_info_update', title: event.data.title }]
+    case 'tool/call': return [toolCallUpdate(event, toolContext, call)]
+    case 'tool/result': return [await toolResultUpdate(toolContext, event, call)]
     default:
       // Session events are merge-extensible; only conversation facts have transcript output.
       return []

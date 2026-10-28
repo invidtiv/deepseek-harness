@@ -62,7 +62,7 @@ describe('negotiated ACP v2', () => {
   it('negotiates v2 by default and retains the v1 handshake', async () => {
     expect(await setup()).toEqual({
       protocolVersion: 2, info: { name: 'deepseek-harness-acp', version: ACP_PACKAGE_VERSION },
-      capabilities: { session: { mcp: { stdio: {}, http: {} }, prompt: {} } }, authMethods: [],
+      capabilities: { session: { mcp: { stdio: {}, http: {} }, fork: {}, prompt: { image: {} } } }, authMethods: [],
     })
     await harness.dispose()
     harness = await makeBridgeHarness({ script: [textResponse('v1')] })

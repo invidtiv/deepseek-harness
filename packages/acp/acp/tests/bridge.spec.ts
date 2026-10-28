@@ -52,14 +52,14 @@ describe('automation-only ACP bridge', () => {
       agentCapabilities: {
         loadSession: true,
         mcpCapabilities: { http: true },
-        promptCapabilities: { image: false, audio: false, embeddedContext: false },
-        sessionCapabilities: { close: {}, list: {}, resume: {} },
+        promptCapabilities: { image: true, audio: false, embeddedContext: false },
+        sessionCapabilities: { close: {}, list: {}, resume: {}, fork: {} },
       },
       authMethods: [],
     })
   })
 
-  it('advertises image prompts only with an exact capable route and attachment store', async () => {
+  it('advertises image transport independently of the initial model with an attachment store', async () => {
     harness = await makeBridgeHarness({ imageCapable: true })
     const capable = await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
     expect(capable.agentCapabilities?.promptCapabilities?.image).toBe(true)
@@ -997,7 +997,7 @@ describe('automation-only ACP bridge', () => {
     })).resolves.toHaveProperty('sessionId')
   })
 
-  it('rejects empty and unadvertised image prompts before a turn starts', async () => {
+  it('rejects empty prompts and images unsupported by the selected model before a turn starts', async () => {
     harness = await makeBridgeHarness()
     await harness.client.initialize({ protocolVersion: PROTOCOL_VERSION, clientCapabilities: {} })
     const { sessionId } = await harness.client.newSession({ cwd: process.cwd(), mcpServers: [] })
@@ -1007,7 +1007,7 @@ describe('automation-only ACP bridge', () => {
     await expect(harness.client.prompt({
       sessionId,
       prompt: [{ type: 'image', data: '', mimeType: 'image/png' }],
-    })).rejects.toThrow(/inline image prompts were not advertised/)
+    })).rejects.toThrow(/does not declare image input/)
     expect(harness.ctx.agents.get(SessionId(sessionId))?.session.snapshotEvents().some(event => event.type === 'turn/start')).toBe(false)
   })
 

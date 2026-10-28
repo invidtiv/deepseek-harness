@@ -18,9 +18,13 @@ import {
   client as createAcpClientApp,
   methods,
   ndJsonStream,
+  type CreateElicitationRequest,
+  type CreateElicitationResponse,
   type CancelNotification,
   type CloseSessionRequest,
   type CloseSessionResponse,
+  type ForkSessionRequest,
+  type ForkSessionResponse,
   type InitializeRequest,
   type InitializeResponse,
   type LoadSessionRequest,
@@ -77,6 +81,8 @@ export interface AcpTestLaunchOptions {
   env?: NodeJS.ProcessEnv
   /** Permission handler; omitted requests fail closed as `cancelled`. */
   requestPermission?: (params: RequestPermissionRequest) => Promise<RequestPermissionResponse>
+  /** Human form handler; omitted requests are cancelled. */
+  createElicitation?: (params: CreateElicitationRequest, signal: AbortSignal) => Promise<CreateElicitationResponse>
 }
 
 /** Stable ACP methods used by the subprocess test harness. */
@@ -84,6 +90,7 @@ export interface AcpTestClient {
   readonly closed: Promise<void>
   initialize: (params: InitializeRequest) => Promise<InitializeResponse>
   newSession: (params: NewSessionRequest) => Promise<NewSessionResponse>
+  forkSession: (params: ForkSessionRequest) => Promise<ForkSessionResponse>
   listSessions: (params: ListSessionsRequest) => Promise<ListSessionsResponse>
   loadSession: (params: LoadSessionRequest) => Promise<LoadSessionResponse>
   resumeSession: (params: ResumeSessionRequest) => Promise<ResumeSessionResponse>
@@ -225,12 +232,17 @@ export function launchAcpTestAgent(options: AcpTestLaunchOptions): LaunchedAcpTe
     .onRequest(methods.client.session.requestPermission, ({ params }) => (
       trackClientCallback(() => requestPermission(params))
     ))
+    .onRequest(methods.client.elicitation.create, ({ params, signal }) => (
+      trackClientCallback(() => options.createElicitation?.(params, signal) ?? Promise.resolve({ action: 'cancel' as const }))
+    ))
   const connection = clientApp.connect(stream)
   const context = connection.agent
   const client: AcpTestClient = {
     closed: connection.closed,
     initialize: params => context.request(methods.agent.initialize, params),
     newSession: params => context.request(methods.agent.session.new, params),
+    /* v8 ignore next -- exercised by the real-process ACP control-surface conformance e2e. */
+    forkSession: params => context.request(methods.agent.session.fork, params),
     /* v8 ignore next -- exercised by the real-process ACP control-surface conformance e2e. */
     listSessions: params => context.request(methods.agent.session.list, params),
     /* v8 ignore next -- exercised by the real-process ACP control-surface conformance e2e. */

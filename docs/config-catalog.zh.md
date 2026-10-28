@@ -16,9 +16,9 @@
 
 ## `@deepseek-ai/dsh-acp`
 
-- `inject`: `agents` · `llm` · `sessionPersistence` · `sessions`
+- `inject`: `agents` · `llm` · `sessionPersistence` · `sessions` · `sessionProjections`
 - `refs`: `v2` (`@agentclientprotocol/sdk/experimental/v2`)
-- `source`: [`packages/acp/acp/src/index.ts:83`](../packages/acp/acp/src/index.ts)
+- `source`: [`packages/acp/acp/src/index.ts:91`](../packages/acp/acp/src/index.ts)
 
 ```ts config-catalog
 /** Plugin config: the provider/model selection used for each ACP-created agent. */

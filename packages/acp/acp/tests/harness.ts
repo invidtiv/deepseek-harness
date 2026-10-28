@@ -11,6 +11,8 @@ import {
   methods,
   ndJsonStream,
   type Agent as AcpAgent,
+  type CreateElicitationRequest,
+  type CreateElicitationResponse,
   type PromptRequest,
   type PromptResponse,
   type RequestPermissionRequest,
@@ -206,6 +208,7 @@ export interface BridgeHarness {
   permissionRequests: RequestPermissionRequest[]
   persistenceRoot: string
   onPermission: (request: RequestPermissionRequest) => RequestPermissionResponse
+  onElicitation: (request: CreateElicitationRequest, signal: AbortSignal) => CreateElicitationResponse | Promise<CreateElicitationResponse>
   onSessionUpdateError: (() => void) | undefined
   registerCatalogProvider: (provider: string) => () => void
   replacePrimaryProviders: (providers: string[]) => void
@@ -261,6 +264,7 @@ export async function makeBridgeHarness(options: {
     permissionRequests,
     persistenceRoot,
     onPermission: () => ({ outcome: { outcome: 'cancelled' } }),
+    onElicitation: () => ({ action: 'cancel' }),
     onSessionUpdateError: undefined,
     registerCatalogProvider: provider => ctx.llm.registerAdapter([provider], new MockAdapter([], false, provider)),
     replacePrimaryProviders: (providers) => { primaryAdapter.replace(providers) },
@@ -286,6 +290,7 @@ export async function makeBridgeHarness(options: {
       permissionRequests.push(params)
       return Promise.resolve(harness.onPermission(params))
     })
+    .onRequest(methods.client.elicitation.create, ({ params, signal }) => Promise.resolve(harness.onElicitation(params, signal)))
 
   const config = { stream: agentStream, ...options.config } as AcpConfig
   if (!(options.config && 'provider' in options.config)) config.provider = 'mock'
@@ -293,7 +298,7 @@ export async function makeBridgeHarness(options: {
   harness.acpFiber = await ctx.plugin({
     name: 'acp-test',
     inject: [...AcpPlugin.inject],
-    apply: (inner: Context) => { AcpPlugin.apply(inner, config) },
+    apply: (inner: Context) => AcpPlugin.apply(inner, config),
   })
   if (options.connectClient !== undefined) {
     options.connectClient(clientStream)

@@ -1,13 +1,17 @@
 /** Draft ACP v2 projections; no v2 objects escape the ACP package. */
 
+import { createTwoFilesPatch } from 'diff'
+import type { ToolCallUpdate } from '@agentclientprotocol/sdk'
 import type { Context } from '@deepseek-ai/cordis'
 import { RequestError, type AvailableCommand, type ContentBlock, type McpServer, type SessionConfigOption } from '@agentclientprotocol/sdk'
 import * as v2 from '@agentclientprotocol/sdk/experimental/v2'
+import type {} from '@deepseek-ai/dsh-session-title'
 import type { UserMessage } from '@deepseek-ai/dsh-llm'
 import { assertNever } from '@deepseek-ai/dsh-util-values'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import { assistantBlockToAcp } from './content.ts'
 import type { AcpOutput } from './output.ts'
+import { AcpToolCursor } from './tool-projection.ts'
 import { assistantUpdates, toolCallUpdate, toolResultUpdate } from './updates.ts'
 
 /**
@@ -89,9 +93,14 @@ export async function userUpdate(ctx: Context, message: UserMessage): Promise<v2
  * @param ctx - attachment and usage services.
  * @param session - authoritative session.
  * @param event - durable semantic event, never a provider delta.
+ * @param cursor - ordered tool-call cursor shared across replay pages.
  * @returns ordered message chunks; live delivery and replay share this projection.
  */
-export async function eventUpdates(ctx: Context, session: Session, event: SessionEvent): Promise<v2.SessionUpdate[]> {
+export async function eventUpdates(
+  ctx: Context, session: Session, event: SessionEvent, cursor?: AcpToolCursor,
+): Promise<v2.SessionUpdate[]> {
+  const call = cursor?.accept(session, event)
+  const toolContext = ctx.get('agents')?.get(session.id)?.ctx ?? ctx
   switch (event.type) {
     case 'user/message':
       return event.data.source.kind === 'user' ? [await userUpdate(ctx, event.data)] : []
@@ -106,13 +115,34 @@ export async function eventUpdates(ctx: Context, session: Session, event: Sessio
       }
       return updates
     }
+    case 'session/title': return [{ sessionUpdate: 'session_info_update', title: event.data.title }]
     case 'tool/call':
-      return [{ ...toolCallUpdate(event), sessionUpdate: 'tool_call_update' }]
+      return [{ ...projectToolCall(toolCallUpdate(event, toolContext, call)), sessionUpdate: 'tool_call_update' }]
     case 'tool/result':
-      return [await toolResultUpdate(ctx, event)]
+      return [{ ...projectToolCall(await toolResultUpdate(toolContext, event, call)), sessionUpdate: 'tool_call_update' }]
     default:
       // Session events are merge-extensible; only conversation facts have transcript output.
       return []
+  }
+}
+
+/**
+ * Convert stable tool content into v2's structured file-change vocabulary.
+ * @param update - shared tool presentation or permission subject.
+ * @returns v2 tool fields without an update discriminator.
+ */
+export function projectToolCall(update: ToolCallUpdate): v2.ToolCallUpdate {
+  const { content, ...fields } = update
+  return {
+    ...fields,
+    ...content == null ? {} : { content: content.map((item) => {
+      if (item.type !== 'diff') return item
+      return {
+        type: 'diff' as const,
+        changes: [{ operation: 'modify' as const, path: item.path, fileType: 'text' as const }],
+        patch: { format: 'git_patch', text: createTwoFilesPatch(item.path, item.path, item.oldText ?? '', item.newText) },
+      }
+    }) },
   }
 }
 
@@ -128,11 +158,13 @@ export function v2Output(
   sessionId: SessionId,
   notify: (notification: v2.UpdateSessionNotification) => Promise<void>,
 ): AcpOutput {
+  const cursor = new AcpToolCursor()
   const send = (update: v2.SessionUpdate): Promise<void> => notify({ sessionId, update })
   return {
     async event(session, event) {
-      for (const update of await eventUpdates(ctx, session, event)) await send(update)
+      for (const update of await eventUpdates(ctx, session, event, cursor)) await send(update)
     },
+    toolOutput: (toolCallId, text) => send({ sessionUpdate: 'tool_call_content_chunk', toolCallId, content: { type: 'content', content: { type: 'text', text } } }),
     plan: entries => send({ sessionUpdate: 'plan_update', plan: { type: 'items', planId: 'todos', entries: [...entries] } }),
     configOptions: options => send({ sessionUpdate: 'config_option_update', configOptions: configOptions(options) }),
     commands: commands => send({ sessionUpdate: 'available_commands_update', availableCommands: availableCommands(commands) }),

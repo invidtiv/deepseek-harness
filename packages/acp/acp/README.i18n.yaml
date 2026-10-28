@@ -9,8 +9,8 @@
   en: 5e36bdb5bef5842c
   zh: 486621193ef243a8
 /deepseek-ai-dsh-acp/summary:
-  en: 715f7722923feb4c
-  zh: 3905f7957c917043
+  en: c269a18b31f1c87d
+  zh: 58d5be262b155612
 /deepseek-ai-dsh-acp/table-of-contents:
   en: d152484eb41ac6b4
   zh: 09388d293f9be9cb
@@ -18,17 +18,20 @@
   en: 014a5573a8c05663
   zh: e45302786655eea5
 /deepseek-ai-dsh-acp/use-this-package/when-to-choose-it:
-  en: bf2f2cba6830285e
-  zh: ce6349b45347fc13
+  en: 431d6b0db78448ca
+  zh: 97704f896ebcb939
 /deepseek-ai-dsh-acp/use-this-package/minimal-configuration:
   en: abb76b690e9967fe
   zh: bd35401008724d54
 /deepseek-ai-dsh-acp/use-this-package/start-a-server:
-  en: b0e40c73a048c699
-  zh: a1e2efbd44a9d4c4
+  en: 02b2d146cf405e39
+  zh: 5ddd87c21ecefcb2
 /deepseek-ai-dsh-acp/use-this-package/protocol-contract:
-  en: 4b51119cae3938f8
-  zh: a32bc7da37d20120
+  en: 8cf20570596d1084
+  zh: 03bb9806573e0e34
+/deepseek-ai-dsh-acp/use-this-package/tool-presentation-and-human-decisions:
+  en: 52f097bb2457db26
+  zh: 28bba628d0177bbf
 /deepseek-ai-dsh-acp/use-this-package/slash-commands:
   en: f69f1927bcb49b58
   zh: 2799f51f1cd641ce
@@ -36,17 +39,17 @@
   en: 3bb5795669559359
   zh: 61b6d3b4ecd96f9a
 /deepseek-ai-dsh-acp/use-this-package/draft-acp-v2:
-  en: 40274e4b80597211
-  zh: 8455f5cbddbb2fcc
+  en: c17cf20bf28e8bd0
+  zh: 2ac34112abdc4a1d
 /deepseek-ai-dsh-acp/understand-the-implementation:
   en: ea8afe89dbdd1934
   zh: 6567979f92f34afd
 /deepseek-ai-dsh-acp/understand-the-implementation/design-philosophy:
-  en: f3cb5d124e006f37
-  zh: 2eb148e7ebeee0f3
+  en: 99014b3efdce0196
+  zh: ea33bf61176b661f
 /deepseek-ai-dsh-acp/understand-the-implementation/source-map:
-  en: f2bd646a25f9b503
-  zh: 9d3047f3c4c3e5ac
+  en: c4056caecea91e9c
+  zh: 65cb85dba7c27e07
 /deepseek-ai-dsh-acp/understand-the-implementation/admission-and-prompt-settlement:
   en: 9ba16a52312c097a
   zh: e7d9d8230453aaac
@@ -66,8 +69,8 @@
   en: e3adbb072da5ff1d
   zh: 0af2105dd9e171d3
 /deepseek-ai-dsh-acp/model-experience/prompt-content/token-effect:
-  en: 93b8f76c67bef353
-  zh: 354fa2dca0804f72
+  en: 28ec07870dde861b
+  zh: b5f4a0e34941cf3f
 /deepseek-ai-dsh-acp/model-experience/prompt-content/kv-cache-effect:
   en: 54946b64b26a3171
   zh: 09550292ccfb36b0
@@ -84,8 +87,8 @@
   en: 83120763a07c4b72
   zh: 6a1a181dc4da869d
 /deepseek-ai-dsh-acp/known-limitations-and-deferred-work:
-  en: 246f0fa90922ecea
-  zh: a8f53115ac342e8c
+  en: 23af7bd0dcaf4163
+  zh: 5d44e00c92541fda
 /deepseek-ai-dsh-acp/known-limitations-and-deferred-work/dev-note:
   en: e67f633dc6fe7773
   zh: 3bb0c20c93f16f98

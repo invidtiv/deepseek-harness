@@ -79,28 +79,15 @@ async function assertImageRoute(ctx: Context, route: ModelSelection | undefined,
 }
 
 /**
- * Determine whether initialization may truthfully advertise inline image prompts.
- * Unknown service, route, capability, or deployment media support is negative.
- * @param ctx - bridge context carrying optional attachment and model services.
- * @param provider - configured provider route used for newly created sessions.
- * @param model - configured exact model id used for newly created sessions.
- * @returns whether this bridge can admit images at initialization time.
+ * Advertise connection-wide image transport independently of the initial model.
+ * Each image prompt still validates the session's selected model before storage.
+ * @param ctx - bridge context carrying attachment and model services.
+ * @returns whether this deployment can transport supported raster attachments.
  */
-export async function supportsAcpImagePrompts(
-  ctx: Context,
-  provider: string | undefined,
-  model: string | undefined,
-): Promise<boolean> {
+export function supportsAcpImagePrompts(ctx: Context): boolean {
   const attachments = ctx.get('attachments')
-  const llm = ctx.get('llm')
-  if (attachments === undefined || llm === undefined || provider === undefined || model === undefined) return false
-  if (!attachments.imageLimits.mediaTypes.some(mediaType => IMAGE_MEDIA_TYPES.includes(mediaType))) return false
-  try {
-    const info = await llm.resolveModelInfo(provider, model)
-    return info.inputModalities?.includes('image') === true
-  } catch {
-    return false
-  }
+  return attachments !== undefined && ctx.get('llm') !== undefined
+    && attachments.imageLimits.mediaTypes.some(mediaType => IMAGE_MEDIA_TYPES.includes(mediaType))
 }
 
 /** Render one baseline resource link into the core's current text vocabulary. */

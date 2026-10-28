@@ -8,7 +8,9 @@ import type {
   SessionNotification,
   StopReason,
 } from '@agentclientprotocol/sdk'
+import type { ToolCallId } from '@deepseek-ai/dsh-llm'
 import type { Session, SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
+import { AcpToolCursor } from './tool-projection.ts'
 import { eventUpdates } from './updates.ts'
 
 /** Why foreground work went idle; `error` reports a failed turn without failing a request. */
@@ -39,6 +41,12 @@ export interface AcpOutput {
    * @param entries - complete plan; empty clears it.
    */
   plan(entries: readonly PlanEntry[]): Promise<void>
+  /**
+   * Append transient shell output; the committed result replaces this preview.
+   * @param callId - owning model invocation.
+   * @param text - new retained output bytes decoded as text.
+   */
+  toolOutput(callId: ToolCallId, text: string): Promise<void>
   /**
    * Replace the client's configuration options.
    * @param options - complete standard option state.
@@ -81,11 +89,13 @@ export function v1Output(
   sessionId: SessionId,
   notify: (notification: SessionNotification) => Promise<void>,
 ): AcpOutput {
+  const cursor = new AcpToolCursor()
   const send = (update: SessionNotification['update']): Promise<void> => notify({ sessionId, update })
   return {
     async event(session, event, replay) {
-      for (const update of await eventUpdates(ctx, session, event, replay)) await send(update)
+      for (const update of await eventUpdates(ctx, session, event, replay, cursor)) await send(update)
     },
+    toolOutput: () => Promise.resolve(),
     plan: entries => send({ sessionUpdate: 'plan', entries: [...entries] }),
     configOptions: options => send({ sessionUpdate: 'config_option_update', configOptions: [...options] }),
     commands: commands => send({ sessionUpdate: 'available_commands_update', availableCommands: [...commands] }),

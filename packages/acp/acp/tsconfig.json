@@ -55,6 +55,30 @@
     },
     {
       "path": "../../util/values"
+    },
+    {
+      "path": "../../plan/plan-mode"
+    },
+    {
+      "path": "../../interaction/user-questions"
+    },
+    {
+      "path": "../../core/tools"
+    },
+    {
+      "path": "../../core/scope"
+    },
+    {
+      "path": "../../session/working-directory"
+    },
+    {
+      "path": "../../session/session-title"
+    },
+    {
+      "path": "../../jobs/jobs"
+    },
+    {
+      "path": "../../interaction/tool-ask-user"
     }
   ]
 }

@@ -1,0 +1,14 @@
+# Keyless human-input protocol scenario through the shipped ACP profile.
+- id: llm-deepseek
+  disabled: true
+- id: acp
+  config:
+    provider: human-input-fixture
+    model: fixture
+- id: session-persistence-jsonl
+  config:
+    root: !!js process.env.DSH_CONFORMANCE_PERSISTENCE_ROOT
+    compression: none
+- insert:
+    - id: human-input-fixture
+      name: './human-input-llm.ts'

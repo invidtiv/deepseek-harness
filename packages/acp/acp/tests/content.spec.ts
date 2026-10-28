@@ -63,26 +63,18 @@ describe('ACP rich content codec', () => {
     vi.restoreAllMocks()
   })
 
-  it('advertises image input only when every deployment prerequisite is explicit', async () => {
+  it('advertises image transport without freezing it to the deployment model', () => {
     const absent = (attachments: unknown, llm: unknown): Context => ({
       get: (name: string) => name === 'attachments' ? attachments : name === 'llm' ? llm : undefined,
     }) as unknown as Context
     const store = { imageLimits: { mediaTypes: ['image/png'] } }
     const noMediaStore = { imageLimits: { mediaTypes: [] } }
-    const imageLlm = { resolveModelInfo: vi.fn().mockResolvedValue({ inputModalities: ['text', 'image'] }) }
-    const textLlm = { resolveModelInfo: vi.fn().mockResolvedValue({ inputModalities: ['text'] }) }
-    const unknownLlm = { resolveModelInfo: vi.fn().mockResolvedValue({}) }
-    const brokenLlm = { resolveModelInfo: vi.fn().mockRejectedValue(new Error('catalog down')) }
-
-    await expect(supportsAcpImagePrompts(absent(undefined, imageLlm), 'p', 'm')).resolves.toBe(false)
-    await expect(supportsAcpImagePrompts(absent(store, undefined), 'p', 'm')).resolves.toBe(false)
-    await expect(supportsAcpImagePrompts(absent(store, imageLlm), undefined, 'm')).resolves.toBe(false)
-    await expect(supportsAcpImagePrompts(absent(store, imageLlm), 'p', undefined)).resolves.toBe(false)
-    await expect(supportsAcpImagePrompts(absent(noMediaStore, imageLlm), 'p', 'm')).resolves.toBe(false)
-    await expect(supportsAcpImagePrompts(absent(store, brokenLlm), 'p', 'm')).resolves.toBe(false)
-    await expect(supportsAcpImagePrompts(absent(store, unknownLlm), 'p', 'm')).resolves.toBe(false)
-    await expect(supportsAcpImagePrompts(absent(store, textLlm), 'p', 'm')).resolves.toBe(false)
-    await expect(supportsAcpImagePrompts(absent(store, imageLlm), 'p', 'm')).resolves.toBe(true)
+    const llm = { resolveModelInfo: vi.fn().mockRejectedValue(new Error('catalog down')) }
+    expect(supportsAcpImagePrompts(absent(undefined, llm))).toBe(false)
+    expect(supportsAcpImagePrompts(absent(store, undefined))).toBe(false)
+    expect(supportsAcpImagePrompts(absent(noMediaStore, llm))).toBe(false)
+    expect(supportsAcpImagePrompts(absent(store, llm))).toBe(true)
+    expect(llm.resolveModelInfo).not.toHaveBeenCalled()
   })
 
   it('validates every rich wire block before any image write', async () => {

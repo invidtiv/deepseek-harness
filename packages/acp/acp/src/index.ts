@@ -3,8 +3,8 @@
  *
  * The bridge exposes persistent harness sessions to trusted programmatic
  * clients. It carries standard configuration, MCP mounts, prompt content,
- * committed semantic updates, cancellation, and one-shot permission decisions;
- * presentation and human-interaction features stay with the harness's UI modules.
+ * semantic tool updates, cancellation, one-shot permission decisions, plan
+ * controls, and negotiated human input.
  *
  * @module @deepseek-ai/dsh-acp
  */
@@ -30,8 +30,13 @@ import {
   type CancelNotification,
   type CloseSessionRequest,
   type CloseSessionResponse,
+  type CreateElicitationRequest,
+  type CreateElicitationResponse,
+  type RequestPermissionResponse,
   type InitializeRequest,
   type InitializeResponse,
+  type ForkSessionRequest,
+  type ForkSessionResponse,
   type ListSessionsRequest,
   type ListSessionsResponse,
   type LoadSessionResponse,
@@ -47,16 +52,19 @@ import {
   type SessionConfigOption,
   type Stream,
 } from '@agentclientprotocol/sdk'
-import type { SessionId } from '@deepseek-ai/dsh-session'
+import type { SessionEvent, SessionId } from '@deepseek-ai/dsh-session'
 import type {} from '@deepseek-ai/dsh-session-persistence'
 // Side-effect type import: declaration-merges the approval waterfall answered below.
 import type {} from '@deepseek-ai/dsh-user-approval'
+import { UserQuestionError } from '@deepseek-ai/dsh-user-questions'
+import { questionSchema, questionAnswer, questionResponse } from './questions.ts'
 import { supportsAcpImagePrompts } from './content.ts'
 import { AcpMcpConfigError } from './mcp.ts'
 import { AcpModelConfigError } from './model-control.ts'
 import { v1Output, type AcpOutput } from './output.ts'
 import { AcpSession } from './session.ts'
 import * as v2 from '@agentclientprotocol/sdk/experimental/v2'
+import { AcpToolProjection } from './tool-projection.ts'
 import * as v2Projection from './v2.ts'
 
 const DEFAULT_SESSION_LIST_PAGE_SIZE = 100
@@ -67,7 +75,7 @@ const AGENT_VERSION = packageVersion()
 
 export const name = 'acp'
 /** Core services required by the standard automation controls. */
-export const inject = ['agents', 'llm', 'sessionPersistence', 'sessions']
+export const inject = ['agents', 'llm', 'sessionPersistence', 'sessions', 'sessionProjections']
 
 /** Preserve invalid-parameter detail in the SDK wire error message. */
 function invalidParams(detail: string): RequestError {
@@ -108,7 +116,8 @@ export const Config: Schema<AcpConfig> = Schema.object({
  * @param ctx - Cordis context carrying the agent factory and session events.
  * @param config - Initial provider/model selection and optional test transport.
  */
-export function apply(ctx: Context, config: AcpConfig): void {
+export async function apply(ctx: Context, config: AcpConfig): Promise<void> {
+  const toolsProjection = await AcpToolProjection.create(ctx)
   // ACP handlers execute outside this plugin's injection scope, so capture the
   // injected service during apply rather than reading it lazily in a callback.
   const persistence = ctx.sessionPersistence
@@ -118,6 +127,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
   const activating = new Set<SessionId>()
   let closed = false
   let imagePromptEnabled = false
+  let formElicitationEnabled = false
   let protocol: 1 | 2 = 1
   let conn: AgentContext
   let connV2: v2.AgentContext
@@ -197,26 +207,72 @@ export function apply(ctx: Context, config: AcpConfig): void {
     const record = ownedRecord(request.agent)
     if (record === undefined || request.callId === undefined) return next()
     const callId = request.callId
+    const toolCall = toolsProjection.permissionToolCall(record.agent, callId, request.toolName)
     const options = [
       { optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' as const },
       { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' as const },
     ]
-    return record.withPermission(async () => {
+    return record.withPermission(() => questionResponse(async () => {
       if (protocol === 2) {
-        const { outcome } = await connV2.request('session/request_permission', {
+        const { outcome } = await connV2.request<'session/request_permission'>('session/request_permission', {
           sessionId: record.agent.session.id,
-          title: request.toolName,
+          title: toolCall.title,
           ...request.reason === undefined ? {} : { description: request.reason },
-          subject: { type: 'tool_call', toolCall: { toolCallId: callId } },
+          subject: { type: 'tool_call', toolCall: v2Projection.projectToolCall(toolCall) },
           options,
         }, request.signal === undefined ? undefined : { cancellationSignal: request.signal })
         if (v2.RequestPermissionOutcome.isCancelled(outcome)) return 'cancelled'
         return v2.RequestPermissionOutcome.isSelected(outcome) && outcome.optionId === 'allow-once' ? 'allowed-once' : 'rejected'
       }
-      const params: RequestPermissionRequest = { sessionId: record.agent.session.id, toolCall: { toolCallId: callId }, options }
-      const { outcome } = await conn.request(methods.client.session.requestPermission, params)
+      const params: RequestPermissionRequest = { sessionId: record.agent.session.id, toolCall, options }
+      const { outcome } = await conn.request<'session/request_permission'>(methods.client.session.requestPermission, params,
+        request.signal === undefined ? undefined : { cancellationSignal: request.signal })
       if (outcome.outcome === 'cancelled') return 'cancelled'
       return outcome.optionId === 'allow-once' ? 'allowed-once' : 'rejected'
+    }, request.signal))
+  })
+
+  ctx.on('user-questions/request', async (request, next) => {
+    const record = request.agent === undefined ? undefined : ownedRecord(request.agent)
+    if (record === undefined) return next()
+    const question = request.questions.length === 1 ? request.questions[0] : undefined
+    const review = question?.intent?.kind === 'plan-review' ? question.intent : undefined
+    if (question !== undefined && review?.callId !== undefined) {
+      const callId = review.callId
+      return record.withPermission(async () => {
+        const toolCall = {
+          toolCallId: callId, title: question.question, kind: 'switch_mode' as const,
+          rawInput: { plan: question.detail },
+          content: [{ type: 'content' as const, content: { type: 'text' as const, text: question.detail ?? question.question } }],
+        }
+        const options = [
+          { optionId: 'allow-once', name: review.approve, kind: 'allow_once' as const },
+          { optionId: 'reject-once', name: 'Keep planning', kind: 'reject_once' as const },
+        ]
+        const result = await questionResponse(() => protocol === 2
+          ? connV2.request<'session/request_permission'>('session/request_permission', {
+            sessionId: record.agent.session.id, title: question.question,
+            subject: { type: 'tool_call', toolCall }, options,
+          }, request.signal === undefined ? undefined : { cancellationSignal: request.signal })
+          : conn.request<RequestPermissionResponse>(methods.client.session.requestPermission,
+            { sessionId: record.agent.session.id, toolCall, options } satisfies RequestPermissionRequest,
+            request.signal === undefined ? undefined : { cancellationSignal: request.signal }), request.signal)
+        const allowed = result.outcome.outcome === 'selected' && result.outcome.optionId === 'allow-once'
+        return { answers: [{ id: question.id, selected: allowed ? [review.approve] : [] }] }
+      })
+    }
+    if (!formElicitationEnabled) return next()
+    return record.withPermission(async () => {
+      const params = { mode: 'form' as const, sessionId: record.agent.session.id,
+        ...request.wait === undefined ? {} : { toolCallId: request.wait.callId },
+        message: request.questions.map(item => item.question).join('\n'), requestedSchema: questionSchema(request.questions) }
+      const options = request.signal === undefined ? undefined : { cancellationSignal: request.signal }
+      const result = await questionResponse(() => protocol === 2
+        ? connV2.request<'elicitation/create'>('elicitation/create', params, options)
+        : conn.request<CreateElicitationResponse>(methods.client.elicitation.create,
+          params satisfies CreateElicitationRequest, options), request.signal)
+      if (result.action !== 'accept') throw new UserQuestionError('ACP user input was cancelled or declined', 'ASK_ABORTED')
+      return questionAnswer(request.questions, result.content)
     })
   })
 
@@ -252,6 +308,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
         record = await AcpSession.resume(ctx, {
           sessionId,
           cwd: params.cwd,
+          formElicitation: formElicitationEnabled,
           mcpServers: params.mcpServers ?? [],
           agentOptions: agentOptions(config),
           signal,
@@ -300,8 +357,9 @@ export function apply(ctx: Context, config: AcpConfig): void {
   }
 
   const implementation = {
-    async initialize(_params: InitializeRequest): Promise<InitializeResponse> {
-      imagePromptEnabled = await supportsAcpImagePrompts(ctx, config.provider, config.model)
+    initialize(params: InitializeRequest): InitializeResponse {
+      formElicitationEnabled = params.clientCapabilities?.elicitation?.form != null
+      imagePromptEnabled = supportsAcpImagePrompts(ctx)
       return {
         protocolVersion: PROTOCOL_VERSION,
         agentInfo: { name: AGENT_NAME, version: AGENT_VERSION },
@@ -309,7 +367,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
           loadSession: true,
           mcpCapabilities: { http: true },
           promptCapabilities: { image: imagePromptEnabled, audio: false, embeddedContext: false },
-          sessionCapabilities: { close: {}, list: {}, resume: {} },
+          sessionCapabilities: { close: {}, list: {}, resume: {}, fork: {} },
         },
         authMethods: [],
       }
@@ -334,6 +392,7 @@ export function apply(ctx: Context, config: AcpConfig): void {
         record = await AcpSession.create(ctx, {
           sessionId,
           cwd: params.cwd,
+          formElicitation: formElicitationEnabled,
           mcpServers: params.mcpServers,
           agentOptions: agentOptions(config),
           signal,
@@ -368,6 +427,52 @@ export function apply(ctx: Context, config: AcpConfig): void {
     ): Promise<ResumeSessionResponse & { configOptions: SessionConfigOption[] }> {
       const { configOptions } = await activate(params, signal, false)
       return { configOptions }
+    },
+
+    async forkSession(params: ForkSessionRequest, signal: AbortSignal): Promise<ForkSessionResponse> {
+      assertOpen()
+      validateWorkspaceParams(params)
+      const sourceId = brandString<SessionId>(params.sessionId)
+      if (activating.has(sourceId)) throw invalidParams(`session is activating: ${sourceId}`)
+      const source = sessions.get(sourceId)
+      const sourceEnd = source?.agent.session.seq
+      if (source !== undefined) {
+        source.assertForkable()
+        await ctx.sessions.flush(source.agent.session)
+      } else if (ctx.sessions.get(sourceId) !== undefined) {
+        throw invalidParams('cannot fork a session owned by another controller')
+      }
+      const stored = await persistence.stat(sourceId, { signal })
+      if (stored === undefined || stored.header.origin === 'subagent') {
+        throw invalidParams(`session is not forkable: ${sourceId}`)
+      }
+      const handle = await persistence.open(sourceId, 'read', { signal })
+      let sourceEvents: readonly SessionEvent[]
+      try { sourceEvents = (await handle.read(0, sourceEnd, { signal })).events }
+      finally { await handle.close() }
+      source?.assertForkable()
+      const sessionId = brandString<SessionId>(randomUUID())
+      let record: AcpSession
+      try {
+        record = await AcpSession.fork(ctx, {
+          sessionId, cwd: params.cwd, formElicitation: formElicitationEnabled, mcpServers: params.mcpServers ?? [],
+          agentOptions: agentOptions(config), sourceEvents, signal, output })
+      } catch (error) {
+        if (error instanceof AcpMcpConfigError) throw invalidParams(error.message)
+        throw error
+      }
+      if (closed) { await record.close('connection closed during session/fork'); assertOpen() }
+      sessions.set(sessionId, record)
+      try {
+        const configOptions = await record.configOptions(signal)
+        await ctx.sessions.flush(record.agent.session)
+        assertOpen()
+        return { sessionId, configOptions }
+      } catch (error) {
+        sessions.delete(sessionId)
+        await record.close('session/fork activation failed')
+        throw error
+      }
     },
 
     async loadSession(params: ResumeSessionRequest, signal: AbortSignal): Promise<LoadSessionResponse> {
@@ -478,19 +583,27 @@ export function apply(ctx: Context, config: AcpConfig): void {
     .onRequest(methods.agent.session.load, ({ params, signal }) => implementation.loadSession(params, signal))
     .onRequest(methods.agent.session.list, ({ params, signal }) => implementation.listSessions(params, signal))
     .onRequest(methods.agent.session.resume, ({ params, signal }) => implementation.resumeSession(params, signal))
+    .onRequest(methods.agent.session.fork, async ({ params, signal }) => {
+      const result = await implementation.forkSession(params, signal)
+      const record = sessions.get(brandString<SessionId>(result.sessionId))
+      if (record !== undefined && record.availableCommands().length > 0) setImmediate(() => { record.commandsChanged() })
+      return result
+    })
     .onRequest(methods.agent.session.close, ({ params }) => implementation.closeSession(params))
     .onRequest(methods.agent.session.setConfigOption, ({ params, signal }) => implementation.setSessionConfigOption(params, signal))
     .onRequest(methods.agent.session.prompt, ({ params, signal }) => implementation.prompt(params, signal))
     .onNotification(methods.agent.session.cancel, ({ params }) => implementation.cancel(params))
   const appV2 = v2.agent({ name: AGENT_NAME })
     .onConnect((connection) => { protocol = 2; connV2 = connection.client })
-    .onRequest('initialize', async () => {
-      imagePromptEnabled = await supportsAcpImagePrompts(ctx, config.provider, config.model)
+    .onRequest('initialize', ({ params }) => {
+      formElicitationEnabled = params.capabilities?.elicitation?.form != null
+      imagePromptEnabled = supportsAcpImagePrompts(ctx)
       return {
         protocolVersion: 2,
         info: { name: AGENT_NAME, version: AGENT_VERSION },
         capabilities: { session: {
           mcp: { stdio: {}, http: {} },
+          fork: {},
           prompt: imagePromptEnabled ? { image: {} } : {},
         } },
         authMethods: [],
@@ -503,6 +616,11 @@ export function apply(ctx: Context, config: AcpConfig): void {
       }
     })
     .onRequest('session/list', ({ params, signal }) => implementation.listSessions(params, signal))
+    .onRequest('session/fork', async ({ params, signal }) => {
+      const result = await implementation.forkSession({ ...params, mcpServers: v2Projection.mcpServers(params.mcpServers) }, signal)
+      return { sessionId: result.sessionId, configOptions: v2Projection.configOptions(result.configOptions ?? []),
+        availableCommands: v2Projection.availableCommands(requireSession(brandString<SessionId>(result.sessionId)).availableCommands()) }
+    })
     .onRequest('session/resume', async ({ params, signal }) => {
       if (params.replayFrom != null && !v2.ReplayFrom.isStart(params.replayFrom)) throw invalidParams('unsupported replay cursor')
       const { record, configOptions } = await activate(

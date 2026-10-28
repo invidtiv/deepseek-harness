@@ -9,7 +9,7 @@ English | [中文](README.zh.md)
 
 ## Summary
 
-`dsh-acp` lets trusted programs automate persistent DeepSeek Harness agents through the standard [ACP](https://agentclientprotocol.com): create or resume sessions, select a model and reasoning effort, attach MCP servers, submit or cancel work, receive semantic updates, and close sessions independently. Choose it for out-of-process subagents, test runners, and scripted controllers; it intentionally omits DSH-specific presentation data and interactive UI features. Persistence supports listing, resuming, and closing sessions across process restarts, but deletion, forks, and additional directories are unsupported. Run `pnpm dsh --profile acp` to start the server; use `dsh-subagent-acp` as the repository client.
+`dsh-acp` lets trusted clients drive persistent DeepSeek Harness agents through standard [ACP](https://agentclientprotocol.com): create, resume, or fork sessions; choose models and planning modes; run tools; review permissions; and answer questions. Clients receive file diffs, command results, titles, and draft-v2 live shell output. Choose it for editor integrations, out-of-process subagents, and scripted controllers. Run `pnpm dsh --profile acp` to start the server; use `dsh-subagent-acp` as the repository client.
 
 ## Table of Contents
 
@@ -29,7 +29,7 @@ Use this package when a script, test runner, or another harness needs to run age
 
 ### When to choose it
 
-Choose it when automation should own the interaction: an out-of-process subagent, test runner, or scripted controller that manages persistent sessions, tools, model selection, and permissions. Avoid it when a human needs DSH-specific presentation cards, titles, terminal views, or elicitation; this server exposes ACP v1 and negotiated draft ACP v2.
+Choose it when an ACP client owns the interaction and renders standard tool cards and questions. The server exposes ACP v1 and negotiated draft ACP v2; DSH-specific Web components and persistent terminal control remain outside this interface.
 
 ### Minimal configuration
 
@@ -54,7 +54,7 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 ### Start a server
 
-`pnpm dsh --profile acp` starts the shipped stdio server. The `acp` profile mounts session persistence, so clients can list, resume, and close persistent sessions. [`@deepseek-ai/dsh-subagent-acp`](../../subagent/subagent-acp/README.md) starts the same profile for out-of-process delegation.
+`pnpm dsh --profile acp` starts the shipped stdio server with session persistence and the required Session projection registry. Clients can list, resume, fork, and close persistent sessions. [`@deepseek-ai/dsh-subagent-acp`](../../subagent/subagent-acp/README.md) starts the same profile for out-of-process delegation.
 
 > **Warning — full-access deployments:** Setting `sandbox-policy.config.mode: danger-full-access` removes Harness filesystem confinement for local commands and file tools; the host account's permissions still apply. `approval.config.policy: never` disables approval prompts and rejects operations that request approval; it does not automatically approve them. Use these settings only for trusted ACP clients and workloads.
 
@@ -80,26 +80,36 @@ One connection can run several sessions at once, each independent. The following
 
 | Call | What you get |
 |---|---|
-| `initialize` | Stable ACP v1 plus `session/list`, `session/resume`, `session/close`, and Streamable HTTP MCP support; image prompts only when the durable attachment store and configured exact route support them. |
+| `initialize` | Stable ACP v1 plus session lifecycle and Streamable HTTP MCP support; compatible attachment storage enables image transport independently of the initial model. |
 | `authenticate` | Immediate success; the server requires no authentication. |
 | `session/new` | A fresh persistent agent whose absolute workspace and stdio or HTTP MCP servers are validated before publication, plus its complete configuration-option state; the command list follows the response. |
 | `session/list` | Deterministic newest-first pages of persisted, resumable root sessions; an optional absolute `cwd` filter uses physical-directory identity where possible. |
 | `session/load` | Restore an inactive persistent session and replay retained conversation messages, tools, and task plans before returning; requests for the session fail until then, and later events follow the replay. |
 | `session/resume` | A persisted inactive session whose canonical workspace is verified before composition; its log is restored without replaying old updates. |
 | `session/close` | Quiescent cancellation, update draining, descendant disposal, persistence flush, and disposal of only the addressed Agent scope. |
-| `session/set_config_option` | A serialized update to the advertised `model` or `reasoning_effort`, returning the complete resulting state. |
+| `session/set_config_option` | Update an advertised model, reasoning effort, or composed `collaboration_mode` selection and return the complete resulting state. |
 | `session/prompt` | Ordered text, resource links, and supported images, one prompt at a time per session; settlement follows root and descendant completion plus ordered update delivery. |
 | `session/cancel` / `$/cancel_request` | The prompt-owned cancellation path; without an ACP prompt in flight it cancels autonomous work, while unknown session ids are no-ops. |
-| `session/update` | Committed assistant messages and thoughts, generic tool lifecycle, configuration changes, and context usage, serialized per session. |
+| `session/update` | Committed messages, tool presentations, configuration, usage, and `session_info_update` titles, serialized per session. |
 | `session/request_permission` | A permission prompt with one-shot allow/reject choices; your client can answer automatically. |
 
-Session listing and resume admit ordinary forks, including historical logs with `parentSession`; `origin: subagent` remains excluded.
+`session/fork` creates an independent persistent Agent from a committed source snapshot, inheriting recorded model and plan selections while mounting fresh MCP connections. Active sources must be idle with no prompt, command, or permission exchange in flight. The child inherits no live processes or pending inputs. Listing and resume admit ordinary forks, including historical logs with `parentSession`; `origin: subagent` remains excluded.
 
 A prompt remains in flight while managed descendants run, while their results trigger later root turns, and while committed output drains. Root work accepted during that output drain joins the same activity interval before completion. Its completion includes the latest root stop reason and any assistant output delivery failure; model option changes take effect at the next model step. Cancellation stops the root activity present at that call and waits for that activity and its queued output. Later child messages may start autonomous work and do not delay the cancelled response; the session remains available for later prompts. Idle descendants with parked inbox messages remain resident but do not delay prompt completion. Closing the session also drains its descendants.
 
 A failure to append `turn/start` or `turn/end` rejects the prompt even when a preceding turn completed.
 
-Session configuration offers opaque provider/model choices from the live LLM service catalog and a `reasoning_effort` selector when the exact model declares one. An option change records the Session selection and takes effect at the next model step, including a continuation in the current turn; an already prepared step and its retries keep their captured selection. Image admission checks the selection current when admission begins. Resume restores a recorded selection even when no request has used it yet. ACP clients are trusted controllers: stdio MCP entries authorize their absolute commands and environment, HTTP entries authorize their absolute HTTP(S) URLs and headers, and any initial connection or discovery failure rolls back the unpublished Agent. Unsupported surfaces are omitted or rejected: deletion, fork, additional directories, SSE or ACP-transport MCP, modes, terminals, client filesystem operations, and elicitation.
+Session configuration offers provider-grouped model choices and reasoning effort from the live LLM catalog. Model changes apply at the next model step; prepared steps and retries keep their captured selection. Every image prompt validates the currently selected model before storing attachments, so switching to a vision model needs no new connection. Switching to a text-only model makes subsequent image submissions fail explicitly. MCP declarations authorize their commands, environments, URLs, and headers; initial connection or discovery failure rolls back the unpublished Agent.
+
+### Tool presentation and human decisions
+
+Registered tool presenters supply standard tool names, kinds, absolute locations, file diffs, and shell exit status. Permission requests reuse that presentation and raw input so clients can apply operation policies. Unknown tools retain `other` and their raw arguments. Permissions offer one-shot allow/reject choices only; a command approval never grants every later invocation of that tool.
+
+When plan mode is composed, the `collaboration_mode` selector offers `plan` and `build`. Changes during an open turn apply at its next accepted step. This selection changes planning guidance, not sandbox permissions. `exit_plan_mode` presents the plan as a one-shot permission review; approval leaves plan mode through the plan service.
+
+Clients that negotiate form elicitation can answer human questions through `elicitation/create`, including multiple selections and optional custom text. The bridge mounts `ask_user_question` in negotiated sessions when the question and tool services are available, preserving an existing tool registration. Fixed approval questions accept only their offered choice. Plan review uses the permission channel instead. Host question deadlines cancel pending exchanges; late answers are ignored, and an unsupported client does not receive an unadvertised form request.
+
+Draft v2 streams retained shell-job output with `tool_call_content_chunk`. Each job keeps one pending bounded ring snapshot during transport backpressure; gaps are reported rather than silently joined. The final tool result replaces the preview with authoritative content. V1, deployments without jobs, and foreground shell paths with `promoteOnTimeout: false` deliver output only at completion.
 
 <a id="slash-commands"></a>
 
@@ -119,7 +129,7 @@ Persisted `todo/write` lists become complete ACP plans: v1 `plan` updates and v2
 
 ### Draft ACP v2
 
-ACP enables v2 negotiation by default; set `protocolV2: false` only for a v1-only deployment. A client requesting `protocolVersion: 2` receives v2. The connection then uses v2 `info` and `capabilities`; v1 clients keep their existing handshake and prompt lifecycle. Both handshakes report the agent name `deepseek-harness-acp` and this package's version. The pinned SDK `1.7.0` supplies separate v1 and experimental v2 validators and handlers. No unstable extensions or authentication methods are advertised.
+ACP enables v2 negotiation by default; set `protocolV2: false` only for a v1-only deployment. A client requesting `protocolVersion: 2` receives v2. The connection then uses v2 `info` and `capabilities`; v1 clients keep their existing handshake and prompt lifecycle. Both handshakes report the agent name `deepseek-harness-acp` and this package's version. The pinned SDK `1.7.0` supplies separate v1 and experimental v2 validators and handlers. No authentication methods are advertised.
 
 Profile patches replace the whole `config` of a targeted row. Include `provider` and `model` alongside `protocolV2` when ACP owns the initial selection; an overlay containing only the flag removes that selection.
 
@@ -143,7 +153,7 @@ This section explains how the server realizes the behavior above and points at t
 
 The server is an automation transport with an intentionally standard public protocol. Three commitments shape it:
 
-- **Standard semantic updates only.** The wire carries committed messages and thoughts, generic tool lifecycle, configuration, and context usage; raw provider deltas, retry attempts, DSH presentation data, and unsupported content stay off the wire.
+- **Standard semantic updates.** Registered tool presenters supply kinds, locations, diffs, command exit status, and permission subjects; unknown tools retain generic cards. Transient job output is a preview, while committed results remain authoritative.
 - **Truthful capability and configuration state.** `initialize` advertises only mounted support, topology changes publish complete configuration options, and model option changes take effect at the next model step.
 - **Quiescence before completion.** V1 prompt results, v2 terminal states, and close responses wait for their owned work and ordered output to drain; v2 prompt acceptance does not wait for completion.
 
@@ -159,6 +169,9 @@ The decision history lives in the [ACP as an automation-only protocol note](../.
 | [`src/output.ts`](src/output.ts) | Protocol-neutral update delivery and its stable-v1 implementation |
 | [`src/updates.ts`](src/updates.ts) | Standard v1 projections of committed session events for live delivery and history replay |
 | [`src/codec.ts`](src/codec.ts) | Pure turn-ending to ACP `stopReason` mapping |
+| [`src/tool-projection.ts`](src/tool-projection.ts) | Registered tool presentation and permission subjects |
+| [`src/job-output.ts`](src/job-output.ts) | Bounded independent observation of live job output |
+| [`src/questions.ts`](src/questions.ts) | Form schemas, answer validation, and cancellation |
 | [`src/v2.ts`](src/v2.ts) | Draft v2 content, configuration, and committed-event projections and update delivery |
 
 ### Admission and prompt settlement
@@ -196,7 +209,7 @@ Read these pages when the package-level contract is not enough. They move from t
 
 #### Token effect
 
-Prompt content, tool calls/results, and durable image references remain in that session until compaction. Concurrent sessions retain independent contexts.
+Prompt content, tool calls/results, and durable image references remain in that session until compaction. Selected plan mode adds the plan service’s guidance to model requests. Human answers reach the owning tool result; live output previews add no model tokens. Concurrent sessions retain independent contexts.
 
 #### KV Cache effect
 
@@ -226,7 +239,7 @@ These limits define when this package is a poor fit or needs special operational
 - **One primary workspace** — additional directories remain unsupported.
 - **Raster prompt images only** — PNG, JPEG, WebP, and GIF require a durable attachment store and an exact image-capable route.
 - **MCP tools only** — MCP resources and prompts have no DSH consumer.
-- **Interactive extensions are unsupported** — session deletion, fork, modes, terminals, client filesystem operations, and elicitation remain outside this automation surface.
+- **Unsupported protocol operations** — session deletion, additional roots, SSE or ACP-transport MCP, persistent terminal control, client filesystem operations, and URL elicitation are not projected.
 
 <a id="dev-note"></a>
 ### Dev Note

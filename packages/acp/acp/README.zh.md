@@ -9,7 +9,7 @@ kind: "package-reference"
 
 ## 概述
 
-`dsh-acp` 让受信程序通过标准 [ACP](https://agentclientprotocol.com) 自动操作持久 DeepSeek Harness agent：创建或恢复会话、选择模型与推理强度、挂载 MCP 服务器、提交或取消工作、接收语义更新，并独立关闭会话。进程外 subagent、测试运行器与脚本化控制器适合选择它；它刻意不提供 DSH 专用呈现数据与交互式 UI 功能。持久化支持跨进程重启列出、恢复与关闭会话，但不支持删除、fork 与附加目录。运行 `pnpm dsh --profile acp` 可启动服务器；仓库客户端使用 `dsh-subagent-acp`。
+`dsh-acp` 让受信任客户端通过标准 [ACP](https://agentclientprotocol.com) 驱动持久化 DeepSeek Harness agent：创建、恢复或 fork 会话，选择模型与计划模式，运行工具，审阅权限并回答问题。客户端接收文件差异、命令结果、标题与草案 v2 实时 shell 输出。它适合编辑器集成、进程外 subagent 与脚本控制器。运行 `pnpm dsh --profile acp` 启动服务器；仓库客户端为 `dsh-subagent-acp`。
 
 ## 目录
 
@@ -29,7 +29,7 @@ kind: "package-reference"
 
 ### 何时选择
 
-当自动化应拥有交互时选择它：管理持久会话、工具、模型选择与权限的进程外 subagent、测试运行器或脚本化控制器。当人类需要 DSH 专用呈现卡片、标题、终端视图或 elicitation 时请避开；本服务器提供 ACP v1 与协商的草案 ACP v2。
+当 ACP 客户端负责交互并渲染标准工具卡片与问题时使用它。服务器提供 ACP v1 与协商的草案 ACP v2；DSH 专用 Web 组件与持久终端控制不属于此接口。
 
 ### 最小配置
 
@@ -54,7 +54,7 @@ kind: "package-reference"
 
 ### 启动服务器
 
-`pnpm dsh --profile acp` 会启动随附的 stdio 服务器。`acp` profile 会挂载会话持久化，因此客户端可以列出、恢复和关闭持久会话。[`@deepseek-ai/dsh-subagent-acp`](../../subagent/subagent-acp/README.zh.md) 会启动同一 profile 来执行进程外委派。
+`pnpm dsh --profile acp` 启动随附 stdio 服务器，同时挂载会话持久化与必需的 Session 投影注册表。客户端可以列出、恢复、fork 和关闭持久会话。[`@deepseek-ai/dsh-subagent-acp`](../../subagent/subagent-acp/README.zh.md) 启动同一 profile 以执行进程外委派。
 
 > **警告——完全访问部署：** 设置 `sandbox-policy.config.mode: danger-full-access` 会移除 Harness 对本地命令和文件工具的文件系统隔离；宿主账户的权限仍然适用。`approval.config.policy: never` 会禁用审批提示并拒绝请求审批的操作，而不是自动批准这些操作。仅对受信任的 ACP 客户端和工作负载使用这些设置。
 
@@ -80,26 +80,36 @@ kind: "package-reference"
 
 | 调用 | 你会得到什么 |
 |---|---|
-| `initialize` | 稳定 ACP v1，以及 `session/list`、`session/resume`、`session/close` 与 Streamable HTTP MCP 支持；图片提示词只在持久附件存储和配置的确切路由支持时公布。 |
+| `initialize` | 稳定 ACP v1、会话生命周期与 Streamable HTTP MCP 支持；兼容附件存储启用图片传输，不依赖初始模型。 |
 | `authenticate` | 立即成功；服务器不需要身份验证。 |
 | `session/new` | 全新持久 agent；其绝对工作区与 stdio 或 HTTP MCP 服务器会在发布前通过校验，并返回完整配置选项状态；命令列表在响应之后发送。 |
 | `session/list` | 按确定的新到旧顺序分页返回已持久化、可恢复的根会话；可选绝对 `cwd` 筛选会尽可能使用物理目录标识。 |
 | `session/load` | 恢复非活跃的持久会话，并在返回前回放保留的对话消息、工具和任务计划；返回前针对该会话的请求都会失败，之后的事件排在回放之后。 |
 | `session/resume` | 恢复一个已持久化且非活跃的会话；组合前校验其规范工作区，并恢复日志但不回放旧更新。 |
 | `session/close` | 停稳式取消、更新 drain、后代释放、持久化 flush，并且只释放指定 Agent 作用域。 |
-| `session/set_config_option` | 串行更新公布的 `model` 或 `reasoning_effort`，并返回完整结果状态。 |
+| `session/set_config_option` | 更新已公布的模型、推理强度或已组装的 `collaboration_mode` 选择，并返回完整结果状态。 |
 | `session/prompt` | 有序文本、资源链接与受支持图片，每个会话一次一个提示词；根 Agent 与后代完成且有序更新交付后才结算。 |
 | `session/cancel` / `$/cancel_request` | 提示词所拥有的取消路径；没有进行中的 ACP 提示词时取消自主工作，未知会话 id 则为空操作。 |
-| `session/update` | 已提交 assistant 消息与 thought、通用工具生命周期、配置变化与上下文用量，按会话串行交付。 |
+| `session/update` | 按会话串行交付已提交消息、工具呈现、配置、用量与 `session_info_update` 标题。 |
 | `session/request_permission` | 带一次性允许／拒绝选项的权限提示；你的客户端可以自动回答。 |
 
-会话列表和恢复允许普通 fork，包括含有 `parentSession` 的历史日志；`origin: subagent` 仍被排除。
+`session/fork` 从已提交的源快照创建独立持久 Agent，继承记录中的模型与计划选择，同时挂载新的 MCP 连接。活跃源会话必须空闲，且没有正在进行的提示词、命令或权限交换。子会话不继承运行中的进程或待处理输入。列表与恢复允许普通 fork，包括带 `parentSession` 的历史日志；仍排除 `origin: subagent`。
 
 受管理后代运行期间、它们的结果触发根 Agent 后续轮次期间，以及已提交输出仍在交付期间，提示词保持进行中。输出交付期间接受的根 Agent 工作会加入同一活动区间，并在该区间完成后结算。最终结果包含最新根轮次的停止原因与所有助手输出交付错误；只有原始提示词轮次固定使用接受时捕获的模型选择。取消会停止调用时已有的根 Agent 活动，并等待该活动及其已排队输出完成。之后到达的子 Agent 消息可以启动自主工作，但不会延迟取消响应；会话仍可接受后续提示词。收件箱消息处于停放状态的空闲后代继续驻留，但不延迟提示词完成。关闭会话还会释放其后代。
 
 即使前一轮已经完成，追加 `turn/start` 或 `turn/end` 失败仍会使提示词请求失败。
 
-会话配置从实时 LLM（大语言模型）服务目录提供不透明的提供方／模型选项，并在确切模型声明推理选项时提供 `reasoning_effort`。选项变更记录 Session 选择，从下一个模型步骤开始生效，包括当前轮次的后续步骤；已准备的步骤及其重试保留捕获的选择。图片准入检查准入开始时的当前选择。恢复会还原记录中的选择，即使尚未有请求使用它。ACP 客户端是受信控制器：stdio MCP 条目授权其绝对命令与环境，HTTP 条目授权其绝对 HTTP(S) URL 与 header；初始连接或发现失败会回滚尚未发布的 Agent。不支持的界面会被省略或拒绝：删除、fork、附加目录、SSE（Server-Sent Events）或 ACP 传输 MCP、mode、终端、客户端文件系统操作与 elicitation。
+会话配置从实时 LLM 目录提供按提供方分组的模型与推理强度选项。模型变更从下一个模型步骤生效；已准备的步骤和重试保留已捕获的选择。每个图片提示词在存储附件前校验当前模型，因此切换到视觉模型无需新建连接。切换到纯文本模型后，后续图片提交会明确失败。MCP 声明授权其命令、环境、URL 与 header；初始连接或发现失败会回滚尚未发布的 Agent。
+
+### 工具呈现与人工决策
+
+已注册工具的呈现器提供标准工具名、种类、绝对位置、文件差异与 shell 退出状态。权限请求复用该呈现和原始输入，让客户端应用操作策略。未知工具保留 `other` 与原始参数。权限只提供一次性允许／拒绝选项；批准一条命令不会授权该工具之后的所有调用。
+
+组装计划模式时，`collaboration_mode` 选择器提供 `plan` 与 `build`。轮次进行中发生的变更从下一次已接纳步骤开始生效。此选择改变计划指导，不改变沙箱权限。`exit_plan_mode` 通过一次性权限审阅展示计划；批准后由计划服务退出计划模式。
+
+协商表单 elicitation 的客户端可通过 `elicitation/create` 回答人工问题，包括多选和可选自定义文本。当问题和工具服务可用时，桥接层会在已协商的会话中挂载 `ask_user_question`，并保留已有工具注册。固定审批问题只接受已提供的选项。计划审阅使用权限通道。宿主问题期限会取消待处理交换；迟到答案被忽略，不支持的客户端不会收到未公布的表单请求。
+
+草案 v2 通过 `tool_call_content_chunk` 流式传输保留的 shell 作业输出。传输背压期间，每个作业只保留一个待发送的有界环形缓冲快照；数据缺口会明确报告，不会静默拼接。最终工具结果以权威内容替换预览。V1、没有作业服务的部署，以及 `promoteOnTimeout: false` 的前台 shell 路径仅在完成时交付输出。
 
 <a id="slash-commands"></a>
 
@@ -119,7 +129,7 @@ V1 通过 `available_commands_update` 公布完整命令列表：在 `session/ne
 
 ### 草案 ACP v2
 
-ACP 默认启用 v2 协商；仅在只部署 v1 时设置 `protocolV2: false`。请求 `protocolVersion: 2` 的客户端将获得 v2。此连接使用 v2 的 `info` 与 `capabilities`；v1 客户端保留原有握手与提示词生命周期。两种握手都报告 agent 名称 `deepseek-harness-acp` 与本包的版本。固定的 SDK `1.7.0` 提供独立的 v1 与实验性 v2 校验器和处理程序。不公布不稳定扩展或身份验证方法。
+ACP 默认启用 v2 协商；仅在只部署 v1 时设置 `protocolV2: false`。请求 `protocolVersion: 2` 的客户端将获得 v2。此连接使用 v2 的 `info` 与 `capabilities`；v1 客户端保留原有握手与提示词生命周期。两种握手都报告 agent 名称 `deepseek-harness-acp` 与本包的版本。固定的 SDK `1.7.0` 提供独立的 v1 与实验性 v2 校验器和处理程序。不公布身份验证方法。
 
 配置档补丁会替换目标行的整个 `config`。当 ACP 负责初始模型选择时，须在 `protocolV2` 旁同时填写 `provider` 和 `model`；仅包含开关的覆盖层会移除该选择。
 
@@ -143,7 +153,7 @@ v2 提示词在其轮次将消息提交到对话后返回规范 Harness 用户 `
 
 服务器是刻意采用标准公开协议的自动化传输。三项承诺塑造了它：
 
-- **只发送标准语义更新。** 协议承载已提交消息与 thought、通用工具生命周期、配置与上下文用量；原始提供方增量、重试尝试、DSH 呈现数据与不受支持内容不会进入协议。
+- **标准语义更新。** 已注册工具的呈现器提供种类、位置、差异、命令退出状态和权限对象；未知工具保留通用卡片。临时作业输出仅为预览，已提交结果仍是权威数据。
 - **诚实的能力与配置状态。** `initialize` 只公布已挂载支持，拓扑变化会发布完整配置选项，模型选项变更从下一个模型步骤开始生效。
 - **停稳后才完成。** V1 提示词结果、v2 终态与关闭响应等待所属工作和有序输出排空；v2 提示词接受不等待完成。
 
@@ -159,6 +169,9 @@ v2 提示词在其轮次将消息提交到对话后返回规范 Harness 用户 `
 | [`src/output.ts`](src/output.ts) | 与协议无关的更新交付及其稳定 v1 实现 |
 | [`src/updates.ts`](src/updates.ts) | 已提交会话事件的标准 v1 投影，用于实时交付与历史回放 |
 | [`src/codec.ts`](src/codec.ts) | 轮次结束到 ACP `stopReason` 的纯映射 |
+| [`src/tool-projection.ts`](src/tool-projection.ts) | 已注册工具呈现与权限对象 |
+| [`src/job-output.ts`](src/job-output.ts) | 实时作业输出的有界独立观察 |
+| [`src/questions.ts`](src/questions.ts) | 表单 schema、答案校验与取消 |
 | [`src/v2.ts`](src/v2.ts) | 草案 v2 内容、配置、已提交事件投影与更新交付 |
 
 ### 准入与提示词结算
@@ -196,7 +209,7 @@ v2 提示词在其轮次将消息提交到对话后返回规范 Harness 用户 `
 
 #### Token 影响
 
-提示词内容、工具调用／结果和持久图片引用会保留在该会话中直到上下文压缩（context compaction）。并发会话保留独立上下文。
+提示词内容、工具调用／结果和持久图片引用会保留在该会话中直到上下文压缩（context compaction）。所选计划模式将计划服务的指导加入模型请求。人工答案进入所属工具结果；实时输出预览不增加模型 token。并发会话保留独立上下文。
 
 #### KV Cache 影响
 
@@ -226,7 +239,7 @@ v2 提示词在其轮次将消息提交到对话后返回规范 Harness 用户 `
 - **仅一个主 workspace**——附加目录仍不支持。
 - **仅光栅提示词图片**——PNG、JPEG、WebP 与 GIF 要求持久附件存储及确切的图片能力路由。
 - **仅 MCP 工具**——MCP resource 与 prompt 没有 DSH 消费方。
-- **不支持交互扩展**——会话删除、fork、mode、终端、客户端文件系统操作与 elicitation 仍不属于此自动化界面。
+- **不支持的协议操作**——不投影会话删除、附加根目录、SSE 或 ACP 传输 MCP、持久终端控制、客户端文件系统操作和 URL elicitation。
 
 <a id="dev-note"></a>
 ### 开发备注
