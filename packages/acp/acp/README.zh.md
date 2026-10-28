@@ -56,6 +56,23 @@ kind: "package-reference"
 
 `pnpm dsh --profile acp` 会启动随附的 stdio 服务器。`acp` profile 会挂载会话持久化，因此客户端可以列出、恢复和关闭持久会话。[`@deepseek-ai/dsh-subagent-acp`](../../subagent/subagent-acp/README.zh.md) 会启动同一 profile 来执行进程外委派。
 
+> **警告——完全访问部署：** 设置 `sandbox-policy.config.mode: danger-full-access` 会移除 Harness 对本地命令和文件工具的文件系统隔离；宿主账户的权限仍然适用。`approval.config.policy: never` 会禁用审批提示并拒绝请求审批的操作，而不是自动批准这些操作。仅对受信任的 ACP 客户端和工作负载使用这些设置。
+
+显式 ACP 部署覆盖层可以设置这两项策略，无需依赖启动器的环境：
+
+```yaml
+- id: sandbox-policy
+  config:
+    mode: danger-full-access
+    workspaceRoot: !!js process.cwd()
+
+- id: approval
+  config:
+    policy: never
+```
+
+在 T3 Code 的环境变量值字段中设置 `DSH_PERMISSION_MODE` 时，输入 `danger-full-access`，不要包含字面的引号字符。包含 `'danger-full-access'` 这些字符的值会导致 sandbox-policy 校验失败，并可能使依赖它的 shell 和文件工具不可用；客户端的完全访问标签不能验证 Harness 插件是否激活。修改环境或覆盖层后，重启 ACP 提供方。恢复的会话保留其已记录的权限策略；在依赖此次变更之前，验证会话的有效设置和原生工具可用性。
+
 <a id="protocol-contract"></a><a id="standard-acp-v1-surface"></a>
 ### 协议约定
 

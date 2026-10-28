@@ -56,6 +56,23 @@ The generated [configuration catalog](../../../docs/config-catalog.md#deepseek-a
 
 `pnpm dsh --profile acp` starts the shipped stdio server. The `acp` profile mounts session persistence, so clients can list, resume, and close persistent sessions. [`@deepseek-ai/dsh-subagent-acp`](../../subagent/subagent-acp/README.md) starts the same profile for out-of-process delegation.
 
+> **Warning — full-access deployments:** Setting `sandbox-policy.config.mode: danger-full-access` removes Harness filesystem confinement for local commands and file tools; the host account's permissions still apply. `approval.config.policy: never` disables approval prompts and rejects operations that request approval; it does not automatically approve them. Use these settings only for trusted ACP clients and workloads.
+
+An explicit ACP deployment overlay can set both policies without relying on the launcher's environment:
+
+```yaml
+- id: sandbox-policy
+  config:
+    mode: danger-full-access
+    workspaceRoot: !!js process.cwd()
+
+- id: approval
+  config:
+    policy: never
+```
+
+In T3 Code's environment-value field, enter `danger-full-access` without literal quote characters when setting `DSH_PERMISSION_MODE`. A value containing the characters `'danger-full-access'` fails sandbox-policy validation and can leave dependent shell and file tools unavailable; a client's full-access label does not verify Harness plugin activation. Restart the ACP provider after changing its environment or overlay. Resumed sessions retain their recorded permission policies; verify the effective session settings and native tool availability before relying on the change.
+
 <a id="protocol-contract"></a><a id="standard-acp-v1-surface"></a>
 ### Protocol contract
 
