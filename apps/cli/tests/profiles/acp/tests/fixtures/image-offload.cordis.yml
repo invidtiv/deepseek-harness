@@ -42,3 +42,7 @@
 
 - id: attachment-local
   name: '@deepseek-ai/dsh-attachment-local'
+
+# Image request expectations exclude platform-specific skill catalogs.
+- id: tool-skill
+  disabled: true
