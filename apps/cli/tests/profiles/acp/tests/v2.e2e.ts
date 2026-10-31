@@ -26,21 +26,26 @@ it('runs model selection, reasoning, MCP tools and replay through v2 stdio', asy
     const selected = await client.request('session/set_config_option', { sessionId, configId: 'model', type: 'id', value: beta.value })
     expect(selected.configOptions).toContainEqual(expect.objectContaining({ configId: 'reasoning_effort' }))
     await client.request('session/set_config_option', { sessionId, configId: 'reasoning_effort', type: 'id', value: 'low' })
-    expect(await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'exercise the attached server' }] })).toHaveProperty('messageId')
+    const accepted = await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: 'exercise the attached server' }] })
+    expect(accepted).toHaveProperty('messageId')
     await expect.poll(() => updates.at(-1), { timeout: 20_000 }).toMatchObject({ sessionUpdate: 'state_update', state: 'idle', stopReason: 'end_turn' })
     expect(updates).toContainEqual(expect.objectContaining({ sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'model=beta; tool=5' } }))
     expect(updates).toContainEqual(expect.objectContaining({ sessionUpdate: 'agent_thought_chunk', content: { type: 'text', text: 'checking the attached tool' } }))
     expect(updates.filter(update => update.sessionUpdate === 'tool_call_update')).toMatchObject([
       { toolCallId: 'control-add', status: 'in_progress' }, { toolCallId: 'control-add', status: 'completed' },
     ])
-    const messages = updates.filter(update => update.sessionUpdate === 'agent_message_chunk' || update.sessionUpdate === 'user_message')
+    expect(updates.some(update => update.sessionUpdate === 'user_message')).toBe(false)
+    const messages = updates.filter(update => update.sessionUpdate === 'agent_message_chunk')
     const command = await client.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: '/goal' }] })
-    expect(updates).toContainEqual({ sessionUpdate: 'user_message', messageId: command.messageId, content: [{ type: 'text', text: '/goal' }] })
+    expect(updates.some(update => update.sessionUpdate === 'user_message')).toBe(false)
     expect(updates).toContainEqual(expect.objectContaining({ sessionUpdate: 'agent_message_chunk', messageId: `${command.messageId}:result` }))
     await client.request('session/close', { sessionId })
     updates.length = 0
     await client.request('session/resume', { sessionId, cwd, mcpServers, replayFrom: { type: 'start' } })
-    expect(updates.filter(update => update.sessionUpdate === 'agent_message_chunk' || update.sessionUpdate === 'user_message')).toEqual(messages)
+    expect(updates.filter(update => update.sessionUpdate === 'agent_message_chunk' || update.sessionUpdate === 'user_message')).toEqual([
+      { sessionUpdate: 'user_message', messageId: accepted.messageId, content: [{ type: 'text', text: 'exercise the attached server' }] },
+      ...messages,
+    ])
     await client.request('session/close', { sessionId })
     for (const line of launched.stdout().trim().split('\n')) expect(JSON.parse(line)).toHaveProperty('jsonrpc', '2.0')
   } catch (error: unknown) {

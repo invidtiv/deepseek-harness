@@ -388,12 +388,19 @@ describe('runner launch inputs', () => {
   })
 
   it('resolves Windows executables with target-cwd and PATH search semantics', () => {
+    const resolveExecutable = (
+      file: string,
+      cwd: string,
+      env: Readonly<Record<string, string>>,
+      exists?: (path: string) => boolean,
+      hostEnv: Readonly<Record<string, string | undefined>> = {},
+    ): string | undefined => resolveWindowsExecutable(file, cwd, env, exists, hostEnv)
     const probed: string[] = []
     const exists = (candidate: string): boolean => {
       probed.push(candidate)
       return candidate === 'C:\\tools\\git\\bin\\bash.exe'
     }
-    expect(resolveWindowsExecutable('bash', 'C:\\target', {
+    expect(resolveExecutable('bash', 'C:\\target', {
       Path: 'relative;"C:\\semi;colon";"C:\\tools\\git\\bin";C:\\later',
     }, exists)).toBe('C:\\tools\\git\\bin\\bash.exe')
     expect(probed).toEqual([
@@ -407,42 +414,42 @@ describe('runner launch inputs', () => {
       'C:\\tools\\git\\bin\\bash.exe',
     ])
 
-    expect(resolveWindowsExecutable('local.exe', 'C:\\target', {}, candidate =>
+    expect(resolveExecutable('local.exe', 'C:\\target', {}, candidate =>
       candidate === 'C:\\target\\local.exe')).toBe('C:\\target\\local.exe')
-    expect(resolveWindowsExecutable('tool', 'C:\\target', {
+    expect(resolveExecutable('tool', 'C:\\target', {
       PATH: 'C:\\bin',
     }, candidate => candidate === 'C:\\bin\\tool.com', {
       NoDefaultCurrentDirectoryInExePath: '1',
     })).toBe('C:\\bin\\tool.com')
-    expect(resolveWindowsExecutable('tool', 'C:\\target', {
+    expect(resolveExecutable('tool', 'C:\\target', {
       PATH: 'D:relative',
     }, candidate => candidate === 'D:relative\\tool.exe')).toBe('D:relative\\tool.exe')
-    expect(resolveWindowsExecutable('tool.', 'C:\\target', {}, candidate =>
+    expect(resolveExecutable('tool.', 'C:\\target', {}, candidate =>
       candidate === 'C:\\target\\tool.exe')).toBe('C:\\target\\tool.exe')
-    expect(resolveWindowsExecutable('.\\missing', 'C:\\target', {}, () => false))
+    expect(resolveExecutable('.\\missing', 'C:\\target', {}, () => false))
       .toBeUndefined()
 
-    expect(resolveWindowsExecutable('tool', 'C:\\target', {
+    expect(resolveExecutable('tool', 'C:\\target', {
       PATH: ';;C:\\bin',
     }, candidate => candidate === 'C:\\bin\\tool.exe')).toBe('C:\\bin\\tool.exe')
-    expect(resolveWindowsExecutable('tool', 'C:\\target', {
+    expect(resolveExecutable('tool', 'C:\\target', {
       PATH: '"";C:\\bin',
     }, candidate => candidate === 'C:\\bin\\tool.exe')).toBe('C:\\bin\\tool.exe')
-    expect(resolveWindowsExecutable('tool', 'C:\\target', {
+    expect(resolveExecutable('tool', 'C:\\target', {
       PATH: '"unterminated',
     }, candidate => candidate === 'C:\\target\\unterminated\\tool.exe'))
       .toBe('C:\\target\\unterminated\\tool.exe')
-    expect(resolveWindowsExecutable('\\\\server\\share\\tool', 'C:\\target', {}, candidate =>
+    expect(resolveExecutable('\\\\server\\share\\tool', 'C:\\target', {}, candidate =>
       candidate === '\\\\server\\share\\tool.exe')).toBe('\\\\server\\share\\tool.exe')
-    expect(resolveWindowsExecutable('\\tools\\tool', 'C:\\target', {}, candidate =>
+    expect(resolveExecutable('\\tools\\tool', 'C:\\target', {}, candidate =>
       candidate === 'C:\\tools\\tool.exe')).toBe('C:\\tools\\tool.exe')
-    expect(resolveWindowsExecutable('C:tools\\tool', 'C:\\target', {}, candidate =>
+    expect(resolveExecutable('C:tools\\tool', 'C:\\target', {}, candidate =>
       candidate === 'C:\\target\\tools\\tool.exe')).toBe('C:\\target\\tools\\tool.exe')
 
     const noSearchEnvironment = { NoDefaultCurrentDirectoryInExePath: '1' }
-    expect(resolveWindowsExecutable('missing', 'C:\\target', {}, () => false, noSearchEnvironment))
+    expect(resolveExecutable('missing', 'C:\\target', {}, () => false, noSearchEnvironment))
       .toBeUndefined()
-    expect(resolveWindowsExecutable('missing.cmd', 'C:\\target', {}, () => false, noSearchEnvironment))
+    expect(resolveExecutable('missing.cmd', 'C:\\target', {}, () => false, noSearchEnvironment))
       .toBeUndefined()
 
     const directory = mkdtempSync(join(tmpdir(), 'dsh-windows-resolver-'))
@@ -455,10 +462,10 @@ describe('runner launch inputs', () => {
     mkdirSync(`${directoryCandidate}.com`)
     writeFileSync(`${directoryCandidate}.exe`, '')
     symlinkSync(missingExecutable, danglingAlias, 'file')
-    expect(resolveWindowsExecutable(executable, '', {})).toBe(executable)
-    expect(resolveWindowsExecutable(directoryCandidate, '', {})).toBe(`${directoryCandidate}.exe`)
-    expect(resolveWindowsExecutable(danglingAlias, '', {})).toBe(danglingAlias)
-    expect(resolveWindowsExecutable(missingExecutable, '', {})).toBeUndefined()
+    expect(resolveExecutable(executable, '', {})).toBe(executable)
+    expect(resolveExecutable(directoryCandidate, '', {})).toBe(`${directoryCandidate}.exe`)
+    expect(resolveExecutable(danglingAlias, '', {})).toBe(danglingAlias)
+    expect(resolveExecutable(missingExecutable, '', {})).toBeUndefined()
   })
 })
 
