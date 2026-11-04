@@ -34,8 +34,8 @@ import type { SessionHandle } from '@deepseek-ai/dsh-session-persistence'
 interface SubagentLifecycle {
   /** Dispose subagent descendants below exact host-owned parents child-first. */
   drainDescendants(parents: readonly Agent[]): Promise<void>
-  /** Observe currently managed descendants without closing future admission. */
-  waitForChildren(parent: Agent): Promise<boolean>
+  /** Join progressing work in the root's subagent tree without closing future admission. */
+  waitForTreeWork(root: Agent): Promise<boolean>
 }
 
 /** Inputs shared by fresh and resumed ACP session construction. */
@@ -826,7 +826,7 @@ export class AcpSession {
           await Promise.race([this.agent.whenIdle(), cancelled])
           if (isCancelled()) break
           const idleSeq = this.agent.session.seq
-          const children = await Promise.race([subagents?.waitForChildren(this.agent), cancelled])
+          const children = await Promise.race([subagents?.waitForTreeWork(this.agent), cancelled])
           if (isCancelled()) break
           if (children || !idleAt(idleSeq)) continue
           await this.outputTail
