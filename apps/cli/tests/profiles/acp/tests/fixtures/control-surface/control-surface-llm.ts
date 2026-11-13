@@ -4,10 +4,11 @@ import { defineContentToolFixture } from '@deepseek-ai/dsh-tool-testkit'
 import type {} from '@deepseek-ai/dsh-user-approval'
 import type {} from '@deepseek-ai/dsh-tool-todo'
 import type { Context } from '@deepseek-ai/cordis'
+import { brandString } from '@deepseek-ai/dsh-brand'
 import {
   ToolCallId,
   LlmAdapter,
-  ReasoningEffortId,
+  type ReasoningEffortId,
   type GenerateOptions,
   type LlmResolvedModelInfo,
   type StreamChunk,
@@ -37,10 +38,10 @@ class ControlSurfaceAdapter extends LlmAdapter {
       context: { contextWindow: 2_048 },
       reasoning: {
         efforts: [
-          { id: ReasoningEffortId('low'), name: 'Low' },
-          { id: ReasoningEffortId('high'), name: 'High' },
+          { id: brandString<ReasoningEffortId>('low'), name: 'Low' },
+          { id: brandString<ReasoningEffortId>('high'), name: 'High' },
         ],
-        defaultEffort: ReasoningEffortId('high'),
+        defaultEffort: brandString<ReasoningEffortId>('high'),
       },
     })
   }
@@ -71,7 +72,7 @@ class ControlSurfaceAdapter extends LlmAdapter {
     const hasToolResult = current.some(message => message.role === 'tool')
     if (userText === 'report the interoperability failure') throw new Error('Interop fixture failure')
     if (!hasToolResult) {
-      const callId = ToolCallId(userText.includes('cancel') ? 'control-cancel-add' : 'control-add')
+      const callId = brandString<ToolCallId>(userText.includes('cancel') ? 'control-cancel-add' : 'control-add')
       yield { type: 'block-start', index: 0, blockType: 'reasoning' }
       yield { type: 'reasoning-delta', index: 0, text: 'checking the attached tool' }
       yield { type: 'block-end', index: 0, block: { type: 'reasoning', text: 'checking the attached tool' } }
