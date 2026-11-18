@@ -3,6 +3,7 @@
 import * as ToolAskUser from '@deepseek-ai/dsh-tool-ask-user'
 import { scopeOf } from '@deepseek-ai/dsh-scope'
 import { parseCommand } from '@deepseek-ai/dsh-commands'
+import type {} from '@deepseek-ai/dsh-fs'
 import type { Context } from '@deepseek-ai/cordis'
 import {
   RequestError,
@@ -180,9 +181,12 @@ export class AcpSession {
    * @returns the fully composed per-session module.
    */
   static async create(ctx: Context, options: CreateAcpSessionOptions): Promise<AcpSession> {
+    // The header records the canonical spelling of the workspace; see SessionHeader.cwd.
+    const fs = ctx.get('fs')
+    const cwd = fs === undefined ? options.cwd : fs.processPath(await fs.resolve(options.cwd, { signal: options.signal }))
     const handle = await ctx.agents.create({
       sessionId: options.sessionId,
-      meta: { cwd: options.cwd },
+      meta: { cwd },
       agentOptions: options.agentOptions,
       signal: options.signal,
       setup: agentCtx => composeAgent(agentCtx, options),

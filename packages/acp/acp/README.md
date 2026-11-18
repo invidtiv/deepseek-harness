@@ -82,7 +82,7 @@ One connection can run several sessions at once, each independent. The following
 |---|---|
 | `initialize` | Stable ACP v1 plus session lifecycle and Streamable HTTP MCP support; compatible attachment storage enables image transport independently of the initial model. |
 | `authenticate` | Immediate success; the server requires no authentication. |
-| `session/new` | A fresh persistent agent whose absolute workspace and stdio or HTTP MCP servers are validated before publication, plus its complete configuration-option state; the command list follows the response. |
+| `session/new` | A fresh persistent agent whose absolute workspace, recorded by its canonical path, and stdio or HTTP MCP servers are validated before publication, plus its complete configuration-option state; the command list follows the response. |
 | `session/list` | Deterministic newest-first pages of persisted, resumable root sessions; an optional absolute `cwd` filter uses physical-directory identity where possible. |
 | `session/load` | Restore an inactive persistent session and replay retained conversation messages, tools, and task plans before returning; requests for the session fail until then, and later events follow the replay. |
 | `session/resume` | A persisted inactive session whose canonical workspace is verified before composition; its log is restored without replaying old updates. |

@@ -117,8 +117,15 @@ export interface SessionSnapshotComparisonOptions extends Omit<NormalizeOptions,
 
 /** Return every known spelling of the generated cwd, most specific first. */
 function cwdSpellings(ctx: NormalizeContext): string[] {
-  const spellings = [...new Set([ctx.cwd, ...ctx.cwdAliases ?? []])]
+  const rawSpellings = [...new Set([ctx.cwd, ...ctx.cwdAliases ?? []])]
     .filter(spelling => spelling.length > 0)
+  const spellings = [
+    ...rawSpellings,
+    ...rawSpellings.map(s => s.replaceAll('/', '\\')),
+    ...rawSpellings.map(s => s.replaceAll('\\', '/')),
+    ...rawSpellings.map(s => s.replaceAll('\\', '\\\\')),
+    ...rawSpellings.map(s => s.replaceAll('/', '\\\\')),
+  ]
   const macAliases = spellings
     .filter(spelling => spelling.startsWith('/') && !spelling.startsWith('/private/'))
     .map(spelling => `/private${spelling}`)

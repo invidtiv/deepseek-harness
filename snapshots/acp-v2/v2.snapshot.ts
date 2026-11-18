@@ -1,5 +1,6 @@
 /** Replay the recorded cancellation turn through the v2 public protocol. */
 import { mkdtemp, readFile, readdir, rm, access, writeFile } from 'node:fs/promises'
+import { realpathSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -32,7 +33,7 @@ it('v2 acceptance without a prompt echo and cancellation preserve the recorded S
     const logs = latestPersistedSessionPaths((await readdir(sessionsRoot, { recursive: true })).map(path => join(sessionsRoot, path)))
     const persisted = await readFile(logs[0]!, 'utf8')
     const expected = await readFile(fixture, 'utf8')
-    const ctx = { cwd, sessionIds: [sessionId] }
+    const ctx = { cwd, cwdAliases: [...new Set([realpathSync(cwd), realpathSync.native(cwd)].flatMap(p => [p, p.replaceAll('\\', '\\\\')]))], sessionIds: [sessionId] }
     expect(normalizeSessionSnapshots([persisted], ctx, { nativeWriterOutput: true })).toEqual(normalizeSessionSnapshots([expected], fixtureContext(expected), { nativeWriterOutput: true }))
     const output = normalizeStdout(launched.stdout(), ctx)
     const golden = fileURLToPath(new URL('./cancel/stdout.expected.jsonl', import.meta.url))
