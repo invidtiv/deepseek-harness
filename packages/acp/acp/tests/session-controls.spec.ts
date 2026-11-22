@@ -52,11 +52,11 @@ describe('ACP session controls', () => {
     await client.request('session/prompt', { sessionId: source.sessionId, prompt: [{ type: 'text', text: 'design' }] })
     await expect.poll(() => agent(source.sessionId).status).toBe('idle')
     expect(harness.adapter.requests[0]?.messages.some(message => message.content.some(block =>
-      block.type === 'text' && block.text.includes('Plan carefully before implementation.')))).toBe(true)
+      block.type === 'text' && block.text.includes('Plan mode is active.')))).toBe(true)
     await client.request('session/prompt', { sessionId: child.sessionId, prompt: [{ type: 'text', text: 'implement' }] })
     await expect.poll(() => agent(child.sessionId).status).toBe('idle')
     expect(harness.adapter.requests[1]?.messages.some(message => message.content.some(block =>
-      block.type === 'text' && block.text.includes('Plan carefully before implementation.')))).toBe(false)
+      block.type === 'text' && block.text.includes('Plan mode is inactive.')))).toBe(true)
   })
 
   it('omits unavailable plan controls and rejects forks while a source is running', async () => {
